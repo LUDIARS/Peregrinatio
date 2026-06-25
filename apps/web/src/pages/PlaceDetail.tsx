@@ -77,18 +77,54 @@ export function PlaceDetail() {
     } finally { setBusy(''); }
   };
 
-  const upload = async (files: FileList | null) => {
-    if (!placeId || !files || files.length === 0) return;
+  const uploadFiles = async (files: File[]) => {
+    const imgs = files.filter((f) => f.type.startsWith('image/'));
+    if (!placeId || imgs.length === 0) return;
     setBusy('upload');
     setError('');
     try {
-      await api.uploadImages(placeId, Array.from(files));
+      await api.uploadImages(placeId, imgs);
       await loadImages();
       if (fileRef.current) fileRef.current.value = '';
     } catch (e) {
       setError(e instanceof Error ? e.message : 'アップロードに失敗しました');
     } finally { setBusy(''); }
   };
+
+  const upload = (files: FileList | null) => uploadFiles(files ? Array.from(files) : []);
+
+  /** クリップボード/ドロップから画像 File を取り出す (貼り付け画像は名前が無いので付与)。 */
+  const filesFromDataTransfer = (dt: DataTransfer | null): File[] => {
+    if (!dt) return [];
+    const out: File[] = [];
+    for (const item of Array.from(dt.items)) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const f = item.getAsFile();
+        if (f) {
+          const name = f.name && f.name !== 'image.png' ? f.name : `paste-${Date.now()}.png`;
+          out.push(new File([f], name, { type: f.type }));
+        }
+      }
+    }
+    if (out.length === 0) out.push(...Array.from(dt.files).filter((f) => f.type.startsWith('image/')));
+    return out;
+  };
+
+  const onPaste = (dt: DataTransfer | null) => {
+    const imgs = filesFromDataTransfer(dt);
+    if (imgs.length > 0) void uploadFiles(imgs);
+    return imgs.length > 0;
+  };
+
+  // ページ上どこで Ctrl+V (⌘+V) しても貼り付け画像を取り込む。
+  useEffect(() => {
+    const handler = (e: ClipboardEvent) => {
+      if (onPaste(e.clipboardData)) e.preventDefault();
+    };
+    window.addEventListener('paste', handler);
+    return () => window.removeEventListener('paste', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeId]);
 
   const compose = async () => {
     if (!placeId) return;
@@ -182,9 +218,22 @@ export function PlaceDetail() {
       {/* 画像: 連番アップロード → 右→左連結 → 解析 */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>画像 (Kindle 連番など)</h3>
-        <input ref={fileRef} type="file" accept="image/*" multiple
+        <div
+          className="paste-zone"
+          tabIndex={0}
+          role="button"
+          onClick={() => fileRef.current?.click()}
+          onPaste={(e) => { if (onPaste(e.clipboardData)) e.preventDefault(); }}
+          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('drag'); }}
+          onDragLeave={(e) => e.currentTarget.classList.remove('drag')}
+          onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('drag'); onPaste(e.dataTransfer); }}
+        >
+          <div className="paste-zone-main">📋 画像を貼り付け / ドラッグ＆ドロップ / タップして選択</div>
+          <div className="muted">クリップボードの画像は <b>Ctrl + V</b>（Mac は ⌘ + V）で即追加。スクショや Kindle 画面の取り込みに。</div>
+          {busy === 'upload' && <div className="muted">アップロード中…</div>}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" multiple hidden
           onChange={(e) => void upload(e.target.files)} />
-        {busy === 'upload' && <p className="muted">アップロード中…</p>}
 
         {sources.length > 0 && (
           <>

@@ -3,7 +3,9 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { mkdirSync } from 'node:fs';
-import { config, hydrateSecrets } from './config.js';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { config, hydrateSecrets, PROJECT_ROOT } from './config.js';
 import { initSql } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
 
@@ -37,6 +39,19 @@ async function main() {
   for (const r of [map, trips, days, places, itinerary, crawl, search, images, routing, pdf]) {
     app.route('/', r);
   }
+
+  // 本番 (単一オリジン): apps/web/dist を配信。dev は vite:5179 を使うのでこちらは未ビルドでも可。
+  // 実ファイルがあれば serveStatic が返し、無ければ SPA フォールバックで index.html を返す
+  // (BrowserRouter の deep link 用)。/api・/uploads は上で先にマッチするのでここには来ない。
+  app.use('*', serveStatic({ root: '../web/dist' }));
+  app.get('*', async (c) => {
+    try {
+      const html = await readFile(join(PROJECT_ROOT, 'apps/web/dist/index.html'), 'utf8');
+      return c.html(html);
+    } catch {
+      return c.text('web not built — run `npm run build:web`', 404);
+    }
+  });
 
   serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
     console.log(`Peregrinatio server on http://${config.host}:${info.port}`);

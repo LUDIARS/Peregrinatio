@@ -16,7 +16,10 @@ import type {
   TripDetail,
 } from './types.js';
 
-export const API_BASE: string = import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:8090';
+// 既定は同一オリジン (相対)。dev は vite proxy が /api・/uploads を server:8090 へ中継し、
+// 本番は server 自身が web/dist を配信するため、どちらも相対で通る。
+// 別オリジンの server を叩く場合のみ VITE_API_BASE に絶対 URL を入れる。
+export const API_BASE: string = import.meta.env.VITE_API_BASE ?? '';
 
 export class ApiError extends Error {
   constructor(message: string, public readonly status: number, public readonly body?: unknown) {

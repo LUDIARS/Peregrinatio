@@ -200,3 +200,18 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .item-row .grow { flex: 1; }
 .ord-btns { display: flex; flex-direction: column; }
 .ord-btns button { min-height: 22px; padding: 0 8px; font-size: 12px; background: transparent; color: var(--c-accent); }
+
+/* ---- 画像 貼り付けゾーン ---- */
+.paste-zone {
+  border: 2px dashed var(--c-border);
+  border-radius: 14px;
+  padding: 22px 16px;
+  text-align: center;
+  cursor: pointer;
+  background: #fafaf8;
+  transition: border-color .12s, background .12s;
+  user-select: none;
+}
+.paste-zone:hover, .paste-zone:focus-visible { border-color: var(--c-accent); outline: none; }
+.paste-zone.drag { border-color: var(--c-accent); background: #eef6f3; }
+.paste-zone-main { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
