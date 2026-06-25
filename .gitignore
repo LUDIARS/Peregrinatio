@@ -9,6 +9,9 @@ logs/
 .env
 .env.*
 
+# ローカル暗号化 config (マシン束縛 master 鍵で暗号化、非追跡)
+/peregrinatio.config.json
+
 # アップロード/合成画像/生成 PDF はランタイム成果物
 /apps/server/uploads/
 /apps/server/exports/

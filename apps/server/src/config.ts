@@ -1,9 +1,9 @@
 // Peregrinatio サーバ設定。
-// 秘密 (API キー) は env フォールバックを使わず、ローカル untracked ファイル
-// data/secrets.local.json から hydrateSecrets() で注入する ([[feedback_no_env_fallback_for_secrets]])。
+// 秘密 (API キー) は env フォールバックを使わず、ローカル暗号化 config
+// (peregrinatio.config.json / AES-256-GCM) から hydrateSecrets() で注入する
+// ([[feedback_no_env_fallback_for_secrets]] / 非平文 RULE§7)。登録は `npm run config-set`。
 // 未設定の機能は「無効」を明示 (map-config の enabled=false) するか、呼び出し時に即エラーにする。
 
-import { readFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -45,20 +45,22 @@ export const config = {
 export type Config = typeof config;
 
 /**
- * data/secrets.local.json (untracked) を読んで config に流し込む。
- * 無ければ何もしない (= 各機能が「未設定」として明示エラー/無効化する)。
- * 形式: { "googleMapsApiKey": "...", "databaseUrl": "...", "llmBackend": "cli" }
+ * ローカル暗号化 config (peregrinatio.config.json) を読んで config に流し込む。
+ * 未設定なら何もしない (= 各機能が「未設定」として明示エラー/無効化する)。
+ * 登録: `npm run config-set GOOGLE_MAPS_API_KEY <値 or @ファイル>`。
+ * 保存キー: GOOGLE_MAPS_API_KEY (暗号化) / DATABASE_URL (平文) / LLM_BACKEND (平文)。
  */
 export async function hydrateSecrets(): Promise<void> {
-  const path = resolve(PROJECT_ROOT, 'data/secrets.local.json');
-  let text: string;
-  try {
-    text = await readFile(path, 'utf8');
-  } catch {
-    return; // 未設定。silent fallback はしない (使う側が即エラー)。
+  const { readLocalSecrets, configPath } = await import('./secrets/store.js');
+  const secrets = readLocalSecrets();
+  if (!secrets) {
+    console.warn(`[secrets] 暗号化 config 未設定 (${configPath()})。地図系は無効で起動します。`);
+    return; // silent fallback はしない (使う側が即エラー/無効化)。
   }
-  const s = JSON.parse(text) as Record<string, unknown>;
-  if (typeof s.googleMapsApiKey === 'string') config.googleMaps.apiKey = s.googleMapsApiKey;
-  if (typeof s.databaseUrl === 'string') config.databaseUrl = s.databaseUrl;
-  if (s.llmBackend === 'cli' || s.llmBackend === 'api') config.llmBackend = s.llmBackend;
+  if (typeof secrets.GOOGLE_MAPS_API_KEY === 'string') config.googleMaps.apiKey = secrets.GOOGLE_MAPS_API_KEY;
+  if (typeof secrets.DATABASE_URL === 'string') config.databaseUrl = secrets.DATABASE_URL;
+  if (secrets.LLM_BACKEND === 'cli' || secrets.LLM_BACKEND === 'api') config.llmBackend = secrets.LLM_BACKEND;
+
+  const applied = ['GOOGLE_MAPS_API_KEY', 'DATABASE_URL', 'LLM_BACKEND'].filter((k) => secrets[k]);
+  if (applied.length > 0) console.log(`[secrets] hydrated ${applied.length} key(s): ${applied.join(', ')}`);
 }

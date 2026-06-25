@@ -8,6 +8,8 @@ export interface ComputeRouteOptions {
   from: { lat: number; lng: number };
   to: { lat: number; lng: number };
   mode: RouteMode;
+  /** transit 用の出発時刻 (RFC3339)。未指定なら「今+1分」。過去は不可。 */
+  departureTime?: string;
 }
 
 export interface ComputeRouteResult {
@@ -81,7 +83,7 @@ export async function computeRoute(
     throw new Error('computeRoute: Google Maps API キーが未設定です (apiKey が空)');
   }
 
-  const body = {
+  const body: Record<string, unknown> = {
     origin: {
       location: { latLng: { latitude: opts.from.lat, longitude: opts.from.lng } },
     },
@@ -91,6 +93,11 @@ export async function computeRoute(
     travelMode: TRAVEL_MODE[opts.mode],
     languageCode: 'ja',
   };
+  // TRANSIT は departureTime を指定しないと経路が返らないことがある。
+  // 指定が無ければ「今 + 1 分」(過去は不可) を既定にする。
+  if (opts.mode === 'transit') {
+    body.departureTime = opts.departureTime ?? new Date(Date.now() + 60_000).toISOString();
+  }
 
   const res = await fetch(COMPUTE_ROUTES_URL, {
     method: 'POST',
