@@ -1,0 +1,25 @@
+{
+  "name": "peregrinatio",
+  "private": true,
+  "version": "0.0.1",
+  "description": "旅のしおり PWA (Google Map で目的地/周辺施設を探し、施設名や Kindle 連番画像から情報をクロール/LLM 解析してサマり、ピン留め・経路探索・PDF しおり出力する)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "npm --workspace apps/server run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "build:server": "npm --workspace apps/server run build",
+    "build:web": "npm --workspace apps/web run build",
+    "migrate": "npm --workspace apps/server run migrate",
+    "test": "npm --workspace apps/server run test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "UNLICENSED"
+}

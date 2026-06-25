@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+logs/
+
+# ランタイムデータ (spec/data/ は無視しないよう先頭スラッシュでアンカー)
+/data/
+.env
+.env.*
+
+# アップロード/合成画像/生成 PDF はランタイム成果物
+/apps/server/uploads/
+/apps/server/exports/

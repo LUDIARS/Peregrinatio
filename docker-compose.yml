@@ -1,0 +1,31 @@
+# Peregrinatio dev 用の Postgres (任意)。
+# databaseUrl を空にすると SQLite (data/peregrinatio.sqlite) で動くため、
+# ローカル単独利用なら Postgres は不要。チーム共有/本番で Postgres に切替える。
+#
+#   docker compose up -d db     # 起動
+#   docker compose down         # 停止 (データは volume に残る)
+#   docker compose down -v      # 停止 + データ破棄
+#
+# host port は 15433 (Windows の Docker は 5432 を host から取り回せない事例 +
+# Tirocinium が 15432 を使うため衝突回避)。
+
+services:
+  db:
+    image: postgres:16
+    container_name: peregrinatio-db
+    environment:
+      POSTGRES_USER: peregrinatio
+      POSTGRES_PASSWORD: peregrinatio
+      POSTGRES_DB: peregrinatio
+    ports:
+      - "15433:5432"
+    volumes:
+      - peregrinatio_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U peregrinatio -d peregrinatio"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  peregrinatio_pgdata:
