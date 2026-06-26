@@ -440,3 +440,19 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .kanban-mini.danger { color: var(--c-danger); border-color: #f0d0d0; flex: 0 0 38px; }
 
 .sm-link { font-size: 13px; text-decoration: none; align-self: center; }
+
+/* ---- カンバン 経路フッタ ---- */
+.kanban-route {
+  margin-top: 4px; padding-top: 8px; border-top: 1px dashed var(--c-border);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.kanban-route-mode { font-size: 13px; padding: 6px 8px; min-height: 0; flex: 1; border-radius: 8px; }
+.kanban-route-total { font-size: 12px; font-weight: 700; color: var(--c-accent-d); }
+.kanban-route-warn {
+  font-size: 12px; line-height: 1.4; color: #a15c00;
+  background: #fff3cd; border: 1px solid #f0d98a; border-radius: 8px; padding: 6px 8px;
+}
+.kanban-leg {
+  display: flex; flex-direction: column; gap: 1px;
+  font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--c-border);
+}

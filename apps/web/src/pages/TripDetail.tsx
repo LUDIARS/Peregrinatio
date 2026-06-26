@@ -265,7 +265,7 @@ export function TripDetail() {
         </Link>
         <div className="stack">
           {days.map((d) => (
-            <Link key={d.id} to={`/trips/${trip.id}/days/${d.id}`} className="card card-link">
+            <Link key={d.id} to={`/trips/${trip.id}/itinerary`} className="card card-link">
               <strong>{d.title || `${d.day_index + 1} 日目`}</strong>
               <div className="muted">{d.date ?? '日付未定'}</div>
             </Link>

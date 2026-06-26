@@ -1,14 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
-import type { ItineraryItem, Trip, TripDay, TripPlace } from '../types.js';
+import type { ItineraryItem, RouteLeg, RouteMode, Trip, TripDay, TripPlace } from '../types.js';
 
 type ItemsByDay = Record<string, ItineraryItem[]>;
 
+const MODES: { value: RouteMode; label: string }[] = [
+  { value: 'driving', label: '車' },
+  { value: 'walking', label: '徒歩' },
+  { value: 'transit', label: '公共交通' },
+  { value: 'bicycling', label: '自転車' },
+];
+
+function fmtDuration(sec: number | null): string {
+  if (sec == null) return '—';
+  const m = Math.round(sec / 60);
+  if (m < 60) return `${m} 分`;
+  return `${Math.floor(m / 60)} 時間 ${m % 60} 分`;
+}
+function fmtDistance(m: number | null): string {
+  if (m == null) return '—';
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
+}
+
 /**
- * 旅のしおり (カンバンボード)。
+ * 旅のしおり (カンバンボード) = 日程の唯一の編集画面 (旧 DayPlanner を統合)。
  * - 列 = 旅の各日 (trip_days)、カード = その日の行動予定 (itinerary_items)。
  * - カードはドラッグ (PC) または ◀▶▲▼ ボタン (タッチ) で日をまたいで自由に並べ替えられる。
+ * - 予定を変更すると各日の経路を自動再計算し、無理な経路 (区間が繋がらない等) は警告を出す。
  * - 「ここに行く」から `?place=<id>` 付きで開くと配置モードになり、各列の「＋ ここに追加」で日を選ぶ。
  */
 export function Itinerary() {
@@ -23,12 +42,19 @@ export function Itinerary() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // 経路: 日ごとの leg / 移動手段 / 計算中フラグ / 警告メッセージ。
+  const [legsByDay, setLegsByDay] = useState<Record<string, RouteLeg[]>>({});
+  const [modeByDay, setModeByDay] = useState<Record<string, RouteMode>>({});
+  const [routeBusy, setRouteBusy] = useState<Record<string, boolean>>({});
+  const [routeWarn, setRouteWarn] = useState<Record<string, string>>({});
+
   // ドラッグ中のカード {item id, 元の day id} と、ドロップ先のハイライト用 day id。
   const drag = useRef<{ itemId: string; fromDayId: string } | null>(null);
   const [overDay, setOverDay] = useState<string | null>(null);
 
   const placeMap = useMemo(() => new Map(places.map((p) => [p.id, p])), [places]);
   const pendingPlace = pendingPlaceId ? placeMap.get(pendingPlaceId) ?? null : null;
+  const placeName = (id: string | null) => (id ? placeMap.get(id)?.name ?? '(不明)' : '(メモ)');
 
   const load = async () => {
     if (!tripId) return;
@@ -37,10 +63,22 @@ export function Itinerary() {
     setTrip(detail.trip);
     setDays(sorted);
     setPlaces(detail.places);
-    const lists = await Promise.all(sorted.map((d) => api.listItems(d.id)));
+    const [lists, routes] = await Promise.all([
+      Promise.all(sorted.map((d) => api.listItems(d.id))),
+      Promise.all(sorted.map((d) => api.getRoute(d.id))),
+    ]);
     const map: ItemsByDay = {};
-    sorted.forEach((d, i) => { map[d.id] = [...(lists[i] ?? [])].sort((a, b) => a.order_index - b.order_index); });
+    const legMap: Record<string, RouteLeg[]> = {};
+    const modeMap: Record<string, RouteMode> = {};
+    sorted.forEach((d, i) => {
+      map[d.id] = [...(lists[i] ?? [])].sort((a, b) => a.order_index - b.order_index);
+      const lg = routes[i] ?? [];
+      legMap[d.id] = lg;
+      modeMap[d.id] = lg[0]?.mode ?? 'driving';
+    });
     setItemsByDay(map);
+    setLegsByDay(legMap);
+    setModeByDay(modeMap);
   };
 
   useEffect(() => {
@@ -51,7 +89,46 @@ export function Itinerary() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId]);
 
-  /** ローカルで並びを確定 → 変わった分だけ order_index / day_id を永続化 (失敗時は再読込で復旧)。 */
+  /** その日の予定変更後に経路を自動再計算する。無理な経路 (区間が繋がらない) は警告を立てる。 */
+  const recomputeRoute = async (dayId: string, items: ItineraryItem[], mode?: RouteMode) => {
+    const m = mode ?? modeByDay[dayId] ?? 'driving';
+    const placed = items.filter((i) => i.place_id);
+    const coords = placed.filter((i) => {
+      const p = i.place_id ? placeMap.get(i.place_id) : null;
+      return p != null && p.lat != null && p.lng != null;
+    });
+    if (coords.length < 2) {
+      setLegsByDay((s) => ({ ...s, [dayId]: [] }));
+      setRouteWarn((s) => {
+        const n = { ...s };
+        if (placed.length >= 2 && coords.length < 2) n[dayId] = '座標付きの場所が 2 つ未満のため経路を計算できません。';
+        else delete n[dayId];
+        return n;
+      });
+      return;
+    }
+    setRouteBusy((s) => ({ ...s, [dayId]: true }));
+    try {
+      const legs = await api.computeRoute(dayId, m);
+      setLegsByDay((s) => ({ ...s, [dayId]: legs }));
+      const hasNull = legs.some((l) => l.duration_sec == null);
+      const skipped = placed.length - coords.length;
+      setRouteWarn((s) => {
+        const n = { ...s };
+        if (hasNull) n[dayId] = '一部区間の経路が見つかりませんでした（無理な経路の可能性があります）。';
+        else if (skipped > 0) n[dayId] = `座標のない場所 ${skipped} 件を経路から除外しました。`;
+        else delete n[dayId];
+        return n;
+      });
+    } catch (e) {
+      setLegsByDay((s) => ({ ...s, [dayId]: [] }));
+      setRouteWarn((s) => ({ ...s, [dayId]: e instanceof Error ? `経路を計算できませんでした: ${e.message}` : '経路を計算できませんでした。' }));
+    } finally {
+      setRouteBusy((s) => ({ ...s, [dayId]: false }));
+    }
+  };
+
+  /** ローカルで並びを確定 → 変わった分だけ order_index / day_id を永続化し、影響日の経路を再計算。 */
   const commit = async (groups: ItemsByDay, affected: string[]) => {
     const next: ItemsByDay = { ...groups };
     const patches: { id: string; day_id: string; order_index: number }[] = [];
@@ -69,6 +146,7 @@ export function Itinerary() {
     setBusy(true); setError('');
     try {
       await Promise.all(patches.map((p) => api.patchItem(p.id, { day_id: p.day_id, order_index: p.order_index })));
+      for (const dayId of affected) void recomputeRoute(dayId, next[dayId] ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : '並べ替えの保存に失敗しました');
       await load();
@@ -107,6 +185,11 @@ export function Itinerary() {
     void commit({ ...itemsByDay, [dayId]: arr }, [dayId]);
   };
 
+  const changeMode = (dayId: string, mode: RouteMode) => {
+    setModeByDay((s) => ({ ...s, [dayId]: mode }));
+    void recomputeRoute(dayId, itemsByDay[dayId] ?? [], mode);
+  };
+
   const setTime = async (item: ItineraryItem, dayId: string, time: string) => {
     const v = time || null;
     setItemsByDay((m) => ({ ...m, [dayId]: (m[dayId] ?? []).map((x) => (x.id === item.id ? { ...x, planned_time: v } : x)) }));
@@ -115,8 +198,9 @@ export function Itinerary() {
   };
 
   const removeItem = async (item: ItineraryItem, dayId: string) => {
-    setItemsByDay((m) => ({ ...m, [dayId]: (m[dayId] ?? []).filter((x) => x.id !== item.id) }));
-    try { await api.deleteItem(item.id); }
+    const next = (itemsByDay[dayId] ?? []).filter((x) => x.id !== item.id);
+    setItemsByDay((m) => ({ ...m, [dayId]: next }));
+    try { await api.deleteItem(item.id); void recomputeRoute(dayId, next); }
     catch (e) { setError(e instanceof Error ? e.message : '削除に失敗しました'); await load(); }
   };
 
@@ -125,7 +209,9 @@ export function Itinerary() {
     setBusy(true); setError('');
     try {
       const it = await api.createItem(dayId, { place_id: pendingPlaceId, kind: 'visit' });
-      setItemsByDay((m) => ({ ...m, [dayId]: [...(m[dayId] ?? []), it] }));
+      const next = [...(itemsByDay[dayId] ?? []), it];
+      setItemsByDay((m) => ({ ...m, [dayId]: next }));
+      void recomputeRoute(dayId, next);
       // 配置完了 → バナーを閉じる (param を外す)。
       setParams({}, { replace: true });
     } catch (e) {
@@ -166,7 +252,7 @@ export function Itinerary() {
         <div className="crumb"><Link to={`/trips/${tripId}`}>← 旅へ戻る</Link></div>
         <h2 style={{ margin: 0 }}>🗓 {trip.title} — 旅のしおり</h2>
         <p className="muted" style={{ margin: 0 }}>
-          カードをドラッグ、またはカードの ◀▶ で日を移動、▲▼ で並べ替えできます。
+          カードをドラッグ、またはカードの ◀▶ で日を移動、▲▼ で並べ替え。並びを変えると経路を自動で再計算します。
         </p>
       </div>
 
@@ -194,6 +280,9 @@ export function Itinerary() {
         <div className="kanban-board">
           {days.map((d) => {
             const items = itemsByDay[d.id] ?? [];
+            const legs = legsByDay[d.id] ?? [];
+            const totalSec = legs.reduce((s, l) => s + (l.duration_sec ?? 0), 0);
+            const totalM = legs.reduce((s, l) => s + (l.distance_m ?? 0), 0);
             return (
               <section
                 key={d.id}
@@ -208,14 +297,12 @@ export function Itinerary() {
                     <span className="chip">{items.length}</span>
                   </div>
                   <div className="muted" style={{ fontSize: 12 }}>{d.date ?? '日付未定'}</div>
-                  <div className="row" style={{ gap: 6, marginTop: 6 }}>
-                    {pendingPlaceId && pendingPlace && (
-                      <button type="button" className="sm" onClick={() => void addPendingToDay(d.id)} disabled={busy}>
-                        ＋ ここに追加
-                      </button>
-                    )}
-                    <Link to={`/trips/${tripId}/days/${d.id}`} className="sm-link">経路 →</Link>
-                  </div>
+                  {pendingPlaceId && pendingPlace && (
+                    <button type="button" className="sm" style={{ marginTop: 6 }}
+                      onClick={() => void addPendingToDay(d.id)} disabled={busy}>
+                      ＋ ここに追加
+                    </button>
+                  )}
                 </header>
 
                 <div className="kanban-cards">
@@ -268,6 +355,32 @@ export function Itinerary() {
                       </article>
                     );
                   })}
+                </div>
+
+                {/* 経路フッタ: 移動手段の切替 + 区間の所要時間/距離。予定変更で自動再計算。 */}
+                <div className="kanban-route">
+                  <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                    <select className="kanban-route-mode" value={modeByDay[d.id] ?? 'driving'}
+                      onChange={(e) => changeMode(d.id, e.target.value as RouteMode)} aria-label="移動手段">
+                      {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                    </select>
+                    {routeBusy[d.id] && <span className="muted" style={{ fontSize: 12 }}>計算中…</span>}
+                  </div>
+                  {routeWarn[d.id] && <div className="kanban-route-warn">⚠ {routeWarn[d.id]}</div>}
+                  {legs.length > 0 && (
+                    <>
+                      <div className="kanban-route-total">合計 {fmtDuration(totalSec)} / {fmtDistance(totalM)}</div>
+                      {legs.map((leg) => (
+                        <div key={leg.id} className="kanban-leg">
+                          <span>{placeName(leg.from_place_id)} → {placeName(leg.to_place_id)}</span>
+                          <span className="muted">
+                            {fmtDuration(leg.duration_sec)} / {fmtDistance(leg.distance_m)}
+                            {leg.fare_text ? ` / ${leg.fare_text}` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               </section>
             );
