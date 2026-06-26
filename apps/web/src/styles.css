@@ -276,9 +276,30 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 
 .detail-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  position: sticky; top: 0; background: var(--c-bg); padding: 4px 0 10px; z-index: 2;
+  position: sticky; top: 0; background: var(--c-bg); padding: 4px 0 6px; z-index: 2;
 }
 .detail-title { font-size: 16px; }
+
+/* ---- 場所ヒーロー (画像大 + 名前タイトル + 住所小 + サマリ大) ---- */
+.place-hero { margin-bottom: 14px; }
+.place-hero-img {
+  width: 100%; aspect-ratio: 16 / 10; object-fit: cover;
+  border-radius: 14px; border: 1px solid var(--c-border); background: #eee; display: block;
+}
+.place-hero-img.placeholder {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--c-muted); font-size: 14px; background: #f3f3f1;
+}
+.place-hero-name {
+  font-size: 24px; font-weight: 800; line-height: 1.25;
+  margin: 12px 0 2px; word-break: break-word;
+}
+.place-hero-addr { font-size: 13px; color: var(--c-muted); line-height: 1.5; }
+.place-hero-summary {
+  font-size: 15px; line-height: 1.75; margin: 12px 0 0;
+  white-space: pre-wrap; color: var(--c-text);
+}
+.place-hero-summary.muted { color: var(--c-muted); font-size: 14px; }
 
 /* ---- モバイル (既定): 地図ベース + 一覧ドロワー + 詳細ポップアップ ---- */
 .ws-topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -303,27 +324,46 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   overflow-y: auto; padding: 14px;
 }
 
-/* ---- PC (>=900px): 一覧(左) | 地図(中) | 詳細(右) の3カラム1ページ ---- */
+/* ---- PC (>=900px): 一覧(左) | 地図(中) | 詳細(右) の3カラム。各ペイン独立スクロール ---- */
 @media (min-width: 900px) {
   .ws-topbar, .drawer-toggle { display: none; }
   .ws-backdrop { display: none !important; }
+  /* 親を固定高にして各カラムを独立スクロールさせる (min-height:0 が overflow の肝)。 */
   .trip-ws {
     display: grid;
-    grid-template-columns: 320px minmax(0, 1fr);
-    gap: 18px; align-items: start;
+    grid-template-columns: minmax(0, 22fr) minmax(0, 78fr);
+    gap: 14px; align-items: stretch;
+    height: calc(100vh - 96px);
   }
-  .trip-ws.has-detail { grid-template-columns: 300px minmax(0, 1fr) minmax(360px, 420px); }
+  /* 詳細あり: 左 20% / 地図 35% / 右 45% (右は地図と同等〜やや広め) */
+  .trip-ws.has-detail { grid-template-columns: minmax(0, 20fr) minmax(0, 35fr) minmax(0, 45fr); }
   .ws-list {
     position: static; transform: none; width: auto; max-width: none;
-    box-shadow: none; padding: 0; overflow: visible; background: transparent;
+    box-shadow: none; padding: 0 6px 16px 0; background: transparent;
+    height: 100%; min-height: 0; overflow-y: auto;
   }
-  .ws-map { position: sticky; top: 72px; }
-  .ws-map .map-canvas { height: 64vh; }
+  .ws-map {
+    position: static; top: auto;
+    height: 100%; min-height: 0; overflow-y: auto; padding-bottom: 16px;
+  }
+  /* 地図は大きく (縦長) */
+  .ws-map .map-canvas { height: 72vh; }
   .ws-detail {
-    position: sticky; top: 72px; inset: auto; z-index: auto;
-    background: transparent; box-shadow: none; border-radius: 0; padding: 0;
-    max-height: calc(100vh - 90px); overflow-y: auto;
+    position: static; inset: auto; z-index: auto;
+    background: transparent; box-shadow: none; border-radius: 0; padding: 0 0 16px 6px;
+    height: 100%; min-height: 0; max-height: none; overflow-y: auto;
   }
+}
+
+/* ---- 詳細ペーン: 情報セクション / 情報元 / 管理ツールバー ---- */
+.place-section { margin-bottom: 14px; }
+.place-section-title {
+  font-size: 13px; font-weight: 700; color: var(--c-muted);
+  margin: 0 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--c-border);
+}
+.place-source { display: block; font-size: 13px; word-break: break-all; line-height: 1.6; }
+.place-toolbar {
+  margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--c-border);
 }
 
 /* ---- 場所ステータス バッジ ---- */

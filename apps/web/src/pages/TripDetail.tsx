@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, assetUrl, pdfUrl } from '../api.js';
-import type { PlaceSearchResult, PlaceStatus, TripDetail as TripDetailData, TripPlace } from '../types.js';
+import type { PlaceStatus, TripDetail as TripDetailData, TripPlace } from '../types.js';
 
 const STATUS_LABEL: Record<string, string> = { interested: '気になる', visited: '訪問済み' };
 type StatusFilter = 'all' | PlaceStatus;
@@ -13,6 +13,7 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
 import { loadMaps, PIN_PATH } from '../lib/maps.js';
 import { PlaceDetailPane } from './PlaceDetail.js';
 import { LibraryPicker } from './LibraryPicker.js';
+import { IntelligentSearch } from './IntelligentSearch.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -38,11 +39,6 @@ export function TripDetail() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-
-  const [q, setQ] = useState('');
-  const [results, setResults] = useState<PlaceSearchResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [searchMsg, setSearchMsg] = useState('');
 
   const [dayDate, setDayDate] = useState('');
   const [dayTitle, setDayTitle] = useState('');
@@ -73,9 +69,6 @@ export function TripDetail() {
           mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
         });
         infoObj.current = new window.google.maps.InfoWindow();
-        mapObj.current.addListener('click', (ev: any) => {
-          void runSearch({ lat: ev.latLng.lat(), lng: ev.latLng.lng() });
-        });
         setMapStatus('ready');
       } catch (e) {
         if (!cancelled) {
@@ -169,31 +162,6 @@ export function TripDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, mapStatus]);
 
-  const runSearch = async (loc?: { lat: number; lng: number }) => {
-    if (!tripId) return;
-    setSearching(true); setSearchMsg('');
-    try {
-      const center = loc ?? (mapObj.current
-        ? { lat: mapObj.current.getCenter().lat(), lng: mapObj.current.getCenter().lng() } : undefined);
-      const r = await api.searchPlaces({ q: q.trim() || undefined, lat: center?.lat, lng: center?.lng });
-      setResults(r);
-      if (r.length === 0) setSearchMsg('該当する施設が見つかりませんでした');
-    } catch (e) { setSearchMsg(e instanceof Error ? e.message : '検索に失敗しました'); }
-    finally { setSearching(false); }
-  };
-
-  const addCandidate = async (c: PlaceSearchResult) => {
-    if (!tripId) return;
-    try {
-      await api.addPlaceToTrip(tripId, {
-        name: c.name, address: c.address ?? undefined,
-        lat: c.lat ?? undefined, lng: c.lng ?? undefined, category: c.category ?? undefined,
-      });
-      setResults((prev) => prev.filter((x) => x.place_id !== c.place_id));
-      await reload();
-    } catch (e) { setSearchMsg(e instanceof Error ? e.message : '追加に失敗しました'); }
-  };
-
   const collectRecommendations = async () => {
     if (!tripId) return;
     setRecommending(true); setRecommendMsg('');
@@ -204,22 +172,6 @@ export function TripDetail() {
     } catch (e) {
       setRecommendMsg(e instanceof Error ? e.message : 'おすすめの収集に失敗しました（拠点が未設定の可能性があります）');
     } finally { setRecommending(false); }
-  };
-
-  const toggleBase = async (p: TripPlace) => {
-    if (!tripId) return;
-    try { await api.setTripBase(tripId, p.id, p.is_base === 1 ? 0 : 1); await reload(); }
-    catch (e) { setError(e instanceof Error ? e.message : '拠点の更新に失敗しました'); }
-  };
-
-  const removeFromTrip = async (p: TripPlace) => {
-    if (!tripId) return;
-    if (!window.confirm(`「${p.name}」をこの旅から外しますか? (場所ライブラリには残ります)`)) return;
-    try {
-      await api.removeFromTrip(tripId, p.id);
-      if (selectedId === p.id) setSelectedId(null);
-      await reload();
-    } catch (e) { setError(e instanceof Error ? e.message : '除外に失敗しました'); }
   };
 
   const addDay = async (e: React.FormEvent) => {
@@ -298,16 +250,6 @@ export function TripDetail() {
                   </div>
                 </div>
               </button>
-              <div className="place-row-actions">
-                {p.lat != null && p.lng != null && (
-                  <button type="button" className="sm ghost"
-                    onClick={() => (p.is_base === 1 ? focusBase(p) : toggleBase(p))}>
-                    {p.is_base === 1 ? '地図で見る' : '拠点にする'}
-                  </button>
-                )}
-                {p.is_base === 1 && <button type="button" className="sm ghost" onClick={() => void toggleBase(p)}>拠点解除</button>}
-                <button type="button" className="sm ghost" onClick={() => void removeFromTrip(p)}>外す</button>
-              </div>
             </div>
           ))}
         </div>
@@ -329,6 +271,15 @@ export function TripDetail() {
           </div>
           <button type="submit">日を追加</button>
         </form>
+
+        {/* 近くのおすすめを収集 (左メニュー最下部) */}
+        <div className="card foundation-form">
+          <button type="button" onClick={() => void collectRecommendations()} disabled={recommending}>
+            {recommending ? '収集中…' : '📍 近くのおすすめを収集'}
+          </button>
+          {recommendMsg && <div className="muted">{recommendMsg}</div>}
+          <p className="muted" style={{ margin: 0 }}>拠点の周辺から候補を探してこの旅に追加します（拠点の設定が必要です）。</p>
+        </div>
       </aside>
 
       {/* 中央: 地図 + 拠点バー + 検索 */}
@@ -351,37 +302,13 @@ export function TripDetail() {
         {mapStatus === 'error' && <div className="card error">⚠ {mapError}</div>}
         <div ref={mapRef} className="map-canvas" style={{ display: mapStatus === 'disabled' ? 'none' : 'block' }} />
 
-        <div className="card foundation-form" style={{ marginTop: 10 }}>
-          <div className="row">
-            <button type="button" onClick={() => void collectRecommendations()} disabled={recommending} style={{ flex: 1 }}>
-              {recommending ? '収集中…' : '📍 近くのおすすめを収集'}
-            </button>
-          </div>
-          {recommendMsg && <div className="muted">{recommendMsg}</div>}
-          <p className="muted" style={{ margin: 0 }}>拠点の周辺から候補を探してこの旅に追加します（拠点の設定が必要です）。</p>
-        </div>
-
-        <div className="card foundation-form" style={{ marginTop: 10 }}>
-          <div className="row">
-            <input type="search" placeholder="施設名・キーワード (例: 美術館)" value={q}
-              onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') void runSearch(); }} style={{ flex: 1 }} />
-            <button type="button" onClick={() => void runSearch()} disabled={searching}>{searching ? '検索中…' : '検索'}</button>
-          </div>
-          {searchMsg && <div className="muted">{searchMsg}</div>}
-          <div className="stack">
-            {results.map((c) => (
-              <div key={c.place_id} className="spread" style={{ borderTop: '1px solid var(--c-border)', paddingTop: 8 }}>
-                <div>
-                  <strong>{c.name}</strong>
-                  {c.category && <span className="chip" style={{ marginLeft: 6 }}>{c.category}</span>}
-                  {c.address && <div className="muted">{c.address}</div>}
-                </div>
-                <button type="button" className="sm ghost" onClick={() => void addCandidate(c)}>追加</button>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* インテリジェント検索 (キーワード / URL / 画像 を 1 つの入口で) */}
+        <IntelligentSearch
+          tripId={tripId}
+          selectedPlace={places.find((p) => p.id === selectedId) ?? null}
+          onChanged={reload}
+          onSelectPlace={(id) => setSelectedId(id)}
+        />
 
         {/* 既存ライブラリ場所の使い回し (他の旅で登録済みの場所をこの旅にも紐付け) */}
         <LibraryPicker
@@ -390,7 +317,7 @@ export function TripDetail() {
           onAdded={reload}
         />
 
-        <p className="muted" style={{ marginTop: 6 }}>地図タップで周辺検索。ピンタップで詳細（🏨拠点はズーム）。</p>
+        <p className="muted" style={{ marginTop: 6 }}>ピンタップで詳細（🏨拠点はズーム）。</p>
       </section>
 
       {/* 右: 場所詳細 (PC=カラム / モバイル=ポップアップ) */}
