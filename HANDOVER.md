@@ -51,14 +51,14 @@ port: server=8090 / web(dev)=5179 / docker Postgres=15433。
 
 ## 既知の制約・残作業
 
-1. **サーバ常駐化未了** — セッション/PC停止で公開URLも停止。Windowsサービス/タスクスケジューラ化が必要。
+1. ~~**サーバ常駐化未了**~~ 🚫 見送り (ユーザ判断: 不要)。
 2. **本番起動経路** — packages の exports が src を指し `node dist`(npm start)が壊れる。tsx 常駐 or exports を dist 化。
 3. **電車経路(transit)** — Google が当アカウントで ZERO_RESULTS(保留)。要 NAVITIME/駅すぱあと(契約)。
 4. **コード登録PR未マージ** — LUDIARS#42(PROJECT-CODES.md) / Castra#33(CLAUDE.md)。
 5. ~~**ライブラリ既存場所の使い回しUI未配線**~~ ✅ 対応済 — 旅詳細の中央カラムに「📚 ライブラリから既存の場所を追加」(`LibraryPicker`) を配線。`GET /api/places` で全旅共有ライブラリを引き、すでにこの旅にいる場所を除外し、選んで `POST /api/trips/:id/places { place_id }` で紐付ける。
 6. **claude CLI 連携の本番実走未検証** — 稼働server上で vision/自動Web収集/拠点サマリーが claude CLI 経由で通るか要確認。
-7. **認証なし(誰でも閲覧/編集可)** — 共有運用なら Cernere 認証追加。
-8. **PDF体裁/日本語フォント実機未確認**。
+7. ~~**認証なし(誰でも閲覧/編集可)**~~ 🚫 見送り (ユーザ判断: 不要)。
+8. ~~**PDF体裁/日本語フォント実機未確認**~~ ✅ 対応済 — PDF しおりを**旅行ツアーのパンフレット(行程表)風**に刷新。テンプレートを `apps/server/src/pdf/brochure.ts`(`buildBrochureHtml`)に分離し、表紙(ヒーロー写真+日程サマリチップ)→行程概要→日ごとのタイムライン(スポットカード=写真/カテゴリ/住所/概要 + 移動コネクタ)。ページ番号フッター付き。Puppeteer 実レンダリングで日本語フォント(Yu Gothic/Meiryo)表示を確認済。
 9. ~~**テスト/CI 未整備**~~ ✅ 対応済 — `apps/server/src/app.ts`(`buildApiApp`)でルートを分離し、使い捨て SQLite + 本番 migration 上で `app.request()` する統合テスト (`routes/places.test.ts` / `routes/trips.test.ts`、計11) を追加。`.github/workflows/ci.yml` が PR/main push で全 workspace の `npm ci → build → test` を実行 (Node 24)。spec は `spec/test/server-integration.md` に方針を記載。残: days/itinerary や外部依存ルートの統合は未カバー。
 10. 軽微: recommend の半径指定UI無し / og:image 相対URL絶対化未対応。
 11. 保留: リゾナーレ那須(49件)再シード要否は未回答。
