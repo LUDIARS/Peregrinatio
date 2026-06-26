@@ -95,11 +95,12 @@ export const api = {
       category?: string;
       source_url?: string;
       notes?: string;
+      is_base?: number;
     },
   ) => req<Place>(`/api/trips/${tripId}/places`, { method: 'POST', body: json(input) }),
   patchPlace: (
     id: string,
-    input: Partial<Pick<Place, 'name' | 'address' | 'lat' | 'lng' | 'category' | 'source_url' | 'summary' | 'notes' | 'pinned'>>,
+    input: Partial<Pick<Place, 'name' | 'address' | 'lat' | 'lng' | 'category' | 'source_url' | 'summary' | 'notes' | 'pinned' | 'is_base'>>,
   ) => req<Place>(`/api/places/${id}`, { method: 'PATCH', body: json(input) }),
   deletePlace: (id: string) => req<{ ok: true }>(`/api/places/${id}`, { method: 'DELETE' }),
   crawlPlace: (id: string, input: { url?: string } = {}) =>

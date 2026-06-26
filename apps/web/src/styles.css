@@ -48,10 +48,20 @@ html, body {
 }
 .brand { font-size: 18px; font-weight: 700; letter-spacing: 0.02em; }
 .brand-sub { font-size: 12px; opacity: 0.85; }
+/* タイトルロゴ = ホーム (旅一覧) リンク。フッターは廃止。 */
+.brand-link {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-decoration: none;
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+}
+.brand-link:hover .brand { text-decoration: underline; }
 
 .app-main {
   flex: 1;
-  padding: 14px 14px calc(var(--tabbar-h) + var(--safe-b) + 16px);
+  padding: 14px 14px 40px;
   max-width: 760px;
   width: 100%;
   margin: 0 auto;
@@ -215,3 +225,38 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .paste-zone:hover, .paste-zone:focus-visible { border-color: var(--c-accent); outline: none; }
 .paste-zone.drag { border-color: var(--c-accent); background: #eef6f3; }
 .paste-zone-main { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+
+/* ---- 拠点バー (クリックでその拠点にズーム) ---- */
+.base-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 8px; }
+.base-bar-label { font-size: 13px; color: var(--c-muted); font-weight: 600; }
+.chip-btn {
+  min-height: 32px; padding: 4px 12px; border-radius: 999px; font-size: 13px;
+  background: var(--c-surface); color: var(--c-accent); border: 1px solid var(--c-border);
+}
+.chip-btn.active { background: var(--c-accent); color: #fff; border-color: var(--c-accent); }
+.chip-btn.ghost { color: var(--c-muted); }
+
+/* ---- 場所行 (本体リンク + 拠点操作) ---- */
+.place-row { padding: 12px; }
+.place-row.is-base { border-color: #f0a070; background: #fff8f3; }
+.place-row-main { display: block; text-decoration: none; color: inherit; }
+.place-row-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+/* ---- PC レイアウト: フッター無し・1ページに全情報を2カラムで ---- */
+@media (min-width: 900px) {
+  .app-main { max-width: 1180px; padding: 18px 22px 48px; }
+  .trip-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+  }
+  /* 地図カラムは画面内に留めて、右の情報をスクロール */
+  .trip-col-map { position: sticky; top: 70px; }
+  .map-canvas { height: 60vh; }
+}
+@media (max-width: 899px) {
+  /* モバイルは縦積み (従来どおり) */
+  .trip-grid { display: block; }
+  .trip-col-map { margin-bottom: 8px; }
+}

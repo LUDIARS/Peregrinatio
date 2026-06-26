@@ -17,9 +17,9 @@ app.post('/api/trips/:id/places', async (c) => {
   if (!b.name) return c.json({ error: 'name required' }, 400);
   const id = newId();
   const now = nowIso();
-  await sql`INSERT INTO places (id, trip_id, name, address, lat, lng, category, source_url, notes, pinned, created_at, updated_at)
+  await sql`INSERT INTO places (id, trip_id, name, address, lat, lng, category, source_url, notes, pinned, is_base, created_at, updated_at)
     VALUES (${id}, ${trip_id}, ${b.name}, ${b.address ?? null}, ${b.lat ?? null}, ${b.lng ?? null},
-            ${b.category ?? null}, ${b.source_url ?? null}, ${b.notes ?? null}, ${b.pinned ?? 1}, ${now}, ${now})`;
+            ${b.category ?? null}, ${b.source_url ?? null}, ${b.notes ?? null}, ${b.pinned ?? 1}, ${b.is_base ?? 0}, ${now}, ${now})`;
   const [p] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
   return c.json(p);
 });
@@ -29,13 +29,13 @@ app.patch('/api/places/:id', async (c) => {
   const [cur] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
   if (!cur) return c.json({ error: 'not found' }, 404);
   const b = pick<Place>(await c.req.json().catch(() => ({})), [
-    'name', 'address', 'lat', 'lng', 'category', 'source_url', 'summary', 'notes', 'pinned',
+    'name', 'address', 'lat', 'lng', 'category', 'source_url', 'summary', 'notes', 'pinned', 'is_base',
   ]);
   const m = { ...cur, ...b };
   const now = nowIso();
   await sql`UPDATE places SET name=${m.name}, address=${m.address}, lat=${m.lat}, lng=${m.lng},
     category=${m.category}, source_url=${m.source_url}, summary=${m.summary}, notes=${m.notes},
-    pinned=${m.pinned}, updated_at=${now} WHERE id=${id}`;
+    pinned=${m.pinned}, is_base=${m.is_base}, updated_at=${now} WHERE id=${id}`;
   const [p] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
   return c.json(p);
 });

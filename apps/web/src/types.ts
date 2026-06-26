@@ -32,6 +32,7 @@ export interface Place {
   summary: string | null;
   notes: string | null;
   pinned: number; // 0/1
+  is_base: number; // 0/1 拠点 (周辺地図の中心)
   created_at: string;
   updated_at: string;
 }
