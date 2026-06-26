@@ -16,9 +16,10 @@
     "dev:web": "npm --workspace apps/web run dev",
     "build:server": "npm --workspace apps/server run build",
     "build:web": "npm --workspace apps/web run build",
+    "build": "npm run build --workspaces --if-present",
     "migrate": "npm --workspace apps/server run migrate",
     "config-set": "tsx scripts/config-set.ts",
-    "test": "npm --workspace apps/server run test"
+    "test": "npm run test --workspaces --if-present"
   },
   "engines": {
     "node": ">=22"

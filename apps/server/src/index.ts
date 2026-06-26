@@ -1,30 +1,12 @@
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config, hydrateSecrets, PROJECT_ROOT } from './config.js';
 import { initSql, sql } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
-
-// 純 DB CRUD (スパイン)
-import map from './routes/map.js';
-import trips from './routes/trips.js';
-import days from './routes/days.js';
-import places from './routes/places.js';
-import itinerary from './routes/itinerary.js';
-// 機能ルータ (各 packages を使う)
-import crawl from './routes/crawl.js';
-import links from './routes/links.js';
-import search from './routes/search.js';
-import images from './routes/images.js';
-import routing from './routes/routing.js';
-import pdf from './routes/pdf.js';
-import recommend from './routes/recommend.js';
-import placeMedia from './routes/place-media.js';
-import baseSummary from './routes/base-summary.js';
+import { buildApiApp } from './app.js';
 import { startBaseSummaryQueue } from './base-summary/queue.js';
 
 async function main() {
@@ -34,16 +16,9 @@ async function main() {
   mkdirSync(config.uploadsDir, { recursive: true });
   mkdirSync(config.exportsDir, { recursive: true });
 
-  const app = new Hono();
-  app.use('/api/*', cors());
+  const app = buildApiApp();
   // アップロード/合成画像の静的配信 (cwd=apps/server で uploads/ を指す)
   app.use('/uploads/*', serveStatic({ root: './', }));
-
-  app.get('/healthz', (c) => c.json({ ok: true }));
-
-  for (const r of [map, trips, days, places, itinerary, crawl, links, search, images, routing, pdf, recommend, placeMedia, baseSummary]) {
-    app.route('/', r);
-  }
 
   // 本番 (単一オリジン): apps/web/dist を配信。dev は vite:5179 を使うのでこちらは未ビルドでも可。
   // 実ファイルがあれば serveStatic が返し、無ければ SPA フォールバックで index.html を返す
