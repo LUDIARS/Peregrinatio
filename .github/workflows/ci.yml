@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# main 直 push は禁止 (PR 経由)。CI は全 workspace の build + test を回す。
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # @ludiars/encrypted-config を GitHub Packages から取得するため
+    env:
+      # @ludiars スコープは .npmrc で npm.pkg.github.com を見る。org パッケージの read は
+      # ワークフローの GITHUB_TOKEN で足りる。
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # テストは Puppeteer を起動しない。Chromium DL を省いて CI を軽く・安定にする。
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # node:sqlite (DatabaseSync) を実験フラグ無しで使える 24 系に合わせる。
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build (all workspaces)
+        run: npm run build --workspaces --if-present
+
+      - name: Test (all workspaces)
+        run: npm run test --workspaces --if-present

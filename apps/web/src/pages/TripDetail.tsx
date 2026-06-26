@@ -12,6 +12,7 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
 ];
 import { loadMaps, PIN_PATH } from '../lib/maps.js';
 import { PlaceDetailPane } from './PlaceDetail.js';
+import { LibraryPicker } from './LibraryPicker.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -381,6 +382,14 @@ export function TripDetail() {
             ))}
           </div>
         </div>
+
+        {/* 既存ライブラリ場所の使い回し (他の旅で登録済みの場所をこの旅にも紐付け) */}
+        <LibraryPicker
+          tripId={tripId}
+          existingIds={new Set(places.map((p) => p.id))}
+          onAdded={reload}
+        />
+
         <p className="muted" style={{ marginTop: 6 }}>地図タップで周辺検索。ピンタップで詳細（🏨拠点はズーム）。</p>
       </section>
 
