@@ -66,6 +66,13 @@ html, body {
   width: 100%;
   margin: 0 auto;
 }
+/* 3ペイン (旅ワークスペース) と 旅のしおり (カンバン) は幅 100% で使う。 */
+.app-main:has(.trip-ws),
+.app-main:has(.itinerary-page) {
+  max-width: none;
+  padding-left: 12px;
+  padding-right: 12px;
+}
 
 /* ---- 下部タブナビ ---- */
 .tabbar {
@@ -324,8 +331,9 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   overflow-y: auto; padding: 14px;
 }
 
-/* ---- PC (>=900px): 一覧(左) | 地図(中) | 詳細(右) の3カラム。各ペイン独立スクロール ---- */
-@media (min-width: 900px) {
+/* ---- 広い画面 (>=1200px): 一覧(左) | 地図(中) | 詳細(右) の3カラム。各ペイン独立スクロール。
+       1200px 未満は一覧=ドロワー / 詳細=ポップアップ (モバイル既定スタイル) で表示する。 ---- */
+@media (min-width: 1200px) {
   .ws-topbar, .drawer-toggle { display: none; }
   .ws-backdrop { display: none !important; }
   /* 親を固定高にして各カラムを独立スクロールさせる (min-height:0 が overflow の肝)。 */
@@ -369,3 +377,66 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 /* ---- 場所ステータス バッジ ---- */
 .chip.status-interested { background: #fff3cd; color: #8a6d3b; }
 .chip.status-visited { background: #e2f0e6; color: #2e7d32; }
+
+/* ---- 「ここに行く」 ボタン (詳細ペーン) ---- */
+.goto-btn {
+  width: 100%; margin: 6px 0 4px; min-height: 48px;
+  font-size: 15px; font-weight: 700;
+}
+
+/* ============ 旅のしおり (カンバンボード) ============ */
+.itinerary-page { display: flex; flex-direction: column; gap: 12px; }
+.kanban-head { display: flex; flex-direction: column; gap: 4px; }
+
+.kanban-place-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: #fff0f6; border: 1px solid #f3aac8; color: #a61e63;
+  border-radius: 12px; padding: 10px 14px; font-size: 14px; font-weight: 600;
+}
+.kanban-place-banner span { flex: 1; min-width: 0; }
+
+/* 横スクロールのボード。列は固定幅でカードを縦積み。 */
+.kanban-board {
+  display: flex; gap: 12px; align-items: flex-start;
+  overflow-x: auto; padding-bottom: 12px;
+  scroll-snap-type: x proximity;
+}
+.kanban-col {
+  flex: 0 0 280px; max-width: 280px;
+  background: #f0f0ec; border: 1px solid var(--c-border); border-radius: 14px;
+  padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  scroll-snap-align: start;
+  max-height: calc(100vh - 220px);
+}
+.kanban-col.over { border-color: var(--c-accent); background: #e7f4f5; box-shadow: 0 0 0 2px rgba(14,124,134,0.2); }
+.kanban-col-head { display: flex; flex-direction: column; gap: 2px; }
+.kanban-addcol { flex: 0 0 180px; align-items: stretch; justify-content: flex-start; background: transparent; border-style: dashed; }
+
+.kanban-cards { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 40px; }
+.kanban-empty {
+  border: 2px dashed var(--c-border); border-radius: 10px;
+  padding: 16px 8px; text-align: center; margin: 0;
+}
+
+.kanban-card {
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px;
+  padding: 10px; cursor: grab; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.kanban-card:active { cursor: grabbing; }
+.kanban-card-body { display: flex; gap: 8px; align-items: flex-start; }
+.kanban-card-thumb {
+  width: 48px; height: 48px; object-fit: cover; border-radius: 8px;
+  border: 1px solid var(--c-border); flex: 0 0 auto;
+}
+.kanban-card-name { display: block; word-break: break-word; line-height: 1.3; }
+.kanban-time { margin-top: 6px; padding: 6px 8px; font-size: 13px; min-height: 0; }
+
+.kanban-card-ctrl { display: flex; gap: 4px; margin-top: 8px; }
+.kanban-mini {
+  flex: 1; min-height: 32px; padding: 0; font-size: 12px;
+  background: transparent; color: var(--c-accent); border: 1px solid var(--c-border); border-radius: 8px;
+}
+.kanban-mini:disabled { opacity: 0.35; }
+.kanban-mini.danger { color: var(--c-danger); border-color: #f0d0d0; flex: 0 0 38px; }
+
+.sm-link { font-size: 13px; text-decoration: none; align-self: center; }

@@ -6,6 +6,7 @@ import { TripList } from './pages/TripList.js';
 import { TripDetail } from './pages/TripDetail.js';
 import { PlaceDetail } from './pages/PlaceDetail.js';
 import { DayPlanner } from './pages/DayPlanner.js';
+import { Itinerary } from './pages/Itinerary.js';
 import './styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -15,6 +16,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <Route path="/" element={<App />}>
           <Route index element={<TripList />} />
           <Route path="trips/:tripId" element={<TripDetail />} />
+          <Route path="trips/:tripId/itinerary" element={<Itinerary />} />
           <Route path="trips/:tripId/places/:placeId" element={<PlaceDetail />} />
           <Route path="trips/:tripId/days/:dayId" element={<DayPlanner />} />
           <Route path="*" element={<Navigate to="/" replace />} />

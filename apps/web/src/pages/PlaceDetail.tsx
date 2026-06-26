@@ -23,6 +23,7 @@ interface PaneProps {
  * 情報の追加 (URL クロール / 画像解析 / 代表画像取得) は中央のインテリジェント検索で行う。
  */
 export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PaneProps) {
+  const navigate = useNavigate();
   const [place, setPlace] = useState<TripPlace | null>(null);
   const [links, setLinks] = useState<PlaceLink[]>([]);
   const [error, setError] = useState('');
@@ -124,6 +125,12 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
               <p className="muted">情報元はまだありません。</p>
             )}
           </div>
+
+          {/* ここに行く: 旅のしおり (カンバン) を開き、どの日程に入れるか選ぶ。 */}
+          <button type="button" className="goto-btn"
+            onClick={() => navigate(`/trips/${tripId}/itinerary?place=${encodeURIComponent(placeId)}`)}>
+            🗓 ここに行く（日程に追加）
+          </button>
 
           {/* 管理ツールバー (状態 / 拠点 / 外す / 削除) */}
           <div className="place-toolbar">
