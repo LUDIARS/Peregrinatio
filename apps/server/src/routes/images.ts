@@ -87,7 +87,9 @@ app.post('/api/places/:id/images/compose', async (c) => {
   const existing = (await sql`
     SELECT * FROM place_images WHERE place_id=${placeId} AND kind='composite'`) as PlaceImage[];
   for (const e of existing) {
-    await rm(absFromPath(e.path), { force: true }).catch(() => {});
+    // 旧ファイル削除失敗で処理は止めないが、握りつぶさず必ずログする。
+    await rm(absFromPath(e.path), { force: true })
+      .catch((err) => console.warn(`[images] 旧 composite ファイル削除に失敗 (${e.path}):`, err));
   }
   await sql`DELETE FROM place_images WHERE place_id=${placeId} AND kind='composite'`;
 

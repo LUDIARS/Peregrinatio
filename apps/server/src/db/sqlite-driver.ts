@@ -158,7 +158,9 @@ export function createSqliteSql(path: string): SqliteSql {
   };
 
   sql.end = async () => {
-    try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* best-effort */ }
+    // WAL チェックポイントは失敗してもクローズは続けるが、握りつぶさず必ずログする。
+    try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); }
+    catch (e) { console.error('[db] 終了時 WAL チェックポイントに失敗:', e); }
     db.close();
   };
 

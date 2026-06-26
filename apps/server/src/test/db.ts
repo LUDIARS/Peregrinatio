@@ -24,7 +24,9 @@ export async function setupTestDb(): Promise<void> {
 export async function teardownTestDb(): Promise<void> {
   await sql.end();
   if (dir) {
-    try { rmSync(dir, { recursive: true, force: true }); } catch { /* best-effort */ }
+    // 後始末失敗は致命ではないが握りつぶさずログする。
+    try { rmSync(dir, { recursive: true, force: true }); }
+    catch (e) { console.warn(`[test] 一時DBの後始末に失敗 (${dir}):`, e); }
     dir = null;
   }
 }
