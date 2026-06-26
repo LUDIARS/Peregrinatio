@@ -22,6 +22,10 @@ import search from './routes/search.js';
 import images from './routes/images.js';
 import routing from './routes/routing.js';
 import pdf from './routes/pdf.js';
+import recommend from './routes/recommend.js';
+import placeMedia from './routes/place-media.js';
+import baseSummary from './routes/base-summary.js';
+import { startBaseSummaryQueue } from './base-summary/queue.js';
 
 async function main() {
   await hydrateSecrets();
@@ -37,7 +41,7 @@ async function main() {
 
   app.get('/healthz', (c) => c.json({ ok: true }));
 
-  for (const r of [map, trips, days, places, itinerary, crawl, links, search, images, routing, pdf]) {
+  for (const r of [map, trips, days, places, itinerary, crawl, links, search, images, routing, pdf, recommend, placeMedia, baseSummary]) {
     app.route('/', r);
   }
 
@@ -57,6 +61,9 @@ async function main() {
   serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
     console.log(`Peregrinatio server on http://${config.host}:${info.port}`);
   });
+
+  // 拠点サマリーの自動生成バックグラウンドを開始。
+  if (config.baseSummary.enabled) startBaseSummaryQueue();
 
   // 終了シグナルで WAL をチェックポイントして安全に閉じる (取りこぼし防止)。
   const shutdown = () => { void sql.end().finally(() => process.exit(0)); };

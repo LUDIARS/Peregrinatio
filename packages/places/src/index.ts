@@ -11,6 +11,10 @@ export type PlaceSearchResult = {
   lng: number | null;
   place_id: string;
   category?: string | null;
+  /** 公式サイト等の URL (Places websiteUri)。無ければ null。 */
+  websiteUri?: string | null;
+  /** 代表写真のリソース名 (places.photos[0].name)。resolvePhotoUrl に渡す。無ければ null。 */
+  photoName?: string | null;
 };
 
 export interface SearchPlacesOptions {
@@ -29,10 +33,13 @@ interface TextSearchResponse {
     formattedAddress?: string;
     location?: { latitude?: number; longitude?: number };
     primaryType?: string;
+    websiteUri?: string;
+    photos?: Array<{ name?: string }>;
   }>;
 }
 
 const PLACES_TEXT_SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
+const PLACES_BASE_URL = 'https://places.googleapis.com/v1';
 const GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
 
 /**
@@ -67,7 +74,7 @@ export async function searchPlaces(
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': apiKey,
       'X-Goog-FieldMask':
-        'places.id,places.displayName,places.formattedAddress,places.location,places.primaryType',
+        'places.id,places.displayName,places.formattedAddress,places.location,places.primaryType,places.websiteUri,places.photos',
     },
     body: JSON.stringify(body),
   });
@@ -85,7 +92,42 @@ export async function searchPlaces(
     lng: p.location?.longitude ?? null,
     place_id: p.id ?? '',
     category: p.primaryType ?? null,
+    websiteUri: p.websiteUri ?? null,
+    photoName: p.photos?.[0]?.name ?? null,
   }));
+}
+
+// Places Photo media レスポンス (skipHttpRedirect=true 時)。
+interface PhotoMediaResponse {
+  name?: string;
+  photoUri?: string;
+}
+
+/**
+ * Places Photo media を解決し、キー不要で表示できる画像 URL (photoUri) を返す。
+ * photoName は searchPlaces の結果 photoName (例 "places/XXX/photos/YYY")。
+ * skipHttpRedirect=true で JSON ({ photoUri }) を受け取る。失敗 (キー空/HTTP エラー/URL 欠落) は null。
+ * @param photoName Places photo リソース名
+ * @param apiKey Google Maps API キー
+ * @param maxWidthPx 取得画像の最大幅 (既定 800)
+ */
+export async function resolvePhotoUrl(
+  photoName: string,
+  apiKey: string,
+  maxWidthPx = 800,
+): Promise<string | null> {
+  if (!photoName || !apiKey) return null;
+  try {
+    const url =
+      `${PLACES_BASE_URL}/${photoName}/media` +
+      `?maxWidthPx=${maxWidthPx}&skipHttpRedirect=true&key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = (await res.json()) as PhotoMediaResponse;
+    return data.photoUri ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // Geocoding API レスポンスの必要部分。

@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, pdfUrl } from '../api.js';
-import type { PlaceSearchResult, TripDetail as TripDetailData, TripPlace } from '../types.js';
+import { api, assetUrl, pdfUrl } from '../api.js';
+import type { PlaceSearchResult, PlaceStatus, TripDetail as TripDetailData, TripPlace } from '../types.js';
 
 const STATUS_LABEL: Record<string, string> = { interested: '気になる', visited: '訪問済み' };
+type StatusFilter = 'all' | PlaceStatus;
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: 'all', label: 'すべて' },
+  { key: 'interested', label: '気になる' },
+  { key: 'visited', label: '訪問済み' },
+];
 import { loadMaps, PIN_PATH } from '../lib/maps.js';
 import { PlaceDetailPane } from './PlaceDetail.js';
 
@@ -39,6 +45,10 @@ export function TripDetail() {
 
   const [dayDate, setDayDate] = useState('');
   const [dayTitle, setDayTitle] = useState('');
+
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [recommending, setRecommending] = useState(false);
+  const [recommendMsg, setRecommendMsg] = useState('');
 
   const reload = async () => {
     if (!tripId) return;
@@ -183,6 +193,18 @@ export function TripDetail() {
     } catch (e) { setSearchMsg(e instanceof Error ? e.message : '追加に失敗しました'); }
   };
 
+  const collectRecommendations = async () => {
+    if (!tripId) return;
+    setRecommending(true); setRecommendMsg('');
+    try {
+      const { added } = await api.recommendTrip(tripId, {});
+      setRecommendMsg(added.length > 0 ? `おすすめを ${added.length} 件追加しました。` : '新しいおすすめは見つかりませんでした。');
+      await reload();
+    } catch (e) {
+      setRecommendMsg(e instanceof Error ? e.message : 'おすすめの収集に失敗しました（拠点が未設定の可能性があります）');
+    } finally { setRecommending(false); }
+  };
+
   const toggleBase = async (p: TripPlace) => {
     if (!tripId) return;
     try { await api.setTripBase(tripId, p.id, p.is_base === 1 ? 0 : 1); await reload(); }
@@ -214,6 +236,7 @@ export function TripDetail() {
 
   const { trip, days, places } = data;
   const bases = places.filter((p) => p.is_base === 1 && p.lat != null && p.lng != null);
+  const visiblePlaces = statusFilter === 'all' ? places : places.filter((p) => p.status === statusFilter);
 
   return (
     <div className={`trip-ws${selectedId ? ' has-detail' : ''}${drawerOpen ? ' drawer-open' : ''}`}>
@@ -234,23 +257,44 @@ export function TripDetail() {
         <p className="muted">{trip.start_date ?? '日付未定'}{trip.end_date ? ` 〜 ${trip.end_date}` : ''}</p>
 
         <h3>ピン / 場所 ({places.length})</h3>
+        {/* 状態フィルタ (情報過多対策): すべて / 気になる / 訪問済み */}
+        {places.length > 0 && (
+          <div className="base-bar">
+            {STATUS_FILTERS.map((f) => (
+              <button key={f.key} type="button"
+                className={statusFilter === f.key ? 'chip-btn active' : 'chip-btn'}
+                onClick={() => setStatusFilter(f.key)}>{f.label}</button>
+            ))}
+          </div>
+        )}
         {places.length === 0 && <p className="muted">まだ場所がありません。地図右の検索から追加してください。</p>}
+        {places.length > 0 && visiblePlaces.length === 0 && (
+          <p className="muted">この状態の場所はありません。</p>
+        )}
         <div className="stack">
-          {places.map((p: TripPlace) => (
+          {visiblePlaces.map((p: TripPlace) => (
             <div key={p.id}
               className={`place-row${p.is_base === 1 ? ' is-base' : ''}${selectedId === p.id ? ' selected' : ''}`}>
               <button type="button" className="place-row-main" onClick={() => selectPlace(p)}>
-                <div className="spread">
-                  <strong>{p.is_base === 1 ? '🏨 ' : ''}{p.name}</strong>
-                  {p.lat != null && p.lng != null
-                    ? <span className="chip">📍</span>
-                    : <span className="chip" style={{ background: '#f3f3f1', color: 'var(--c-muted)' }}>位置なし</span>}
-                </div>
-                <div className="row" style={{ gap: 6, marginTop: 2 }}>
-                  {p.status !== 'none' && STATUS_LABEL[p.status] && (
-                    <span className={`chip status-${p.status}`}>{STATUS_LABEL[p.status]}</span>
+                <div className="row" style={{ gap: 10, alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+                  {p.image_url && (
+                    <img className="thumb" src={assetUrl(p.image_url)} alt={p.name}
+                      style={{ width: 56, aspectRatio: '1 / 1', flex: '0 0 auto' }} />
                   )}
-                  {p.category && <span className="muted">{p.category}</span>}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="spread">
+                      <strong>{p.is_base === 1 ? '🏨 ' : ''}{p.name}</strong>
+                      {p.lat != null && p.lng != null
+                        ? <span className="chip">📍</span>
+                        : <span className="chip" style={{ background: '#f3f3f1', color: 'var(--c-muted)' }}>位置なし</span>}
+                    </div>
+                    <div className="row" style={{ gap: 6, marginTop: 2 }}>
+                      {p.status !== 'none' && STATUS_LABEL[p.status] && (
+                        <span className={`chip status-${p.status}`}>{STATUS_LABEL[p.status]}</span>
+                      )}
+                      {p.category && <span className="muted">{p.category}</span>}
+                    </div>
+                  </div>
                 </div>
               </button>
               <div className="place-row-actions">
@@ -305,6 +349,16 @@ export function TripDetail() {
         {mapStatus === 'disabled' && <div className="card">地図の API キーが未設定です（地図以外は利用可）。</div>}
         {mapStatus === 'error' && <div className="card error">⚠ {mapError}</div>}
         <div ref={mapRef} className="map-canvas" style={{ display: mapStatus === 'disabled' ? 'none' : 'block' }} />
+
+        <div className="card foundation-form" style={{ marginTop: 10 }}>
+          <div className="row">
+            <button type="button" onClick={() => void collectRecommendations()} disabled={recommending} style={{ flex: 1 }}>
+              {recommending ? '収集中…' : '📍 近くのおすすめを収集'}
+            </button>
+          </div>
+          {recommendMsg && <div className="muted">{recommendMsg}</div>}
+          <p className="muted" style={{ margin: 0 }}>拠点の周辺から候補を探してこの旅に追加します（拠点の設定が必要です）。</p>
+        </div>
 
         <div className="card foundation-form" style={{ marginTop: 10 }}>
           <div className="row">

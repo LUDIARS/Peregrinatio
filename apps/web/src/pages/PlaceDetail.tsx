@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
-import type { ImageAnalysis, PlaceImage, PlaceStatus, TripPlace } from '../types.js';
+import type { ImageAnalysis, PlaceImage, PlaceLink, PlaceStatus, TripPlace } from '../types.js';
 
 const STATUS_OPTIONS: { key: PlaceStatus; label: string }[] = [
   { key: 'interested', label: '気になる' },
@@ -22,6 +22,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const [place, setPlace] = useState<TripPlace | null>(null);
   const [images, setImages] = useState<PlaceImage[]>([]);
   const [analysis, setAnalysis] = useState<ImageAnalysis | null>(null);
+  const [links, setLinks] = useState<PlaceLink[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
 
@@ -29,6 +30,8 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const [address, setAddress] = useState('');
   const [summary, setSummary] = useState('');
   const [crawlUrl, setCrawlUrl] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkTitle, setLinkTitle] = useState('');
 
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -44,11 +47,12 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   };
 
   const loadImages = async () => { setImages(await api.listImages(placeId)); };
+  const loadLinks = async () => { setLinks(await api.listLinks(placeId)); };
 
   useEffect(() => {
     setAnalysis(null);
     (async () => {
-      try { await Promise.all([loadPlace(), loadImages()]); }
+      try { await Promise.all([loadPlace(), loadImages(), loadLinks()]); }
       catch (e) { setError(e instanceof Error ? e.message : '読み込みに失敗しました'); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,6 +77,42 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
       setName(p.name); setAddress(p.address ?? ''); setSummary(p.summary ?? '');
       onChanged?.();
     } catch (e) { setError(e instanceof Error ? e.message : 'クロール/要約に失敗しました'); }
+    finally { setBusy(''); }
+  };
+
+  const addLink = async () => {
+    const url = linkUrl.trim();
+    if (!url) return;
+    setBusy('link'); setError('');
+    try {
+      await api.addLink(placeId, { url, title: linkTitle.trim() || undefined });
+      setLinkUrl(''); setLinkTitle('');
+      await loadLinks();
+    } catch (e) { setError(e instanceof Error ? e.message : '資料の追加に失敗しました'); }
+    finally { setBusy(''); }
+  };
+
+  const removeLink = async (id: string) => {
+    try { await api.deleteLink(id); await loadLinks(); }
+    catch (e) { setError(e instanceof Error ? e.message : '資料の削除に失敗しました'); }
+  };
+
+  const imageFromWeb = async () => {
+    setBusy('image-web'); setError('');
+    try {
+      const p = await api.imageFromWeb(placeId);
+      setPlace((prev) => (prev ? { ...prev, ...p } : null)); onChanged?.();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Web からの画像取得に失敗しました'); }
+    finally { setBusy(''); }
+  };
+
+  const summarizeBase = async () => {
+    setBusy('summarize-base'); setError('');
+    try {
+      const p = await api.summarizeBase(placeId);
+      setPlace((prev) => (prev ? { ...prev, ...p } : null));
+      setSummary(p.summary ?? ''); onChanged?.();
+    } catch (e) { setError(e instanceof Error ? e.message : '拠点サマリーの生成に失敗しました'); }
     finally { setBusy(''); }
   };
 
@@ -207,6 +247,56 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
                 {busy === 'save' ? '保存中…' : '保存'}
               </button>
               <button type="button" className="danger" onClick={() => void remove()}>削除</button>
+            </div>
+          </div>
+
+          {/* ④ 拠点サマリー (is_base のときだけ) */}
+          {place.is_base === 1 && (
+            <div className="card foundation-form">
+              <h3 style={{ marginTop: 0 }}>拠点サマリー</h3>
+              <p className="muted" style={{ marginTop: 0 }}>
+                拠点周辺の情報をまとめたサマリーを生成します（上の「サマリ」欄に反映されます）。
+              </p>
+              {place.summary && <p style={{ whiteSpace: 'pre-wrap' }}>{place.summary}</p>}
+              <button type="button" onClick={() => void summarizeBase()} disabled={busy === 'summarize-base'}>
+                {busy === 'summarize-base' ? '生成中…' : '拠点サマリーを生成'}
+              </button>
+            </div>
+          )}
+
+          {/* ③ 資料 (Web ページ) */}
+          <div className="card foundation-form">
+            <h3 style={{ marginTop: 0 }}>資料（Web ページ）</h3>
+            {links.length === 0 && <p className="muted" style={{ marginTop: 0 }}>まだ資料がありません。</p>}
+            {links.length > 0 && (
+              <div className="stack">
+                {links.map((lk) => (
+                  <div key={lk.id} className="spread" style={{ borderTop: '1px solid var(--c-border)', paddingTop: 8 }}>
+                    <a href={lk.url} target="_blank" rel="noreferrer" style={{ minWidth: 0, wordBreak: 'break-all' }}>
+                      {lk.title || lk.url}
+                    </a>
+                    <button type="button" className="sm danger" onClick={() => void removeLink(lk.id)}>削除</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input type="url" placeholder="https://… (URL)" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} />
+            <input type="text" placeholder="タイトル (任意)" value={linkTitle} onChange={(e) => setLinkTitle(e.target.value)} />
+            <button type="button" onClick={() => void addLink()} disabled={busy === 'link' || !linkUrl.trim()}>
+              {busy === 'link' ? '追加中…' : '資料を追加'}
+            </button>
+          </div>
+
+          {/* ③ 代表画像 (place.image_url + Web から取得) */}
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>代表画像</h3>
+            {place.image_url
+              ? <img className="composite-img" src={assetUrl(place.image_url)} alt={place.name} />
+              : <p className="muted" style={{ marginTop: 0 }}>まだ画像がありません。</p>}
+            <div className="row" style={{ marginTop: 10 }}>
+              <button type="button" onClick={() => void imageFromWeb()} disabled={busy === 'image-web'}>
+                {busy === 'image-web' ? '取得中…' : 'Web から画像を取得'}
+              </button>
             </div>
           </div>
 

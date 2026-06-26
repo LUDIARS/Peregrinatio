@@ -31,18 +31,33 @@ export function DayPlanner() {
   const [busy, setBusy] = useState('');
 
   const [selPlace, setSelPlace] = useState('');
-  const [mode, setMode] = useState<RouteMode>('walking');
+  const [mode, setMode] = useState<RouteMode>('driving');
+  const [autoMsg, setAutoMsg] = useState('');
 
   const placeName = (id: string | null) => (id ? places.find((p) => p.id === id)?.name ?? '(不明)' : '(メモ)');
 
-  const loadAll = async () => {
-    if (!tripId || !dayId) return;
+  const loadAll = async (): Promise<number> => {
+    if (!tripId || !dayId) return 0;
     const detail = await api.getTrip(tripId);
     setDay(detail.days.find((d) => d.id === dayId) ?? null);
     setPlaces(detail.places);
     const [it, lg] = await Promise.all([api.listItems(dayId), api.getRoute(dayId)]);
     setItems([...it].sort((a, b) => a.order_index - b.order_index));
     setLegs(lg);
+    return it.length;
+  };
+
+  // items 変更後に経路を自動再計算する (拠点→各移動先を順に通る経路)。
+  // 2 件未満では計算対象が無いので skip。
+  const recompute = async (count: number, mode_: RouteMode = mode) => {
+    if (!dayId || count < 2) return;
+    setBusy('route'); setAutoMsg('');
+    try {
+      setLegs(await api.computeRoute(dayId, mode_));
+      setAutoMsg('経路を自動更新しました。');
+    } catch (e) {
+      setAutoMsg(e instanceof Error ? `経路の自動更新に失敗: ${e.message}` : '経路の自動更新に失敗しました');
+    } finally { setBusy(''); }
   };
 
   useEffect(() => {
@@ -60,14 +75,15 @@ export function DayPlanner() {
     try {
       await api.createItem(dayId, { place_id: selPlace, kind: 'visit' });
       setSelPlace('');
-      await loadAll();
+      const n = await loadAll();
+      await recompute(n);
     } catch (e) {
       setError(e instanceof Error ? e.message : '追加に失敗しました');
     } finally { setBusy(''); }
   };
 
   const removeItem = async (id: string) => {
-    try { await api.deleteItem(id); await loadAll(); }
+    try { await api.deleteItem(id); const n = await loadAll(); await recompute(n); }
     catch (e) { setError(e instanceof Error ? e.message : '削除に失敗しました'); }
   };
 
@@ -80,18 +96,27 @@ export function DayPlanner() {
     try {
       await api.patchItem(a.id, { order_index: b.order_index });
       await api.patchItem(b.id, { order_index: a.order_index });
-      await loadAll();
+      const n = await loadAll();
+      await recompute(n);
     } catch (e) {
       setError(e instanceof Error ? e.message : '並べ替えに失敗しました');
     } finally { setBusy(''); }
   };
 
+  // 移動手段を切り替えたら即座に経路を再計算 (自動)。
+  const changeMode = async (m: RouteMode) => {
+    setMode(m);
+    await recompute(items.length, m);
+  };
+
+  // 手動「経路を再計算」ボタン。
   const computeRoute = async () => {
     if (!dayId) return;
     setBusy('route');
     setError('');
     try {
       setLegs(await api.computeRoute(dayId, mode));
+      setAutoMsg('');
     } catch (e) {
       setError(e instanceof Error ? e.message : '経路探索に失敗しました');
     } finally { setBusy(''); }
@@ -138,18 +163,24 @@ export function DayPlanner() {
         </button>
       </div>
 
-      {/* 経路探索 */}
+      {/* 経路 (予定の変更で自動再計算) */}
       <div className="card foundation-form">
-        <h3 style={{ marginTop: 0 }}>経路探索</h3>
+        <h3 style={{ marginTop: 0 }}>経路</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          予定の追加・削除・並べ替えで自動再計算されます（拠点 → 各移動先を順に通る経路）。
+        </p>
         <div className="row">
-          <select value={mode} onChange={(e) => setMode(e.target.value as RouteMode)} style={{ flex: 1 }}>
+          <label htmlFor="route-mode" style={{ alignSelf: 'center', marginBottom: 0 }}>移動手段</label>
+          <select id="route-mode" value={mode}
+            onChange={(e) => void changeMode(e.target.value as RouteMode)} style={{ flex: 1 }}>
             {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
-          <button type="button" onClick={() => void computeRoute()} disabled={busy === 'route' || items.length < 2}>
-            {busy === 'route' ? '探索中…' : '経路探索'}
+          <button type="button" className="ghost" onClick={() => void computeRoute()} disabled={busy === 'route' || items.length < 2}>
+            {busy === 'route' ? '計算中…' : '経路を再計算'}
           </button>
         </div>
         {items.length < 2 && <p className="muted">2 件以上の予定があると経路を計算できます。</p>}
+        {autoMsg && <p className="muted">{autoMsg}</p>}
 
         {legs.length > 0 && (
           <div style={{ marginTop: 8 }}>

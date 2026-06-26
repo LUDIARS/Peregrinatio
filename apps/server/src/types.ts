@@ -114,4 +114,6 @@ export interface PlaceSearchResult {
   lng: number | null;
   place_id: string;
   category?: string | null;
+  websiteUri?: string | null;
+  photoName?: string | null;
 }

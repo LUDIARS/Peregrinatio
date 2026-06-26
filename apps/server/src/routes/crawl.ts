@@ -10,6 +10,7 @@ import { newId, nowIso } from '../lib/ids.js';
 import { geocodeCached, GeocodeNotConfiguredError } from '../lib/geocode.js';
 import { config, PROJECT_ROOT } from '../config.js';
 import { PoliteFetcher, htmlToText, extractPlaceInfo } from '@peregrinatio/crawl';
+import { searchPlaces, resolvePhotoUrl } from '@peregrinatio/places';
 import { analyzeImage, extractJsonBlock } from '@peregrinatio/llm';
 import type { Place, PlaceImage, ImageAnalysis } from '../types.js';
 
@@ -18,6 +19,62 @@ const app = new Hono();
 /** place_images.path (URL 文字列 /uploads/...) → 実ファイル絶対パス。Agent B と統一規約。 */
 function imageAbsPath(path: string): string {
   return resolve(PROJECT_ROOT, 'apps/server', path.replace(/^\//, ''));
+}
+
+/**
+ * 場所に名前/位置が入った後、Places で公式サイト・写真を引いて place を補完する (ベストエフォート)。
+ *  - websiteUri があれば place_links(source='crawl') に未登録なら追加し、source_url 空なら設定。
+ *  - summary 空なら websiteUri を取得→extractPlaceInfo で要約して設定。
+ *  - image_url 空なら Places photo から設定。
+ * API キー未設定なら何もしない。例外は呼び出し側で握り潰す前提 (analyze 本体を壊さない)。
+ */
+async function enrichPlaceFromWeb(placeId: string): Promise<void> {
+  if (!config.googleMaps.apiKey) return;
+  const [place] = (await sql`SELECT * FROM places WHERE id=${placeId}`) as Place[];
+  if (!place || !place.name) return;
+
+  const results = await searchPlaces(
+    { q: place.name, lat: place.lat ?? undefined, lng: place.lng ?? undefined },
+    config.googleMaps.apiKey,
+  );
+  const top = results[0];
+  if (!top) return;
+
+  const websiteUri = top.websiteUri ?? null;
+  if (websiteUri) {
+    const [exist] = (await sql`
+      SELECT id FROM place_links WHERE place_id=${placeId} AND url=${websiteUri} LIMIT 1`) as { id: string }[];
+    if (!exist) {
+      await sql`INSERT INTO place_links (id, place_id, url, title, source, created_at)
+        VALUES (${newId()}, ${placeId}, ${websiteUri}, ${place.name}, ${'crawl'}, ${nowIso()})`;
+    }
+    if (!place.source_url) {
+      await sql`UPDATE places SET source_url=${websiteUri}, updated_at=${nowIso()} WHERE id=${placeId}`;
+    }
+  }
+
+  if (!place.summary && websiteUri) {
+    const fetcher = new PoliteFetcher({
+      userAgent: config.crawl.userAgent,
+      fetchTimeoutMs: config.crawl.fetchTimeoutMs,
+      minIntervalMs: config.crawl.minIntervalMs,
+      respectRobots: config.crawl.respectRobots,
+    });
+    const res = await fetcher.fetch(websiteUri);
+    if (res.ok) {
+      const info = await extractPlaceInfo(htmlToText(res.html), place.name, config.llm.summaryModel);
+      if (info.summary) {
+        await sql`UPDATE places SET summary=${info.summary}, updated_at=${nowIso()} WHERE id=${placeId}`;
+      }
+    }
+  }
+
+  if (!place.image_url && top.photoName) {
+    const img = await resolvePhotoUrl(top.photoName, config.googleMaps.apiKey);
+    if (img) {
+      await sql`UPDATE places SET image_url=${img}, updated_at=${nowIso()} WHERE id=${placeId}`;
+    }
+  }
 }
 
 // ── 施設サマリー: クロール → 要約 ────────────────────────────────────────
@@ -65,6 +122,13 @@ app.post('/api/places/:id/crawl', async (c) => {
       if (err instanceof GeocodeNotConfiguredError) geocodeWarning = err.message;
       else throw err;
     }
+  }
+
+  // 公式サイト等が新たに分かれば place_links に追記 (ベストエフォート。本体は壊さない)。
+  try {
+    await enrichPlaceFromWeb(id);
+  } catch {
+    // ignore: クロール結果は返す
   }
 
   const [updated] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
@@ -128,6 +192,14 @@ app.post('/api/images/:id/analyze', async (c) => {
       const newAddress = place.address ?? extractedAddress;
       await sql`UPDATE places SET address=${newAddress}, lat=${extractedLat}, lng=${extractedLng},
         updated_at=${nowIso()} WHERE id=${image.place_id}`;
+
+      // 名前/位置が判明したので Web から公式サイト・要約・画像を best-effort で補完。
+      // 例外は握り潰し、解析結果 (image_analyses) は必ず返す。
+      try {
+        await enrichPlaceFromWeb(image.place_id);
+      } catch {
+        // ignore: analyze 本体は壊さない
+      }
     }
   }
 

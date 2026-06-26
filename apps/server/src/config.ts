@@ -37,6 +37,18 @@ export const config = {
   googleMaps: {
     apiKey: '',
   },
+  // 近くのおすすめ自動収集 (Places ベース) の既定検索カテゴリと範囲。
+  recommend: {
+    radiusM: 8_000,
+    perQuery: 6,
+    queries: ['観光スポット', 'レストラン', 'カフェ', '名所', 'アクティビティ 体験', 'お土産'],
+  },
+  // 拠点サマリー自動生成のバックグラウンド設定。
+  baseSummary: {
+    enabled: true,
+    intervalMs: 120_000,   // 走査間隔
+    minPlaces: 4,          // 拠点を含む旅にこれ以上の場所が集まったら自動要約
+  },
   // アップロード/合成画像・生成 PDF の保存先 (gitignore 済)。
   uploadsDir: resolve(PROJECT_ROOT, 'apps/server/uploads'),
   exportsDir: resolve(PROJECT_ROOT, 'apps/server/exports'),

@@ -164,4 +164,16 @@ export const api = {
   computeRoute: (dayId: string, mode: RouteMode) =>
     req<RouteLeg[]>(`/api/days/${dayId}/route`, { method: 'POST', body: json({ mode }) }),
   getRoute: (dayId: string) => req<RouteLeg[]>(`/api/days/${dayId}/route`),
+
+  // --- 近くのおすすめ収集 (拠点周辺の候補を旅に一括追加) ---
+  recommendTrip: (tripId: string, body: { radius?: number } = {}) =>
+    req<{ added: TripPlace[] }>(`/api/trips/${tripId}/recommend`, { method: 'POST', body: json(body) }),
+
+  // --- Web から代表画像を取得 (place.image_url を埋める) ---
+  imageFromWeb: (placeId: string) =>
+    req<Place>(`/api/places/${placeId}/image-from-web`, { method: 'POST', body: json({}) }),
+
+  // --- 拠点サマリー生成 (place.summary を埋める) ---
+  summarizeBase: (placeId: string) =>
+    req<Place>(`/api/places/${placeId}/summarize-base`, { method: 'POST', body: json({}) }),
 };
