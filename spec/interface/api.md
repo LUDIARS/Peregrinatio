@@ -47,7 +47,7 @@
 ## itinerary
 - `GET /api/days/:id/items` → `ItineraryItem[]`
 - `POST /api/days/:id/items` `{ place_id?, planned_time?, kind, note? }` → `ItineraryItem`
-- `PATCH /api/items/:id` `{ ...部分, order_index? }` → `ItineraryItem`
+- `PATCH /api/items/:id` `{ ...部分, day_id?, order_index? }` → `ItineraryItem` (day_id 指定で別日へ移動)
 - `DELETE /api/items/:id` → `{ ok: true }`
 
 ## routing

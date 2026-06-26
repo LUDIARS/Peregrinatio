@@ -156,7 +156,7 @@ export const api = {
   ) => req<ItineraryItem>(`/api/days/${dayId}/items`, { method: 'POST', body: json(input) }),
   patchItem: (
     id: string,
-    input: Partial<Pick<ItineraryItem, 'place_id' | 'planned_time' | 'kind' | 'note' | 'order_index'>>,
+    input: Partial<Pick<ItineraryItem, 'day_id' | 'place_id' | 'planned_time' | 'kind' | 'note' | 'order_index'>>,
   ) => req<ItineraryItem>(`/api/items/${id}`, { method: 'PATCH', body: json(input) }),
   deleteItem: (id: string) => req<{ ok: true }>(`/api/items/${id}`, { method: 'DELETE' }),
 

@@ -129,16 +129,19 @@ export function TripDetail() {
 
     for (const p of pinned) {
       const isBase = p.is_base === 1;
+      const isSelected = p.id === selectedId; // 選択中はピンの色を変える (強調)
       const pos = { lat: p.lat as number, lng: p.lng as number };
       const marker = new g.maps.Marker({
         position: pos, map: mapObj.current, title: p.name,
-        zIndex: isBase ? 1000 : 1,
+        zIndex: isSelected ? 2000 : isBase ? 1000 : 1,
         label: isBase ? { text: '🏨', fontSize: '14px' } : undefined,
         icon: {
           path: PIN_PATH,
-          fillColor: isBase ? '#e8590c' : '#0e7c86',
-          fillOpacity: 0.95, strokeColor: '#fff', strokeWeight: isBase ? 2 : 1.5,
-          scale: isBase ? 1.7 : 1,
+          // 選択中=マゼンタ / 拠点=オレンジ / 通常=ティール
+          fillColor: isSelected ? '#d6336c' : isBase ? '#e8590c' : '#0e7c86',
+          fillOpacity: 0.95, strokeColor: '#fff',
+          strokeWeight: isSelected ? 2.5 : isBase ? 2 : 1.5,
+          scale: isSelected ? 1.5 : isBase ? 1.7 : 1,
           labelOrigin: new g.maps.Point(0, -26),
           anchor: new g.maps.Point(0, 0),
         },
@@ -160,7 +163,7 @@ export function TripDetail() {
       } else { fitAll(); }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, mapStatus]);
+  }, [data, mapStatus, selectedId]);
 
   const collectRecommendations = async () => {
     if (!tripId) return;
@@ -197,6 +200,7 @@ export function TripDetail() {
       <div className="ws-topbar">
         <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((o) => !o)} aria-label="場所一覧">☰ 一覧</button>
         <span className="ws-trip-title">{trip.title}</span>
+        <Link to={`/trips/${trip.id}/itinerary`} className="icon-btn" aria-label="旅のしおり">🗓</Link>
         <a href={pdfUrl(trip.id)} target="_blank" rel="noreferrer" className="icon-btn" aria-label="PDF">📄</a>
       </div>
 
@@ -255,6 +259,10 @@ export function TripDetail() {
         </div>
 
         <h3>日程 ({days.length} 日)</h3>
+        <Link to={`/trips/${trip.id}/itinerary`} className="card card-link" style={{ display: 'block' }}>
+          <strong>🗓 旅のしおり (カンバン) を開く</strong>
+          <div className="muted">日ごとの予定をドラッグで自由に組み替えられます。</div>
+        </Link>
         <div className="stack">
           {days.map((d) => (
             <Link key={d.id} to={`/trips/${trip.id}/days/${d.id}`} className="card card-link">

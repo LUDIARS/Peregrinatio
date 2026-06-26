@@ -28,11 +28,12 @@ app.patch('/api/items/:id', async (c) => {
   const id = c.req.param('id');
   const [cur] = (await sql`SELECT * FROM itinerary_items WHERE id=${id}`) as ItineraryItem[];
   if (!cur) return c.json({ error: 'not found' }, 404);
+  // day_id も許可 (旅のしおりカンバンで日をまたいでカードを移動するため)。
   const b = pick<ItineraryItem>(await c.req.json().catch(() => ({})), [
-    'place_id', 'order_index', 'planned_time', 'kind', 'note',
+    'day_id', 'place_id', 'order_index', 'planned_time', 'kind', 'note',
   ]);
   const m = { ...cur, ...b };
-  await sql`UPDATE itinerary_items SET place_id=${m.place_id}, order_index=${m.order_index},
+  await sql`UPDATE itinerary_items SET day_id=${m.day_id}, place_id=${m.place_id}, order_index=${m.order_index},
     planned_time=${m.planned_time}, kind=${m.kind}, note=${m.note} WHERE id=${id}`;
   const [it] = (await sql`SELECT * FROM itinerary_items WHERE id=${id}`) as ItineraryItem[];
   return c.json(it);
