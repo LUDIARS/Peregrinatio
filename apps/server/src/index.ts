@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config, hydrateSecrets, PROJECT_ROOT } from './config.js';
-import { initSql } from './db/index.js';
+import { initSql, sql } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
 
 // 純 DB CRUD (スパイン)
@@ -56,6 +56,11 @@ async function main() {
   serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
     console.log(`Peregrinatio server on http://${config.host}:${info.port}`);
   });
+
+  // 終了シグナルで WAL をチェックポイントして安全に閉じる (取りこぼし防止)。
+  const shutdown = () => { void sql.end().finally(() => process.exit(0)); };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 main().catch((err) => {

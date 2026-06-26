@@ -17,6 +17,7 @@ export function TripList() {
   const [error, setError] = useState('');
 
   const [showForm, setShowForm] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
   const [title, setTitle] = useState('');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
@@ -30,14 +31,17 @@ export function TripList() {
   };
   useEffect(() => { void load(); }, []);
 
-  const { planned, past } = useMemo(() => {
-    const planned: Trip[] = [];
-    const past: Trip[] = [];
-    for (const t of trips) (isPast(t) ? past : planned).push(t);
-    // 計画は開始日が近い順、過去は新しい順
+  const { planned, past, archived } = useMemo(() => {
+    const planned: Trip[] = [], past: Trip[] = [], archived: Trip[] = [];
+    for (const t of trips) {
+      if (t.archived === 1) archived.push(t);
+      else if (isPast(t)) past.push(t);
+      else planned.push(t);
+    }
     planned.sort((a, b) => (a.start_date ?? '9999').localeCompare(b.start_date ?? '9999'));
     past.sort((a, b) => (b.end_date ?? b.start_date ?? '').localeCompare(a.end_date ?? a.start_date ?? ''));
-    return { planned, past };
+    archived.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    return { planned, past, archived };
   }, [trips]);
 
   const create = async (e: React.FormEvent) => {
@@ -46,10 +50,8 @@ export function TripList() {
     setSaving(true); setError('');
     try {
       await api.createTrip({
-        title: title.trim(),
-        start_date: start || undefined,
-        end_date: end || undefined,
-        notes: notes.trim() || undefined,
+        title: title.trim(), start_date: start || undefined,
+        end_date: end || undefined, notes: notes.trim() || undefined,
       });
       setTitle(''); setStart(''); setEnd(''); setNotes(''); setShowForm(false);
       await load();
@@ -57,21 +59,41 @@ export function TripList() {
     finally { setSaving(false); }
   };
 
-  const TripCard = (t: Trip) => (
-    <Link key={t.id} to={`/trips/${t.id}`} className="card card-link">
-      <div className="spread"><strong>{t.title}</strong></div>
-      <div className="muted">{t.start_date ?? '日付未定'}{t.end_date ? ` 〜 ${t.end_date}` : ''}</div>
-      {t.notes && <div className="muted" style={{ marginTop: 4 }}>{t.notes}</div>}
-    </Link>
+  const setArchived = async (t: Trip, v: 0 | 1) => {
+    try { await api.patchTrip(t.id, { archived: v }); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : '更新に失敗しました'); }
+  };
+  const hardDelete = async (t: Trip) => {
+    if (!window.confirm(`「${t.title}」を完全に削除しますか? (元に戻せません)`)) return;
+    try { await api.deleteTrip(t.id); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : '削除に失敗しました'); }
+  };
+
+  const TripCard = (t: Trip, archivedView = false) => (
+    <div key={t.id} className="place-row">
+      <Link to={`/trips/${t.id}`} className="place-row-main">
+        <div className="spread"><strong>{t.title}</strong></div>
+        <div className="muted">{t.start_date ?? '日付未定'}{t.end_date ? ` 〜 ${t.end_date}` : ''}</div>
+        {t.notes && <div className="muted" style={{ marginTop: 4 }}>{t.notes}</div>}
+      </Link>
+      <div className="place-row-actions">
+        {archivedView ? (
+          <>
+            <button type="button" className="sm ghost" onClick={() => void setArchived(t, 0)}>復元</button>
+            <button type="button" className="sm danger" onClick={() => void hardDelete(t)}>削除</button>
+          </>
+        ) : (
+          <button type="button" className="sm ghost" onClick={() => void setArchived(t, 1)}>🗑 アーカイブ</button>
+        )}
+      </div>
+    </div>
   );
 
   return (
     <div>
       <div className="spread">
         <h2 style={{ margin: 0 }}>旅一覧</h2>
-        <button type="button" onClick={() => setShowForm((s) => !s)}>
-          {showForm ? '✕ 閉じる' : '＋ 新規作成'}
-        </button>
+        <button type="button" onClick={() => setShowForm((s) => !s)}>{showForm ? '✕ 閉じる' : '＋ 新規作成'}</button>
       </div>
 
       {showForm && (
@@ -109,12 +131,24 @@ export function TripList() {
           <h3>旅の計画 ({planned.length})</h3>
           {planned.length === 0
             ? <p className="muted">計画中の旅はありません。「＋ 新規作成」から追加してください。</p>
-            : <div className="stack">{planned.map(TripCard)}</div>}
+            : <div className="stack">{planned.map((t) => TripCard(t))}</div>}
 
           <h3 style={{ marginTop: 20 }}>過去の旅 ({past.length})</h3>
           {past.length === 0
             ? <p className="muted">過去の旅はまだありません。</p>
-            : <div className="stack">{past.map(TripCard)}</div>}
+            : <div className="stack">{past.map((t) => TripCard(t))}</div>}
+
+          <div className="spread" style={{ marginTop: 24 }}>
+            <h3 style={{ margin: 0 }}>🗑 アーカイブ ({archived.length})</h3>
+            <button type="button" className="sm ghost" onClick={() => setShowArchive((s) => !s)}>
+              {showArchive ? '隠す' : '開く'}
+            </button>
+          </div>
+          {showArchive && (
+            archived.length === 0
+              ? <p className="muted">アーカイブは空です。</p>
+              : <div className="stack">{archived.map((t) => TripCard(t, true))}</div>
+          )}
         </>
       )}
     </div>

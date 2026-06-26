@@ -36,12 +36,12 @@ app.patch('/api/trips/:id', async (c) => {
   const [cur] = (await sql`SELECT * FROM trips WHERE id=${id}`) as Trip[];
   if (!cur) return c.json({ error: 'not found' }, 404);
   const b = pick<Trip>(await c.req.json().catch(() => ({})), [
-    'title', 'start_date', 'end_date', 'notes', 'cover_image_path',
+    'title', 'start_date', 'end_date', 'notes', 'cover_image_path', 'archived',
   ]);
   const m = { ...cur, ...b };
   const now = nowIso();
   await sql`UPDATE trips SET title=${m.title}, start_date=${m.start_date}, end_date=${m.end_date},
-    notes=${m.notes}, cover_image_path=${m.cover_image_path}, updated_at=${now} WHERE id=${id}`;
+    notes=${m.notes}, cover_image_path=${m.cover_image_path}, archived=${m.archived}, updated_at=${now} WHERE id=${id}`;
   const [t] = (await sql`SELECT * FROM trips WHERE id=${id}`) as Trip[];
   return c.json(t);
 });

@@ -71,7 +71,7 @@ export const api = {
   getTrip: (id: string) => req<TripDetail>(`/api/trips/${id}`),
   patchTrip: (
     id: string,
-    input: Partial<Pick<Trip, 'title' | 'start_date' | 'end_date' | 'notes' | 'cover_image_path'>>,
+    input: Partial<Pick<Trip, 'title' | 'start_date' | 'end_date' | 'notes' | 'cover_image_path' | 'archived'>>,
   ) => req<Trip>(`/api/trips/${id}`, { method: 'PATCH', body: json(input) }),
   deleteTrip: (id: string) => req<{ ok: true }>(`/api/trips/${id}`, { method: 'DELETE' }),
 

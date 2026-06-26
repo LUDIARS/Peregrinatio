@@ -123,7 +123,9 @@ export type SqliteSql = (<T = unknown[]>(strings: TemplateStringsArray, ...value
 
 export function createSqliteSql(path: string): SqliteSql {
   const db = new DatabaseSync(path);
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+  // synchronous=FULL: WAL でもコミット毎に fsync するため、プロセス強制終了や電源断でも
+  // コミット済みデータは失われない (旅の内容を確実に永続化する)。
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA synchronous = FULL;');
   db.function('uuid_generate_v4', { deterministic: false }, () => randomUUID());
   db.function('gen_random_uuid', { deterministic: false }, () => randomUUID());
 
@@ -156,6 +158,7 @@ export function createSqliteSql(path: string): SqliteSql {
   };
 
   sql.end = async () => {
+    try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* best-effort */ }
     db.close();
   };
 

@@ -7,6 +7,7 @@ export interface Trip {
   end_date: string | null;
   cover_image_path: string | null;
   notes: string | null;
+  archived: number; // 0/1 アーカイブ (ゴミ箱)
   created_at: string;
   updated_at: string;
 }
