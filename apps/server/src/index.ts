@@ -33,8 +33,17 @@ async function main() {
     }
   });
 
-  serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
+  const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
     console.log(`Peregrinatio server on http://${config.host}:${info.port}`);
+  });
+  // 待受エラー (EADDRINUSE 等) は握りつぶさず必ず明示して fail-fast する。
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[fatal] ポート ${config.port} は既に使用中です (EADDRINUSE)。既存のサーバを停止してから再起動してください。`);
+    } else {
+      console.error('[fatal] サーバ待受でエラー:', err);
+    }
+    process.exit(1);
   });
 
   // 拠点サマリーの自動生成バックグラウンドを開始。
@@ -46,7 +55,17 @@ async function main() {
   process.on('SIGTERM', shutdown);
 }
 
+// プロセスレベルでも例外/未処理 rejection を握りつぶさず必ず出力して fail-fast する。
+process.on('uncaughtException', (err) => {
+  console.error('[fatal] uncaughtException:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[fatal] unhandledRejection:', reason);
+  process.exit(1);
+});
+
 main().catch((err) => {
-  console.error(err);
+  console.error('[fatal] 起動に失敗:', err);
   process.exit(1);
 });
