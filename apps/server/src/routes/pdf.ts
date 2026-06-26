@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import puppeteer from 'puppeteer';
 import { sql } from '../db/index.js';
 import { config } from '../config.js';
+import { buildBrochureHtml } from '../pdf/brochure.js';
 import type {
   Trip,
   TripDay,
@@ -13,133 +14,12 @@ import type {
 
 const app = new Hono();
 
-const esc = (s: unknown): string =>
-  String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-
-/** DB の URL パス (/uploads/...) を setContent から確実に読める http URL にする。 */
-const imageUrl = (path: string): string =>
-  `http://${config.host}:${config.port}${path.startsWith('/') ? path : `/${path}`}`;
-
-function fmtPeriod(trip: Trip): string {
-  if (trip.start_date && trip.end_date) return `${trip.start_date} 〜 ${trip.end_date}`;
-  return trip.start_date ?? trip.end_date ?? '';
-}
-
-function fmtDuration(sec: number | null): string {
-  if (sec == null) return '';
-  const m = Math.round(sec / 60);
-  if (m < 60) return `${m}分`;
-  const h = Math.floor(m / 60);
-  return `${h}時間${m % 60}分`;
-}
-
-function fmtDistance(m: number | null): string {
-  if (m == null) return '';
-  return m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`;
-}
-
-function placeBlock(p: Place, composite: PlaceImage | undefined): string {
-  const img = composite
-    ? `<div class="img"><img src="${esc(imageUrl(composite.path))}" alt=""></div>`
-    : '';
-  return `
-    <div class="place">
-      <div class="place-name">${esc(p.name)}</div>
-      ${p.address ? `<div class="place-addr">${esc(p.address)}</div>` : ''}
-      ${p.summary ? `<div class="place-summary">${esc(p.summary)}</div>` : ''}
-      ${img}
-    </div>`;
-}
-
-function legBlock(leg: RouteLeg, placeMap: Map<string, Place>): string {
-  const from = leg.from_place_id ? placeMap.get(leg.from_place_id)?.name ?? '' : '';
-  const to = leg.to_place_id ? placeMap.get(leg.to_place_id)?.name ?? '' : '';
-  const parts = [fmtDuration(leg.duration_sec), fmtDistance(leg.distance_m), leg.fare_text ?? '']
-    .filter(Boolean)
-    .join(' / ');
-  return `<div class="leg">${esc(from)} → ${esc(to)}（${esc(leg.mode)}${parts ? ` ${esc(parts)}` : ''}）</div>`;
-}
-
-function buildHtml(
-  trip: Trip,
-  days: TripDay[],
-  itemsByDay: Map<string, ItineraryItem[]>,
-  legsByDay: Map<string, RouteLeg[]>,
-  placeMap: Map<string, Place>,
-  compositeByPlace: Map<string, PlaceImage>,
-): string {
-  const daySections = days
-    .map((d) => {
-      const items = itemsByDay.get(d.id) ?? [];
-      const itemHtml = items
-        .map((it) => {
-          const time = it.planned_time ? `<span class="time">${esc(it.planned_time)}</span>` : '';
-          const place = it.place_id ? placeMap.get(it.place_id) : undefined;
-          const main = place
-            ? placeBlock(place, compositeByPlace.get(place.id))
-            : `<div class="note">${esc(it.note ?? '')}</div>`;
-          return `<div class="item"><div class="item-head">${time}<span class="kind">${esc(it.kind)}</span></div>${main}${it.place_id && it.note ? `<div class="note">${esc(it.note)}</div>` : ''}</div>`;
-        })
-        .join('');
-      const legs = legsByDay.get(d.id) ?? [];
-      const legHtml = legs.length
-        ? `<div class="legs"><div class="legs-title">移動</div>${legs.map((l) => legBlock(l, placeMap)).join('')}</div>`
-        : '';
-      const heading = [d.date, d.title].filter(Boolean).join(' ');
-      return `
-        <section class="day">
-          <h2>Day ${d.day_index + 1}${heading ? ` — ${esc(heading)}` : ''}</h2>
-          ${d.notes ? `<div class="day-notes">${esc(d.notes)}</div>` : ''}
-          ${itemHtml || '<div class="empty">予定なし</div>'}
-          ${legHtml}
-        </section>`;
-    })
-    .join('');
-
-  return `<!doctype html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; color: #222; margin: 0; }
-  .cover { text-align: center; padding: 80px 24px; page-break-after: always; }
-  .cover h1 { font-size: 32px; margin: 0 0 16px; }
-  .cover .period { font-size: 16px; color: #555; }
-  .cover .notes { margin-top: 24px; font-size: 13px; color: #666; white-space: pre-wrap; }
-  .day { padding: 16px 24px; page-break-inside: avoid; }
-  .day h2 { font-size: 20px; border-bottom: 2px solid #333; padding-bottom: 6px; }
-  .day-notes { font-size: 12px; color: #666; margin-bottom: 8px; white-space: pre-wrap; }
-  .item { margin: 10px 0; padding: 8px 10px; border-left: 3px solid #bbb; page-break-inside: avoid; }
-  .item-head { font-size: 12px; color: #555; margin-bottom: 4px; }
-  .time { font-weight: bold; margin-right: 8px; }
-  .kind { background: #eee; border-radius: 4px; padding: 1px 6px; }
-  .place-name { font-size: 15px; font-weight: bold; }
-  .place-addr { font-size: 12px; color: #666; }
-  .place-summary { font-size: 12px; margin: 4px 0; white-space: pre-wrap; }
-  .note { font-size: 12px; color: #444; white-space: pre-wrap; }
-  .img { margin-top: 6px; }
-  .img img { max-width: 100%; max-height: 360px; object-fit: contain; border: 1px solid #ddd; }
-  .legs { margin-top: 10px; padding: 8px 10px; background: #f7f7f7; border-radius: 6px; }
-  .legs-title { font-size: 12px; font-weight: bold; color: #555; margin-bottom: 4px; }
-  .leg { font-size: 12px; color: #444; }
-  .empty { font-size: 12px; color: #999; }
-</style>
-</head>
-<body>
-  <div class="cover">
-    <h1>${esc(trip.title)}</h1>
-    <div class="period">${esc(fmtPeriod(trip))}</div>
-    ${trip.notes ? `<div class="notes">${esc(trip.notes)}</div>` : ''}
-  </div>
-  ${daySections}
-</body>
-</html>`;
-}
+/** Puppeteer のフッター (中央にページ番号)。日本語フォントは継承させる。 */
+const footerTemplate = `
+  <div style="width:100%; font-size:8px; color:#9aa0a6; padding:0 12mm; display:flex; justify-content:space-between; font-family:sans-serif;">
+    <span>Peregrinatio</span>
+    <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
+  </div>`;
 
 /** GET /api/trips/:id/pdf — しおり PDF を Puppeteer でレンダリングして返す。 */
 app.get('/api/trips/:id/pdf', async (c) => {
@@ -174,7 +54,10 @@ app.get('/api/trips/:id/pdf', async (c) => {
     legsByDay.set(d.id, legs);
   }
 
-  const html = buildHtml(trip, days, itemsByDay, legsByDay, placeMap, compositeByPlace);
+  const html = buildBrochureHtml({
+    trip, days, itemsByDay, legsByDay, placeMap, compositeByPlace,
+    assetBase: `http://${config.host}:${config.port}`,
+  });
 
   const browser = await puppeteer.launch({
     headless: 'new',
@@ -186,7 +69,11 @@ app.get('/api/trips/:id/pdf', async (c) => {
     const pdf = await page.pdf({
       format: 'A4',
       printBackground: true,
-      margin: { top: '12mm', right: '12mm', bottom: '14mm', left: '12mm' },
+      displayHeaderFooter: true,
+      headerTemplate: '<span></span>',
+      footerTemplate,
+      // 表紙のヒーロー写真を全面に出すため上下マージンは小さめ。本文側は CSS の padding で確保。
+      margin: { top: '0mm', right: '0mm', bottom: '12mm', left: '0mm' },
     });
     const ab = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength) as ArrayBuffer;
     c.header('Content-Type', 'application/pdf');
