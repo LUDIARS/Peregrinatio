@@ -21,9 +21,11 @@ export interface TripDay {
   notes: string | null;
 }
 
+export type PlaceStatus = 'interested' | 'visited' | 'none';
+
+/** 場所 = 全旅で共有する恒久ライブラリの 1 件。旅には trip_places で紐づく。 */
 export interface Place {
   id: string;
-  trip_id: string;
   name: string;
   address: string | null;
   lat: number | null;
@@ -32,10 +34,24 @@ export interface Place {
   source_url: string | null;
   summary: string | null;
   notes: string | null;
-  pinned: number; // 0/1
-  is_base: number; // 0/1 拠点 (周辺地図の中心)
+  image_url: string | null; // Web/Places から取得した代表画像
+  status: PlaceStatus;       // 'interested'(気になる) | 'visited'(訪問済み) | 'none'
   created_at: string;
   updated_at: string;
+}
+
+/** 旅に紐づいた場所 (メンバーシップの is_base を付与)。 */
+export interface TripPlace extends Place {
+  is_base: number; // 0/1 この旅での拠点
+}
+
+export interface PlaceLink {
+  id: string;
+  place_id: string;
+  url: string;
+  title: string | null;
+  source: string | null; // 'manual' | 'places' | 'crawl' | 'recommend'
+  created_at: string;
 }
 
 export type PlaceImageKind = 'source' | 'composite';

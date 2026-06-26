@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
-import type { ImageAnalysis, Place, PlaceImage } from '../types.js';
+import type { ImageAnalysis, PlaceImage, PlaceStatus, TripPlace } from '../types.js';
+
+const STATUS_OPTIONS: { key: PlaceStatus; label: string }[] = [
+  { key: 'interested', label: '気になる' },
+  { key: 'visited', label: '訪問済み' },
+  { key: 'none', label: '通常' },
+];
 
 interface PaneProps {
   tripId: string;
@@ -13,7 +19,7 @@ interface PaneProps {
 
 /** 場所詳細ペーン (PC=右カラム / モバイル=ポップアップ / ルート=全画面 で共用)。 */
 export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PaneProps) {
-  const [place, setPlace] = useState<Place | null>(null);
+  const [place, setPlace] = useState<TripPlace | null>(null);
   const [images, setImages] = useState<PlaceImage[]>([]);
   const [analysis, setAnalysis] = useState<ImageAnalysis | null>(null);
   const [error, setError] = useState('');
@@ -54,7 +60,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
       const p = await api.patchPlace(placeId, {
         name: name.trim(), address: address.trim() || null, summary: summary.trim() || null,
       });
-      setPlace(p); onChanged?.();
+      setPlace((prev) => (prev ? { ...prev, ...p } : null)); onChanged?.();
     } catch (e) { setError(e instanceof Error ? e.message : '保存に失敗しました'); }
     finally { setBusy(''); }
   };
@@ -63,7 +69,8 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     setBusy('crawl'); setError('');
     try {
       const p = await api.crawlPlace(placeId, { url: crawlUrl.trim() || undefined });
-      setPlace(p); setName(p.name); setAddress(p.address ?? ''); setSummary(p.summary ?? '');
+      setPlace((prev) => (prev ? { ...prev, ...p } : null));
+      setName(p.name); setAddress(p.address ?? ''); setSummary(p.summary ?? '');
       onChanged?.();
     } catch (e) { setError(e instanceof Error ? e.message : 'クロール/要約に失敗しました'); }
     finally { setBusy(''); }
@@ -130,8 +137,17 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
 
   const toggleBase = async () => {
     if (!place) return;
-    try { const p = await api.patchPlace(placeId, { is_base: place.is_base === 1 ? 0 : 1 }); setPlace(p); onChanged?.(); }
-    catch (e) { setError(e instanceof Error ? e.message : '拠点の更新に失敗しました'); }
+    try {
+      const p = await api.setTripBase(tripId, placeId, place.is_base === 1 ? 0 : 1);
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); onChanged?.();
+    } catch (e) { setError(e instanceof Error ? e.message : '拠点の更新に失敗しました'); }
+  };
+
+  const setStatus = async (status: PlaceStatus) => {
+    try {
+      const p = await api.patchPlace(placeId, { status });
+      setPlace((prev) => (prev ? { ...prev, ...p } : null)); onChanged?.();
+    } catch (e) { setError(e instanceof Error ? e.message : 'ステータス更新に失敗しました'); }
   };
 
   const remove = async () => {
@@ -162,6 +178,14 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
             <button type="button" className="sm ghost" onClick={() => void toggleBase()}>
               {place.is_base === 1 ? '拠点解除' : '拠点にする'}
             </button>
+          </div>
+          <div className="row" style={{ marginBottom: 10, gap: 6, flexWrap: 'wrap' }}>
+            <span className="muted" style={{ alignSelf: 'center' }}>状態:</span>
+            {STATUS_OPTIONS.map((o) => (
+              <button key={o.key} type="button"
+                className={place.status === o.key ? 'chip-btn active' : 'chip-btn'}
+                onClick={() => void setStatus(o.key)}>{o.label}</button>
+            ))}
           </div>
 
           <div className="card foundation-form">

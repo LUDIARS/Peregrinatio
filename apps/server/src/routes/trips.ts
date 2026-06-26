@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { sql } from '../db/index.js';
 import { newId, nowIso } from '../lib/ids.js';
 import { pick } from '../lib/http.js';
-import type { Trip, TripDay, Place } from '../types.js';
+import type { Trip, TripDay, TripPlace } from '../types.js';
 
 const app = new Hono();
 
@@ -27,7 +27,11 @@ app.get('/api/trips/:id', async (c) => {
   const [trip] = (await sql`SELECT * FROM trips WHERE id=${id}`) as Trip[];
   if (!trip) return c.json({ error: 'not found' }, 404);
   const days = (await sql`SELECT * FROM trip_days WHERE trip_id=${id} ORDER BY day_index`) as TripDay[];
-  const places = (await sql`SELECT * FROM places WHERE trip_id=${id} ORDER BY created_at`) as Place[];
+  const places = (await sql`
+    SELECT p.*, tp.is_base FROM places p
+    JOIN trip_places tp ON tp.place_id = p.id
+    WHERE tp.trip_id = ${id}
+    ORDER BY tp.added_at`) as TripPlace[];
   return c.json({ trip, days, places });
 });
 

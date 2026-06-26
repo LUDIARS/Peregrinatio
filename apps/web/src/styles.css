@@ -325,3 +325,7 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
     max-height: calc(100vh - 90px); overflow-y: auto;
   }
 }
+
+/* ---- 場所ステータス バッジ ---- */
+.chip.status-interested { background: #fff3cd; color: #8a6d3b; }
+.chip.status-visited { background: #e2f0e6; color: #2e7d32; }

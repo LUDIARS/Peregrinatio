@@ -2,46 +2,111 @@ import { Hono } from 'hono';
 import { sql } from '../db/index.js';
 import { newId, nowIso } from '../lib/ids.js';
 import { pick } from '../lib/http.js';
-import type { Place } from '../types.js';
+import type { Place, TripPlace } from '../types.js';
 
 const app = new Hono();
 
-app.get('/api/trips/:id/places', async (c) => {
-  const rows = (await sql`SELECT * FROM places WHERE trip_id=${c.req.param('id')} ORDER BY created_at`) as Place[];
+// ---- ライブラリ (全旅共有) ----
+
+/** GET /api/places — 場所ライブラリ。?status= / ?q= で絞り込み。 */
+app.get('/api/places', async (c) => {
+  const status = c.req.query('status');
+  const q = c.req.query('q');
+  let rows: Place[];
+  if (status && q) {
+    rows = (await sql`SELECT * FROM places WHERE status=${status} AND name LIKE ${'%' + q + '%'} ORDER BY updated_at DESC`) as Place[];
+  } else if (status) {
+    rows = (await sql`SELECT * FROM places WHERE status=${status} ORDER BY updated_at DESC`) as Place[];
+  } else if (q) {
+    rows = (await sql`SELECT * FROM places WHERE name LIKE ${'%' + q + '%'} ORDER BY updated_at DESC`) as Place[];
+  } else {
+    rows = (await sql`SELECT * FROM places ORDER BY updated_at DESC`) as Place[];
+  }
   return c.json(rows);
 });
 
-app.post('/api/trips/:id/places', async (c) => {
-  const trip_id = c.req.param('id');
-  const b = (await c.req.json().catch(() => ({}))) as Partial<Place>;
-  if (!b.name) return c.json({ error: 'name required' }, 400);
-  const id = newId();
-  const now = nowIso();
-  await sql`INSERT INTO places (id, trip_id, name, address, lat, lng, category, source_url, notes, pinned, is_base, created_at, updated_at)
-    VALUES (${id}, ${trip_id}, ${b.name}, ${b.address ?? null}, ${b.lat ?? null}, ${b.lng ?? null},
-            ${b.category ?? null}, ${b.source_url ?? null}, ${b.notes ?? null}, ${b.pinned ?? 1}, ${b.is_base ?? 0}, ${now}, ${now})`;
-  const [p] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
-  return c.json(p);
-});
-
+/** PATCH /api/places/:id — 場所そのもの (ライブラリ) の編集。status もここで。 */
 app.patch('/api/places/:id', async (c) => {
   const id = c.req.param('id');
   const [cur] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
   if (!cur) return c.json({ error: 'not found' }, 404);
   const b = pick<Place>(await c.req.json().catch(() => ({})), [
-    'name', 'address', 'lat', 'lng', 'category', 'source_url', 'summary', 'notes', 'pinned', 'is_base',
+    'name', 'address', 'lat', 'lng', 'category', 'source_url', 'summary', 'notes', 'image_url', 'status',
   ]);
   const m = { ...cur, ...b };
   const now = nowIso();
   await sql`UPDATE places SET name=${m.name}, address=${m.address}, lat=${m.lat}, lng=${m.lng},
     category=${m.category}, source_url=${m.source_url}, summary=${m.summary}, notes=${m.notes},
-    pinned=${m.pinned}, is_base=${m.is_base}, updated_at=${now} WHERE id=${id}`;
+    image_url=${m.image_url}, status=${m.status}, updated_at=${now} WHERE id=${id}`;
   const [p] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
   return c.json(p);
 });
 
+/** DELETE /api/places/:id — ライブラリから完全削除 (全旅の紐付け/画像/リンクも cascade)。 */
 app.delete('/api/places/:id', async (c) => {
   await sql`DELETE FROM places WHERE id=${c.req.param('id')}`;
+  return c.json({ ok: true });
+});
+
+// ---- 旅 ↔ 場所 メンバーシップ ----
+
+/** GET /api/trips/:id/places — この旅に紐づく場所 (is_base 付き)。 */
+app.get('/api/trips/:id/places', async (c) => {
+  const rows = (await sql`
+    SELECT p.*, tp.is_base FROM places p
+    JOIN trip_places tp ON tp.place_id = p.id
+    WHERE tp.trip_id = ${c.req.param('id')}
+    ORDER BY tp.added_at`) as TripPlace[];
+  return c.json(rows);
+});
+
+/**
+ * POST /api/trips/:id/places — 場所を旅に追加。
+ * body.place_id があれば既存ライブラリ場所を紐付け、無ければ新規作成して紐付ける。
+ */
+app.post('/api/trips/:id/places', async (c) => {
+  const trip_id = c.req.param('id');
+  const b = (await c.req.json().catch(() => ({}))) as Partial<Place> & { place_id?: string; is_base?: number };
+  const now = nowIso();
+
+  let placeId = b.place_id;
+  if (!placeId) {
+    if (!b.name) return c.json({ error: 'name required' }, 400);
+    placeId = newId();
+    await sql`INSERT INTO places (id, name, address, lat, lng, category, source_url, notes, image_url, status, created_at, updated_at)
+      VALUES (${placeId}, ${b.name}, ${b.address ?? null}, ${b.lat ?? null}, ${b.lng ?? null}, ${b.category ?? null},
+              ${b.source_url ?? null}, ${b.notes ?? null}, ${b.image_url ?? null}, ${b.status ?? 'none'}, ${now}, ${now})`;
+  }
+
+  await sql`INSERT OR IGNORE INTO trip_places (trip_id, place_id, is_base, added_at)
+    VALUES (${trip_id}, ${placeId}, ${b.is_base ?? 0}, ${now})`;
+
+  const [p] = (await sql`
+    SELECT p.*, tp.is_base FROM places p
+    JOIN trip_places tp ON tp.place_id = p.id
+    WHERE p.id = ${placeId} AND tp.trip_id = ${trip_id}`) as TripPlace[];
+  return c.json(p);
+});
+
+/** PATCH /api/trips/:id/places/:placeId — この旅でのメンバーシップ (is_base 切替)。 */
+app.patch('/api/trips/:id/places/:placeId', async (c) => {
+  const trip_id = c.req.param('id');
+  const placeId = c.req.param('placeId');
+  const b = (await c.req.json().catch(() => ({}))) as { is_base?: number };
+  if (typeof b.is_base === 'number') {
+    await sql`UPDATE trip_places SET is_base=${b.is_base} WHERE trip_id=${trip_id} AND place_id=${placeId}`;
+  }
+  const [p] = (await sql`
+    SELECT p.*, tp.is_base FROM places p
+    JOIN trip_places tp ON tp.place_id = p.id
+    WHERE p.id = ${placeId} AND tp.trip_id = ${trip_id}`) as TripPlace[];
+  if (!p) return c.json({ error: 'not found' }, 404);
+  return c.json(p);
+});
+
+/** DELETE /api/trips/:id/places/:placeId — 旅から外す (場所自体はライブラリに残す)。 */
+app.delete('/api/trips/:id/places/:placeId', async (c) => {
+  await sql`DELETE FROM trip_places WHERE trip_id=${c.req.param('id')} AND place_id=${c.req.param('placeId')}`;
   return c.json({ ok: true });
 });
 

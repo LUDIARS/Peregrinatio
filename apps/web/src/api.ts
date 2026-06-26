@@ -8,12 +8,15 @@ import type {
   MapConfig,
   Place,
   PlaceImage,
+  PlaceLink,
   PlaceSearchResult,
+  PlaceStatus,
   RouteLeg,
   RouteMode,
   Trip,
   TripDay,
   TripDetail,
+  TripPlace,
 } from './types.js';
 
 // 既定は同一オリジン (相対)。dev は vite proxy が /api・/uploads を server:8090 へ中継し、
@@ -83,26 +86,45 @@ export const api = {
     req<TripDay>(`/api/days/${id}`, { method: 'PATCH', body: json(input) }),
   deleteDay: (id: string) => req<{ ok: true }>(`/api/days/${id}`, { method: 'DELETE' }),
 
-  // --- places (= ピン) ---
-  listPlaces: (tripId: string) => req<Place[]>(`/api/trips/${tripId}/places`),
-  createPlace: (
+  // --- places (= 場所ライブラリ / 旅メンバーシップ) ---
+  listPlaces: (tripId: string) => req<TripPlace[]>(`/api/trips/${tripId}/places`),
+  /** 場所ライブラリ (全旅共有)。status/q で絞り込み。 */
+  listLibrary: (params: { status?: string; q?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set('status', params.status);
+    if (params.q) qs.set('q', params.q);
+    const s = qs.toString();
+    return req<Place[]>(`/api/places${s ? `?${s}` : ''}`);
+  },
+  /** 旅に場所を追加 (place_id 指定で既存ライブラリ場所を紐付け、無ければ新規作成)。 */
+  addPlaceToTrip: (
     tripId: string,
     input: {
-      name: string;
-      address?: string;
-      lat?: number;
-      lng?: number;
-      category?: string;
-      source_url?: string;
-      notes?: string;
-      is_base?: number;
+      place_id?: string;
+      name?: string; address?: string; lat?: number; lng?: number;
+      category?: string; source_url?: string; notes?: string; image_url?: string;
+      status?: PlaceStatus; is_base?: number;
     },
-  ) => req<Place>(`/api/trips/${tripId}/places`, { method: 'POST', body: json(input) }),
+  ) => req<TripPlace>(`/api/trips/${tripId}/places`, { method: 'POST', body: json(input) }),
+  /** 場所そのもの (ライブラリ) を編集。status もここ。 */
   patchPlace: (
     id: string,
-    input: Partial<Pick<Place, 'name' | 'address' | 'lat' | 'lng' | 'category' | 'source_url' | 'summary' | 'notes' | 'pinned' | 'is_base'>>,
+    input: Partial<Pick<Place, 'name' | 'address' | 'lat' | 'lng' | 'category' | 'source_url' | 'summary' | 'notes' | 'image_url' | 'status'>>,
   ) => req<Place>(`/api/places/${id}`, { method: 'PATCH', body: json(input) }),
+  /** この旅での拠点フラグ切替 (メンバーシップ)。 */
+  setTripBase: (tripId: string, placeId: string, is_base: number) =>
+    req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json({ is_base }) }),
+  /** 旅から外す (場所はライブラリに残る)。 */
+  removeFromTrip: (tripId: string, placeId: string) =>
+    req<{ ok: true }>(`/api/trips/${tripId}/places/${placeId}`, { method: 'DELETE' }),
+  /** ライブラリから完全削除。 */
   deletePlace: (id: string) => req<{ ok: true }>(`/api/places/${id}`, { method: 'DELETE' }),
+
+  // --- place links (資料 Web ページ) ---
+  listLinks: (placeId: string) => req<PlaceLink[]>(`/api/places/${placeId}/links`),
+  addLink: (placeId: string, input: { url: string; title?: string }) =>
+    req<PlaceLink>(`/api/places/${placeId}/links`, { method: 'POST', body: json(input) }),
+  deleteLink: (id: string) => req<{ ok: true }>(`/api/links/${id}`, { method: 'DELETE' }),
   crawlPlace: (id: string, input: { url?: string } = {}) =>
     req<Place>(`/api/places/${id}/crawl`, { method: 'POST', body: json(input) }),
   searchPlaces: (params: { q?: string; lat?: number; lng?: number; radius?: number }) => {

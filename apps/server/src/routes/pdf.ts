@@ -148,13 +148,16 @@ app.get('/api/trips/:id/pdf', async (c) => {
   if (!trip) return c.json({ error: 'trip not found' }, 404);
 
   const days = (await sql`SELECT * FROM trip_days WHERE trip_id=${tripId} ORDER BY day_index`) as TripDay[];
-  const places = (await sql`SELECT * FROM places WHERE trip_id=${tripId}`) as Place[];
+  const places = (await sql`
+    SELECT p.* FROM places p
+    JOIN trip_places tp ON tp.place_id = p.id
+    WHERE tp.trip_id=${tripId}`) as Place[];
   const placeMap = new Map(places.map((p) => [p.id, p]));
 
   const composites = (await sql`
     SELECT pi.* FROM place_images pi
-    JOIN places p ON p.id = pi.place_id
-    WHERE p.trip_id=${tripId} AND pi.kind='composite'
+    JOIN trip_places tp ON tp.place_id = pi.place_id
+    WHERE tp.trip_id=${tripId} AND pi.kind='composite'
     ORDER BY pi.created_at`) as PlaceImage[];
   const compositeByPlace = new Map<string, PlaceImage>();
   for (const ci of composites) if (!compositeByPlace.has(ci.place_id)) compositeByPlace.set(ci.place_id, ci);

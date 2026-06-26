@@ -17,6 +17,7 @@ import places from './routes/places.js';
 import itinerary from './routes/itinerary.js';
 // 機能ルータ (各 packages を使う)
 import crawl from './routes/crawl.js';
+import links from './routes/links.js';
 import search from './routes/search.js';
 import images from './routes/images.js';
 import routing from './routes/routing.js';
@@ -36,7 +37,7 @@ async function main() {
 
   app.get('/healthz', (c) => c.json({ ok: true }));
 
-  for (const r of [map, trips, days, places, itinerary, crawl, search, images, routing, pdf]) {
+  for (const r of [map, trips, days, places, itinerary, crawl, links, search, images, routing, pdf]) {
     app.route('/', r);
   }
 

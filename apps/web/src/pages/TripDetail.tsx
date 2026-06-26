@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, pdfUrl } from '../api.js';
-import type { Place, PlaceSearchResult, TripDetail as TripDetailData } from '../types.js';
+import type { PlaceSearchResult, TripDetail as TripDetailData, TripPlace } from '../types.js';
+
+const STATUS_LABEL: Record<string, string> = { interested: '気になる', visited: '訪問済み' };
 import { loadMaps, PIN_PATH } from '../lib/maps.js';
 import { PlaceDetailPane } from './PlaceDetail.js';
 
@@ -83,7 +85,7 @@ export function TripDetail() {
     }
   }, [selectedId, mapStatus]);
 
-  const focusBase = (p: Place) => {
+  const focusBase = (p: TripPlace) => {
     if (!mapObj.current || p.lat == null || p.lng == null) return;
     setActiveBaseId(p.id);
     mapObj.current.panTo({ lat: p.lat, lng: p.lng });
@@ -102,7 +104,7 @@ export function TripDetail() {
   };
 
   /** 場所を選択 = 詳細を開く + 地図を寄せる。モバイルはドロワーを閉じる。 */
-  const selectPlace = (p: Place) => {
+  const selectPlace = (p: TripPlace) => {
     setSelectedId(p.id);
     setDrawerOpen(false);
     // 場所選択は中心を寄せるだけ (周辺が見える広域ズームは維持。寄り過ぎ防止)。
@@ -172,7 +174,7 @@ export function TripDetail() {
   const addCandidate = async (c: PlaceSearchResult) => {
     if (!tripId) return;
     try {
-      await api.createPlace(tripId, {
+      await api.addPlaceToTrip(tripId, {
         name: c.name, address: c.address ?? undefined,
         lat: c.lat ?? undefined, lng: c.lng ?? undefined, category: c.category ?? undefined,
       });
@@ -181,9 +183,20 @@ export function TripDetail() {
     } catch (e) { setSearchMsg(e instanceof Error ? e.message : '追加に失敗しました'); }
   };
 
-  const toggleBase = async (p: Place) => {
-    try { await api.patchPlace(p.id, { is_base: p.is_base === 1 ? 0 : 1 }); await reload(); }
+  const toggleBase = async (p: TripPlace) => {
+    if (!tripId) return;
+    try { await api.setTripBase(tripId, p.id, p.is_base === 1 ? 0 : 1); await reload(); }
     catch (e) { setError(e instanceof Error ? e.message : '拠点の更新に失敗しました'); }
+  };
+
+  const removeFromTrip = async (p: TripPlace) => {
+    if (!tripId) return;
+    if (!window.confirm(`「${p.name}」をこの旅から外しますか? (場所ライブラリには残ります)`)) return;
+    try {
+      await api.removeFromTrip(tripId, p.id);
+      if (selectedId === p.id) setSelectedId(null);
+      await reload();
+    } catch (e) { setError(e instanceof Error ? e.message : '除外に失敗しました'); }
   };
 
   const addDay = async (e: React.FormEvent) => {
@@ -223,7 +236,7 @@ export function TripDetail() {
         <h3>ピン / 場所 ({places.length})</h3>
         {places.length === 0 && <p className="muted">まだ場所がありません。地図右の検索から追加してください。</p>}
         <div className="stack">
-          {places.map((p: Place) => (
+          {places.map((p: TripPlace) => (
             <div key={p.id}
               className={`place-row${p.is_base === 1 ? ' is-base' : ''}${selectedId === p.id ? ' selected' : ''}`}>
               <button type="button" className="place-row-main" onClick={() => selectPlace(p)}>
@@ -233,7 +246,12 @@ export function TripDetail() {
                     ? <span className="chip">📍</span>
                     : <span className="chip" style={{ background: '#f3f3f1', color: 'var(--c-muted)' }}>位置なし</span>}
                 </div>
-                {p.category && <span className="muted">{p.category}</span>}
+                <div className="row" style={{ gap: 6, marginTop: 2 }}>
+                  {p.status !== 'none' && STATUS_LABEL[p.status] && (
+                    <span className={`chip status-${p.status}`}>{STATUS_LABEL[p.status]}</span>
+                  )}
+                  {p.category && <span className="muted">{p.category}</span>}
+                </div>
               </button>
               <div className="place-row-actions">
                 {p.lat != null && p.lng != null && (
@@ -243,6 +261,7 @@ export function TripDetail() {
                   </button>
                 )}
                 {p.is_base === 1 && <button type="button" className="sm ghost" onClick={() => void toggleBase(p)}>拠点解除</button>}
+                <button type="button" className="sm ghost" onClick={() => void removeFromTrip(p)}>外す</button>
               </div>
             </div>
           ))}
