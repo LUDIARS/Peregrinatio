@@ -184,6 +184,29 @@ export interface ServiceAlert {
   created_at: string;
 }
 
+/** 取り込みジョブ (画像解析/クロールの順次処理キュー)。 */
+export type PlaceJobKind = 'image' | 'crawl';
+export type PlaceJobStatus = 'pending' | 'processing' | 'done' | 'needs_info' | 'failed';
+
+export interface PlaceJob {
+  id: string;
+  trip_id: string;
+  place_id: string;
+  kind: PlaceJobKind;
+  status: PlaceJobStatus;
+  source_url: string | null;
+  is_new_place: number;
+  missing_info: string | null; // 未成立時の不足情報 (ユーザ向け)
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** キュー表示用にジョブへ place 名を添えたもの。 */
+export interface PlaceJobView extends PlaceJob {
+  place_name: string | null;
+}
+
 export interface TripDetail {
   trip: Trip;
   days: TripDay[];

@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, assetUrl, pdfUrl } from '../api.js';
-import type { PlaceStatus, TripDetail as TripDetailData, TripPlace } from '../types.js';
+import type { PlaceJobView, PlaceStatus, TripDetail as TripDetailData, TripPlace } from '../types.js';
 
 const STATUS_LABEL: Record<string, string> = { interested: '気になる', visited: '訪問済み' };
+const JOB_STATUS_LABEL: Record<string, string> = {
+  pending: '待機中', processing: '処理中', needs_info: '情報不足', failed: '失敗', done: '完了',
+};
 type StatusFilter = 'all' | PlaceStatus;
 const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'all', label: 'すべて' },
@@ -77,12 +80,35 @@ export function TripDetail() {
   const [recommendMsg, setRecommendMsg] = useState('');
   const [recommendRadius, setRecommendRadius] = useState(8000);
 
+  // 取り込みキュー (画像解析/クロールの順次処理)。3 秒ごとにポーリングして進捗を表示する。
+  const [jobs, setJobs] = useState<PlaceJobView[]>([]);
+  const prevActiveJobs = useRef(0);
+
   const reload = async () => {
     if (!tripId) return;
     try { setData(await api.getTrip(tripId)); }
     catch (e) { setError(e instanceof Error ? e.message : '読み込みに失敗しました'); }
   };
   useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [tripId]);
+
+  // 取り込みキューのポーリング。ジョブが完了 (active が減った) ら場所リストを再読込して
+  // 成立した場所を一覧に反映する。
+  const loadJobs = async () => {
+    if (!tripId) return;
+    try {
+      const js = await api.listJobs(tripId);
+      setJobs(js);
+      const active = js.filter((j) => j.status === 'pending' || j.status === 'processing').length;
+      if (active < prevActiveJobs.current) void reload();
+      prevActiveJobs.current = active;
+    } catch { /* ポーリングの失敗は無視 (次回再試行) */ }
+  };
+  useEffect(() => {
+    void loadJobs();
+    const t = window.setInterval(() => void loadJobs(), 3000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId]);
 
   // 地図初期化
   useEffect(() => {
@@ -216,6 +242,17 @@ export function TripDetail() {
     catch (e) { setError(e instanceof Error ? e.message : '「また今度」の切替に失敗しました'); await reload(); }
   };
 
+  /** キューのジョブを再実行する (情報不足/失敗から pending へ)。 */
+  const retryJob = async (id: string) => {
+    try { await api.retryJob(id); await loadJobs(); }
+    catch (e) { setError(e instanceof Error ? e.message : '再試行に失敗しました'); }
+  };
+  /** キューのジョブを破棄する (未成立のドラフト場所も掃除される)。 */
+  const dismissJob = async (id: string) => {
+    try { await api.deleteJob(id); await loadJobs(); await reload(); }
+    catch (e) { setError(e instanceof Error ? e.message : '破棄に失敗しました'); }
+  };
+
   if (!tripId) return null;
   if (error && !data) return <div className="card error">⚠ {error}</div>;
   if (!data) return <p className="muted">読み込み中…</p>;
@@ -339,6 +376,50 @@ export function TripDetail() {
           {recommendMsg && <div className="muted">{recommendMsg}</div>}
           <p className="muted" style={{ margin: 0 }}>拠点の周辺から候補を探してこの旅に追加します（拠点の設定が必要です）。</p>
         </div>
+
+        {/* 取り込みキュー (画像解析/クロールの順次処理)。おすすめ収集の直下に置く。 */}
+        {(() => {
+          const queue = jobs.filter((j) => j.status !== 'done');
+          const working = queue.some((j) => j.status === 'pending' || j.status === 'processing');
+          return (
+            <div className="card import-queue">
+              <div className="spread">
+                <strong>📥 取り込みキュー</strong>
+                {working && <span className="muted" style={{ fontSize: 12 }}>処理中…</span>}
+              </div>
+              {queue.length === 0 && (
+                <p className="muted" style={{ margin: '6px 0 0' }}>取り込み中の項目はありません。</p>
+              )}
+              <div className="stack" style={{ marginTop: 8 }}>
+                {queue.map((j) => (
+                  <div key={j.id} className={`queue-row queue-${j.status}`}>
+                    <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                      <span>{j.kind === 'image' ? '🖼' : '🌐'}</span>
+                      <strong style={{ flex: 1, minWidth: 0 }}>{j.place_name || '(無題)'}</strong>
+                      <span className={`chip qstat-${j.status}`}>{JOB_STATUS_LABEL[j.status] ?? j.status}</span>
+                    </div>
+                    {j.status === 'needs_info' && j.missing_info && (
+                      <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>不足: {j.missing_info}</div>
+                    )}
+                    {j.status === 'failed' && j.error && (
+                      <div className="error" style={{ fontSize: 12, marginTop: 4 }}>⚠ {j.error}</div>
+                    )}
+                    {(j.status === 'needs_info' || j.status === 'failed') && (
+                      <div className="place-row-actions" style={{ marginTop: 6 }}>
+                        {j.status === 'needs_info' && (
+                          <button type="button" className="sm ghost"
+                            onClick={() => { setSelectedId(j.place_id); setDrawerOpen(false); }}>開いて補足</button>
+                        )}
+                        <button type="button" className="sm ghost" onClick={() => void retryJob(j.id)}>再試行</button>
+                        <button type="button" className="sm ghost" onClick={() => void dismissJob(j.id)}>破棄</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </aside>
 
       {/* 中央: 地図 + 拠点バー + 検索 */}

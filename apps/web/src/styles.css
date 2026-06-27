@@ -286,6 +286,17 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .postponed-box .place-row { padding: 8px; }
 .postponed-box .place-row.postponed { opacity: 0.85; }
 
+/* ---- 取り込みキュー ---- */
+.import-queue { margin-top: 12px; }
+.queue-row { padding: 8px 10px; border: 1px solid var(--c-border); border-radius: 10px; background: var(--c-surface); }
+.queue-row.queue-processing { border-color: var(--c-accent); }
+.queue-row.queue-needs_info { border-color: #e8b339; background: #fffdf5; }
+.queue-row.queue-failed { border-color: #f0c0c0; background: #fff7f7; }
+.chip.qstat-pending { background: #eef0f1; color: var(--c-muted); }
+.chip.qstat-processing { background: rgba(14,124,134,0.14); color: var(--c-accent-d); }
+.chip.qstat-needs_info { background: #fbe6bf; color: #7a5a00; }
+.chip.qstat-failed { background: #f6d6d6; color: var(--c-danger); }
+
 .icon-btn {
   background: transparent; border: 1px solid var(--c-border); border-radius: 8px;
   min-height: 36px; min-width: 40px; font-size: 16px; cursor: pointer; color: var(--c-text);

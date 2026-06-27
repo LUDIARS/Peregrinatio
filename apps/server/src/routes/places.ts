@@ -56,6 +56,11 @@ app.get('/api/trips/:id/places', async (c) => {
     SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE tp.trip_id = ${c.req.param('id')}
+      AND NOT EXISTS (
+        SELECT 1 FROM place_jobs j
+        WHERE j.place_id = p.id AND j.trip_id = tp.trip_id AND j.is_new_place = 1
+          AND j.status IN ('pending','processing','needs_info','failed')
+      )
     ORDER BY CASE WHEN p.status='interested' THEN 0 ELSE 1 END, tp.added_at DESC`) as TripPlace[];
   return c.json(rows);
 });

@@ -10,6 +10,9 @@ import type {
   OriginKind,
   Place,
   PlaceImage,
+  PlaceJob,
+  PlaceJobKind,
+  PlaceJobView,
   PlaceLink,
   PlaceSearchResult,
   PlaceStatus,
@@ -241,6 +244,19 @@ export const api = {
       `/api/timetables/${timetableId}/fetch`,
       { method: 'POST', body: json(opts) },
     ),
+
+  // --- 取り込みジョブ (画像解析/クロールの順次処理キュー) ---
+  /** ジョブを積む。is_new_place=true は取り込みで新規作成したドラフト place (成立まで一覧に出さない)。 */
+  createJob: (
+    tripId: string,
+    input: { place_id: string; kind: PlaceJobKind; source_url?: string; is_new_place?: boolean },
+  ) => req<PlaceJob>(`/api/trips/${tripId}/jobs`, {
+    method: 'POST',
+    body: json({ ...input, is_new_place: input.is_new_place ? 1 : 0 }),
+  }),
+  listJobs: (tripId: string) => req<PlaceJobView[]>(`/api/trips/${tripId}/jobs`),
+  retryJob: (id: string) => req<PlaceJob>(`/api/jobs/${id}/retry`, { method: 'POST', body: json({}) }),
+  deleteJob: (id: string) => req<{ ok: true }>(`/api/jobs/${id}`, { method: 'DELETE' }),
 
   // --- 運行情報 ---
   listServiceAlerts: (tripId: string) => req<ServiceAlert[]>(`/api/trips/${tripId}/service-alerts`),

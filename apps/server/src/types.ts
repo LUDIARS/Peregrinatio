@@ -174,3 +174,27 @@ export interface ServiceAlert {
   fetched_at: string | null;
   created_at: string;
 }
+
+/** 取り込みジョブの種別と状態。 */
+export type PlaceJobKind = 'image' | 'crawl';
+export type PlaceJobStatus = 'pending' | 'processing' | 'done' | 'needs_info' | 'failed';
+
+/** 取り込みジョブ (画像解析/クロールを順次処理するキューの1件)。 */
+export interface PlaceJob {
+  id: string;
+  trip_id: string;
+  place_id: string;
+  kind: PlaceJobKind;
+  status: PlaceJobStatus;
+  source_url: string | null;
+  is_new_place: number;        // 0/1 取り込みで新規作成した place か (1=成立まで一覧から隠す)
+  missing_info: string | null; // 未成立時の不足情報 (ユーザ向け)
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** キュー表示用にジョブへ place 名を添えたもの (GET /api/trips/:id/jobs)。 */
+export interface PlaceJobView extends PlaceJob {
+  place_name: string | null;
+}
