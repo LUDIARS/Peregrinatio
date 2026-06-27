@@ -28,6 +28,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="trips/:tripId/itinerary" element={<Itinerary />} />
           <Route path="trips/:tripId/add" element={<AddInfo />} />
           <Route path="trips/:tripId/transit" element={<Transit />} />
+          <Route path="trips/:tripId/places/:placeId/add" element={<AddInfo />} />
           <Route path="trips/:tripId/places/:placeId" element={<PlaceDetail />} />
           <Route path="trips/:tripId/days/:dayId" element={<DayRedirect />} />
           <Route path="*" element={<Navigate to="/" replace />} />

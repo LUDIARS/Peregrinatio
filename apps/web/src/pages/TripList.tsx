@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, pdfUrl } from '../api.js';
 import type { Trip } from '../types.js';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -18,6 +18,7 @@ export function TripList() {
 
   const [showForm, setShowForm] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
@@ -69,21 +70,33 @@ export function TripList() {
     catch (e) { setError(e instanceof Error ? e.message : '削除に失敗しました'); }
   };
 
+  /** しおり PDF を別タブで開く (印刷)。 */
+  const printTrip = (t: Trip) => { window.open(pdfUrl(t.id), '_blank', 'noopener'); };
+
   const TripCard = (t: Trip, archivedView = false) => (
-    <div key={t.id} className="place-row">
-      <Link to={`/trips/${t.id}`} className="place-row-main">
-        <div className="spread"><strong>{t.title}</strong></div>
+    <div key={t.id} className="trip-card">
+      <Link to={`/trips/${t.id}`} className="trip-card-main">
+        <strong className="trip-card-title">{t.title}</strong>
         <div className="muted">{t.start_date ?? '日付未定'}{t.end_date ? ` 〜 ${t.end_date}` : ''}</div>
-        {t.notes && <div className="muted" style={{ marginTop: 4 }}>{t.notes}</div>}
+        {t.notes && <div className="muted trip-card-notes">{t.notes}</div>}
       </Link>
-      <div className="place-row-actions">
-        {archivedView ? (
-          <>
-            <button type="button" className="sm ghost" onClick={() => void setArchived(t, 0)}>復元</button>
-            <button type="button" className="sm danger" onClick={() => void hardDelete(t)}>削除</button>
-          </>
-        ) : (
-          <button type="button" className="sm ghost" onClick={() => void setArchived(t, 1)}>🗑 アーカイブ</button>
+      {/* 二段構え: ⋯ メニューを押すとアーカイブ/印刷などが出る。 */}
+      <div className="trip-card-menu-wrap">
+        <button type="button" className="trip-card-menu-btn" aria-haspopup="menu"
+          aria-expanded={openMenuId === t.id}
+          onClick={() => setOpenMenuId((cur) => (cur === t.id ? null : t.id))} aria-label="メニュー">⋯</button>
+        {openMenuId === t.id && (
+          <div className="trip-card-menu" role="menu">
+            <button type="button" role="menuitem" onClick={() => { setOpenMenuId(null); printTrip(t); }}>🖨 印刷</button>
+            {archivedView ? (
+              <>
+                <button type="button" role="menuitem" onClick={() => { setOpenMenuId(null); void setArchived(t, 0); }}>↩ 復元</button>
+                <button type="button" role="menuitem" className="danger" onClick={() => { setOpenMenuId(null); void hardDelete(t); }}>🗑 完全に削除</button>
+              </>
+            ) : (
+              <button type="button" role="menuitem" onClick={() => { setOpenMenuId(null); void setArchived(t, 1); }}>📦 アーカイブ</button>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -131,12 +144,12 @@ export function TripList() {
           <h3>旅の計画 ({planned.length})</h3>
           {planned.length === 0
             ? <p className="muted">計画中の旅はありません。「＋ 新規作成」から追加してください。</p>
-            : <div className="stack">{planned.map((t) => TripCard(t))}</div>}
+            : <div className="trip-cards">{planned.map((t) => TripCard(t))}</div>}
 
           <h3 style={{ marginTop: 20 }}>過去の旅 ({past.length})</h3>
           {past.length === 0
             ? <p className="muted">過去の旅はまだありません。</p>
-            : <div className="stack">{past.map((t) => TripCard(t))}</div>}
+            : <div className="trip-cards">{past.map((t) => TripCard(t))}</div>}
 
           <div className="spread" style={{ marginTop: 24 }}>
             <h3 style={{ margin: 0 }}>🗑 アーカイブ ({archived.length})</h3>
@@ -147,10 +160,13 @@ export function TripList() {
           {showArchive && (
             archived.length === 0
               ? <p className="muted">アーカイブは空です。</p>
-              : <div className="stack">{archived.map((t) => TripCard(t, true))}</div>
+              : <div className="trip-cards">{archived.map((t) => TripCard(t, true))}</div>
           )}
         </>
       )}
+
+      {/* メニューの外側クリックで閉じる。 */}
+      {openMenuId && <div className="menu-backdrop" onClick={() => setOpenMenuId(null)} />}
     </div>
   );
 }
