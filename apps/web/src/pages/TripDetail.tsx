@@ -41,9 +41,6 @@ export function TripDetail() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const [dayDate, setDayDate] = useState('');
-  const [dayTitle, setDayTitle] = useState('');
-
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => getPrefs().defaultStatusFilter);
   const [recommending, setRecommending] = useState(false);
   const [recommendMsg, setRecommendMsg] = useState('');
@@ -179,15 +176,6 @@ export function TripDetail() {
     } finally { setRecommending(false); }
   };
 
-  const addDay = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!tripId) return;
-    try {
-      await api.createDay(tripId, { date: dayDate || undefined, title: dayTitle.trim() || undefined });
-      setDayDate(''); setDayTitle(''); await reload();
-    } catch (e) { setError(e instanceof Error ? e.message : '日の追加に失敗しました'); }
-  };
-
   if (!tripId) return null;
   if (error && !data) return <div className="card error">⚠ {error}</div>;
   if (!data) return <p className="muted">読み込み中…</p>;
@@ -273,14 +261,7 @@ export function TripDetail() {
             </Link>
           ))}
         </div>
-        <form className="card foundation-form" onSubmit={addDay}>
-          <h3 style={{ marginTop: 0 }}>日を追加</h3>
-          <div className="row">
-            <input type="date" value={dayDate} onChange={(e) => setDayDate(e.target.value)} style={{ flex: 1 }} />
-            <input type="text" placeholder="タイトル (任意)" value={dayTitle} onChange={(e) => setDayTitle(e.target.value)} style={{ flex: 1 }} />
-          </div>
-          <button type="submit">日を追加</button>
-        </form>
+        {/* 日程は旅の開始日〜終了日から自動生成される (手動の「日を追加」UI は廃止)。 */}
 
         {/* 近くのおすすめを収集 (左メニュー最下部) */}
         <div className="card foundation-form">

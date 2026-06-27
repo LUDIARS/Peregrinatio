@@ -83,10 +83,8 @@ export const api = {
   ) => req<Trip>(`/api/trips/${id}`, { method: 'PATCH', body: json(input) }),
   deleteTrip: (id: string) => req<{ ok: true }>(`/api/trips/${id}`, { method: 'DELETE' }),
 
-  // --- days ---
+  // --- days (日程は旅の開始日〜終了日から自動生成。手動追加 API は廃止) ---
   listDays: (tripId: string) => req<TripDay[]>(`/api/trips/${tripId}/days`),
-  createDay: (tripId: string, input: { date?: string; title?: string; notes?: string }) =>
-    req<TripDay>(`/api/trips/${tripId}/days`, { method: 'POST', body: json(input) }),
   patchDay: (id: string, input: Partial<Pick<TripDay, 'date' | 'title' | 'notes'>>) =>
     req<TripDay>(`/api/days/${id}`, { method: 'PATCH', body: json(input) }),
   deleteDay: (id: string) => req<{ ok: true }>(`/api/days/${id}`, { method: 'DELETE' }),
