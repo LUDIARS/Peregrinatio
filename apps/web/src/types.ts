@@ -1,5 +1,15 @@
 // ドメイン型。apps/server/src/types.ts (= spec/data/schema.md) を正として一致させる。
 
+/** 旅の出発地点の種別。'none'=拠点起点 / 'home'=自宅 / 'meeting'=拠点以外の集合地点。 */
+export type OriginKind = 'none' | 'home' | 'meeting';
+
+/** 自宅 (旅をまたいで使い回す出発地点)。住所をジオコーディングして保持。 */
+export interface HomeLocation {
+  address: string;
+  lat: number;
+  lng: number;
+}
+
 export interface Trip {
   id: string;
   title: string;
@@ -8,6 +18,12 @@ export interface Trip {
   cover_image_path: string | null;
   notes: string | null;
   archived: number; // 0/1 アーカイブ (ゴミ箱)
+  // 出発地点 (自宅/集合地点)。初日の往路 + 最終日の復路を自動算出する。
+  origin_kind: OriginKind;
+  origin_label: string | null;
+  origin_address: string | null;
+  origin_lat: number | null;
+  origin_lng: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -100,6 +116,8 @@ export interface RouteLeg {
   day_id: string;
   from_place_id: string | null;
   to_place_id: string | null;
+  from_label: string | null; // place でない端点 (出発/帰着地点) のラベル
+  to_label: string | null;
   mode: RouteMode;
   duration_sec: number | null;
   distance_m: number | null;

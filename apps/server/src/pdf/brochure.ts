@@ -184,8 +184,8 @@ export function buildBrochureHtml(input: BrochureInput): string {
       const leftoverHtml = leftover.length
         ? `<div class="legs-extra"><div class="legs-extra-title">そのほかの移動</div>${leftover
             .map((l) => {
-              const from = l.from_place_id ? placeMap.get(l.from_place_id)?.name ?? '' : '';
-              const to = l.to_place_id ? placeMap.get(l.to_place_id)?.name ?? '' : '';
+              const from = l.from_place_id ? placeMap.get(l.from_place_id)?.name ?? '' : l.from_label ?? '';
+              const to = l.to_place_id ? placeMap.get(l.to_place_id)?.name ?? '' : l.to_label ?? '';
               const meta = [fmtDuration(l.duration_sec), fmtDistance(l.distance_m), l.fare_text ?? ''].filter(Boolean).join(' ・ ');
               return `<div class="leg-extra">${MODE_ICON[l.mode] ?? '➡️'} ${esc(from)} → ${esc(to)} <span class="move-meta">${esc(MODE_LABEL[l.mode] ?? l.mode)}${meta ? ` ${meta}` : ''}</span></div>`;
             })

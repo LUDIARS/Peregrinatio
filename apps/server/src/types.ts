@@ -1,5 +1,8 @@
 // ドメイン型 (spec/data/schema.md と対応)。HTTP API の正となる型。
 
+/** 旅の出発地点の種別。'none'=拠点起点(出発地点なし) / 'home'=自宅 / 'meeting'=拠点以外の集合地点。 */
+export type OriginKind = 'none' | 'home' | 'meeting';
+
 export interface Trip {
   id: string;
   title: string;
@@ -8,6 +11,12 @@ export interface Trip {
   cover_image_path: string | null;
   notes: string | null;
   archived: number; // 0/1 アーカイブ (ゴミ箱)
+  // 出発地点 (自宅/集合地点)。初日の往路 + 最終日の復路を自動算出する。座標はスナップショット。
+  origin_kind: OriginKind;
+  origin_label: string | null;   // 表示名 ('自宅' / 集合地点名)
+  origin_address: string | null; // 住所 (集合地点 or 自宅)
+  origin_lat: number | null;
+  origin_lng: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -100,6 +109,9 @@ export interface RouteLeg {
   day_id: string;
   from_place_id: string | null;
   to_place_id: string | null;
+  // place でない端点 (出発地点/帰着地点) のラベル。通常区間は null (place 名を引く)。
+  from_label: string | null;
+  to_label: string | null;
   mode: RouteMode;
   duration_sec: number | null;
   distance_m: number | null;
