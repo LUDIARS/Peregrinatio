@@ -2,10 +2,12 @@
 // API ベースは VITE_API_BASE (未設定なら 127.0.0.1:8090 を直叩き / dev は proxy も可)。
 
 import type {
+  HomeLocation,
   ImageAnalysis,
   ItineraryItem,
   ItineraryItemKind,
   MapConfig,
+  OriginKind,
   Place,
   PlaceImage,
   PlaceLink,
@@ -82,6 +84,15 @@ export const api = {
     input: Partial<Pick<Trip, 'title' | 'start_date' | 'end_date' | 'notes' | 'cover_image_path' | 'archived'>>,
   ) => req<Trip>(`/api/trips/${id}`, { method: 'PATCH', body: json(input) }),
   deleteTrip: (id: string) => req<{ ok: true }>(`/api/trips/${id}`, { method: 'DELETE' }),
+  /** 出発地点 (自宅/集合地点) を設定。home は設定ページの自宅、meeting は住所をジオコーディング。 */
+  setTripOrigin: (id: string, input: { kind: OriginKind; address?: string; label?: string }) =>
+    req<Trip>(`/api/trips/${id}/origin`, { method: 'PUT', body: json(input) }),
+
+  // --- 自宅 (旅をまたいで使い回す出発地点) ---
+  getHome: () => req<HomeLocation | null>('/api/settings/home'),
+  setHome: (address: string) =>
+    req<HomeLocation>('/api/settings/home', { method: 'PUT', body: json({ address }) }),
+  deleteHome: () => req<{ ok: true }>('/api/settings/home', { method: 'DELETE' }),
 
   // --- days (日程は旅の開始日〜終了日から自動生成。手動追加 API は廃止) ---
   listDays: (tripId: string) => req<TripDay[]>(`/api/trips/${tripId}/days`),

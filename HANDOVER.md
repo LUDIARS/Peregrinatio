@@ -30,7 +30,7 @@ packages/     llm(claude CLI), crawl(PoliteFetcher+抽出), places(Places/Geocod
 ```
 port: server=8090 / web(dev)=5179 / docker Postgres=15433。
 
-## データモデル (migration 001-005)
+## データモデル (migration 001-008)
 
 - **場所=全旅共有の恒久ライブラリ** (`places`)。旅↔場所は `trip_places(trip_id,place_id,is_base,added_at)` で紐付け → **旅を削除しても場所は残る**。
 - `places`: name/address/lat/lng/category/source_url/summary/notes/**image_url**/**status**('interested'気になる/'visited'訪問済み/'none')。
@@ -50,7 +50,8 @@ port: server=8090 / web(dev)=5179 / docker Postgres=15433。
 - UI: PC=3カラム(一覧左/地図中/詳細右) / モバイル=地図ベース+左上☰ドロワー+詳細ポップアップ。旅一覧=計画/過去/アーカイブ。
 - **グローバルナビ (NavMenu)**: 5セクション (マップとメモ/旅のしおり/情報追加/時刻表・運行情報/設定)。モバイル=下部フッタータブ / PC=画面上を移動できる「インタラクティブメニュー」(☰折りたたみ⇔展開、位置は localStorage 永続)。旅未選択時は旅依存項目を無効化。`apps/web/src/components/NavMenu.tsx`。
 - **場所を検索 (地図オーバーレイ)**: 旧インテリジェント検索のキーワード検索分を地図上のオーバーレイ化 (`components/MapSearchOverlay.tsx`)。URL/画像からの情報追加は独立ページ「情報追加」(`pages/AddInfo.tsx`、`lib/enrich.ts`) に分離。
-- **日程の自動決定**: 旅作成時に開始日〜終了日から trip_days を日付つきで自動生成 (`POST /api/trips`、`lib/dates.ts`)。しおり (カンバン) で日付をインライン編集可。
+- **日程の自動決定**: 旅作成時に開始日〜終了日から trip_days を日付つきで自動生成 (`POST /api/trips`、`lib/dates.ts`)。しおり (カンバン) で日付をインライン編集可 (手動「日を追加」UI は廃止)。
+- **出発地点 (自宅/集合地点) と往復経路**: 旅ごとに出発地点を設定 (`PUT /api/trips/:id/origin`、`origin_kind` none/home/meeting + 座標スナップショット)。自宅は設定ページに保存して使い回し (`/api/settings/home`、`app_settings`)、集合地点は住所を Geocoding。経路再計算 (`/api/days/:id/route`) は初日の先頭に往路・最終日の末尾に復路の origin を注入する (`lib/route-waypoints.ts`、純関数)。route_legs は `from_label`/`to_label` で place でない端点 (自宅/集合地点) を表示。UI=しおりヘッダの「🏁 出発地点」。
 - **拠点ホテルの IN/OUT**: 拠点の詳細で公式サイトから自動取得 (`POST /api/trips/:id/places/:pid/hotel-times`、クロール→LLM) + 手動調整。`trip_places.checkin_time/checkout_time`。
 - **時刻表/運行情報**: 区間ボード+便+運行情報を手入力で管理 (`pages/Transit.tsx`、`routes/timetable.ts`)。しおりの「移動を追加」で時間帯が合う便を候補表示→移動カード化。**自動取得 (fetch/refresh) を provider 化** (`apps/server/src/transit/`): `crawl-llm`=時刻表/運行情報ページの URL をクロール→LLM(claude CLI)抽出 (契約・キー不要・既定) / `ekispert`=駅すぱあと契約 (`EKISPERT_API_KEY` 登録時のみ有効、区間 from/to で経路探索)。`GET /api/transit/config` が利用可能 provider を返し、UI は provider 選択+URL 入力を出す。未設定 provider/URL 欠落は silent fallback せず明示エラー (501/400)。
 

@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
 import { getPrefs } from '../lib/prefs.js';
 import type {
-  ItineraryItem, RouteLeg, RouteMode, Timetable, TimetableDeparture, Trip, TripDay, TripPlace,
+  ItineraryItem, OriginKind, RouteLeg, RouteMode, Timetable, TimetableDeparture, Trip, TripDay, TripPlace,
 } from '../types.js';
 
 const KIND_LABEL: Record<string, string> = { shinkansen: '新幹線', bus: 'バス', train: '電車' };
@@ -53,6 +53,11 @@ export function Itinerary() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // 出発地点フォーム (自宅/集合地点)。trip ロード時に同期する。
+  const [oKind, setOKind] = useState<OriginKind>('none');
+  const [oAddr, setOAddr] = useState('');
+  const [oLabel, setOLabel] = useState('');
+
   // 経路: 日ごとの leg / 移動手段 / 計算中フラグ / 警告メッセージ。
   const [legsByDay, setLegsByDay] = useState<Record<string, RouteLeg[]>>({});
   const [modeByDay, setModeByDay] = useState<Record<string, RouteMode>>({});
@@ -70,12 +75,17 @@ export function Itinerary() {
   const placeMap = useMemo(() => new Map(places.map((p) => [p.id, p])), [places]);
   const pendingPlace = pendingPlaceId ? placeMap.get(pendingPlaceId) ?? null : null;
   const placeName = (id: string | null) => (id ? placeMap.get(id)?.name ?? '(不明)' : '(メモ)');
+  // 経路端点名: place なら place 名、place でない端点 (出発/帰着地点) は leg のラベル。
+  const endpointName = (placeId: string | null, label: string | null) => (placeId ? placeName(placeId) : label ?? '(地点)');
 
   const load = async () => {
     if (!tripId) return;
     const detail = await api.getTrip(tripId);
     const sorted = [...detail.days].sort((a, b) => a.day_index - b.day_index);
     setTrip(detail.trip);
+    setOKind(detail.trip.origin_kind);
+    setOAddr(detail.trip.origin_kind === 'meeting' ? detail.trip.origin_address ?? '' : '');
+    setOLabel(detail.trip.origin_kind === 'meeting' ? detail.trip.origin_label ?? '' : '');
     setDays(sorted);
     setPlaces(detail.places);
     const [lists, routes] = await Promise.all([
@@ -113,18 +123,24 @@ export function Itinerary() {
   }, [tripId]);
 
   /** その日の予定変更後に経路を自動再計算する。無理な経路 (区間が繋がらない) は警告を立てる。 */
-  const recomputeRoute = async (dayId: string, items: ItineraryItem[], mode?: RouteMode) => {
+  const recomputeRoute = async (dayId: string, items: ItineraryItem[], mode?: RouteMode, opts?: { originDay?: boolean }) => {
     const m = mode ?? modeByDay[dayId] ?? 'driving';
     const placed = items.filter((i) => i.place_id);
     const coords = placed.filter((i) => {
       const p = i.place_id ? placeMap.get(i.place_id) : null;
       return p != null && p.lat != null && p.lng != null;
     });
-    if (coords.length < 2) {
+    // 出発地点 (自宅/集合地点) が初日/最終日に付くと、場所 1 つでも往路/復路を引けるので閾値を 1 に下げる。
+    const firstDayId = days[0]?.id;
+    const lastDayId = days[days.length - 1]?.id;
+    const originActive = !!trip && trip.origin_kind !== 'none' && trip.origin_lat != null;
+    const isOriginDay = opts?.originDay ?? (originActive && (dayId === firstDayId || dayId === lastDayId));
+    const minNeeded = isOriginDay ? 1 : 2;
+    if (coords.length < minNeeded) {
       setLegsByDay((s) => ({ ...s, [dayId]: [] }));
       setRouteWarn((s) => {
         const n = { ...s };
-        if (placed.length >= 2 && coords.length < 2) n[dayId] = '座標付きの場所が 2 つ未満のため経路を計算できません。';
+        if (placed.length >= minNeeded && coords.length < minNeeded) n[dayId] = '座標付きの場所が足りないため経路を計算できません。';
         else delete n[dayId];
         return n;
       });
@@ -249,6 +265,37 @@ export function Itinerary() {
     catch (e) { setError(e instanceof Error ? e.message : '日付の保存に失敗しました'); }
   };
 
+  /** 出発地点を設定し、初日(往路)・最終日(復路)の経路を再計算する。 */
+  const changeOrigin = async (kind: OriginKind, address?: string, label?: string) => {
+    if (!tripId) return;
+    setBusy(true); setError('');
+    try {
+      const t = await api.setTripOrigin(tripId, { kind, address, label });
+      setTrip(t);
+      setOKind(t.origin_kind);
+      if (t.origin_kind === 'meeting') { setOAddr(t.origin_address ?? ''); setOLabel(t.origin_label ?? ''); }
+      const ids = new Set<string>();
+      const fd = days[0]?.id; const ld = days[days.length - 1]?.id;
+      if (fd) ids.add(fd);
+      if (ld) ids.add(ld);
+      const originDay = t.origin_kind !== 'none';
+      for (const id of ids) void recomputeRoute(id, itemsByDay[id] ?? [], undefined, { originDay });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '出発地点の設定に失敗しました');
+      if (trip) setOKind(trip.origin_kind); // 失敗時はサーバ実体に戻す
+    } finally { setBusy(false); }
+  };
+
+  const onOriginKind = (k: OriginKind) => {
+    setOKind(k);
+    if (k === 'none' || k === 'home') void changeOrigin(k); // meeting は住所入力後「保存」で確定
+  };
+
+  const saveMeeting = () => {
+    if (!oAddr.trim()) { setError('集合地点の住所を入力してください'); return; }
+    void changeOrigin('meeting', oAddr.trim(), oLabel.trim() || undefined);
+  };
+
   /** その日の最も遅い予定時刻 (移動候補の絞り込み基準)。無ければ ''。 */
   const lastTimeOfDay = (dayId: string): string => {
     const times = (itemsByDay[dayId] ?? [])
@@ -305,6 +352,32 @@ export function Itinerary() {
         <p className="muted" style={{ margin: 0 }}>
           カードをドラッグ、またはカードの ◀▶ で日を移動、▲▼ で並べ替え。並びを変えると経路を自動で再計算します。
         </p>
+
+        {/* 出発地点 (自宅/集合地点)。初日の往路・最終日の復路を自動算出する。 */}
+        <div className="card foundation-form kanban-origin" style={{ marginTop: 8 }}>
+          <div className="row" style={{ gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span>🏁 出発地点</span>
+            <select value={oKind} onChange={(e) => onOriginKind(e.target.value as OriginKind)} disabled={busy} aria-label="出発地点">
+              <option value="none">設定しない（拠点から）</option>
+              <option value="home">自宅</option>
+              <option value="meeting">集合地点</option>
+            </select>
+            {oKind === 'meeting' && (
+              <>
+                <input type="text" placeholder="名称 (任意)" value={oLabel}
+                  onChange={(e) => setOLabel(e.target.value)} style={{ width: 120 }} />
+                <input type="text" placeholder="集合地点の住所" value={oAddr}
+                  onChange={(e) => setOAddr(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
+                <button type="button" className="sm" onClick={saveMeeting} disabled={busy || !oAddr.trim()}>保存</button>
+              </>
+            )}
+          </div>
+          {trip.origin_kind !== 'none' && trip.origin_address && (
+            <p className="muted" style={{ margin: '4px 0 0' }}>
+              {trip.origin_label}: {trip.origin_address} から初日の往路・最終日の復路を自動算出します。
+            </p>
+          )}
+        </div>
       </div>
 
       {pendingPlace && (
@@ -429,7 +502,7 @@ export function Itinerary() {
                       <div className="kanban-route-total">合計 {fmtDuration(totalSec)} / {fmtDistance(totalM)}</div>
                       {legs.map((leg) => (
                         <div key={leg.id} className="kanban-leg">
-                          <span>{placeName(leg.from_place_id)} → {placeName(leg.to_place_id)}</span>
+                          <span>{endpointName(leg.from_place_id, leg.from_label)} → {endpointName(leg.to_place_id, leg.to_label)}</span>
                           <span className="muted">
                             {fmtDuration(leg.duration_sec)} / {fmtDistance(leg.distance_m)}
                             {leg.fare_text ? ` / ${leg.fare_text}` : ''}

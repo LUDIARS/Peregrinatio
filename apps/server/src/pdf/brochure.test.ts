@@ -7,7 +7,9 @@ import type { ItineraryItem, Place, RouteLeg, Trip, TripDay } from '../types.js'
 
 const trip: Trip = {
   id: 't1', title: '金沢の旅 <test>', start_date: '2026-07-18', end_date: '2026-07-20',
-  cover_image_path: null, notes: null, archived: 0, created_at: '', updated_at: '',
+  cover_image_path: null, notes: null, archived: 0,
+  origin_kind: 'none', origin_label: null, origin_address: null, origin_lat: null, origin_lng: null,
+  created_at: '', updated_at: '',
 };
 const place = (id: string, name: string): Place => ({
   id, name, address: '住所', lat: 36, lng: 136, category: 'カテゴリ', source_url: null,
@@ -23,7 +25,7 @@ function baseInput(over: Partial<BrochureInput> = {}): BrochureInput {
     { id: 'i2', day_id: 'd1', place_id: 'p2', order_index: 1, planned_time: '11:30', kind: 'visit', note: null },
   ];
   const legs: RouteLeg[] = [
-    { id: 'l1', day_id: 'd1', from_place_id: 'p1', to_place_id: 'p2', mode: 'walking', duration_sec: 720, distance_m: 850, fare_text: null, polyline: null, raw_json: null, computed_at: '' },
+    { id: 'l1', day_id: 'd1', from_place_id: 'p1', to_place_id: 'p2', from_label: null, to_label: null, mode: 'walking', duration_sec: 720, distance_m: 850, fare_text: null, polyline: null, raw_json: null, computed_at: '' },
   ];
   return {
     trip,
@@ -65,7 +67,7 @@ describe('buildBrochureHtml', () => {
     const input = baseInput();
     input.legsByDay = new Map([[
       'd1',
-      [{ id: 'lx', day_id: 'd1', from_place_id: 'p2', to_place_id: 'p1', mode: 'driving', duration_sec: 300, distance_m: 1200, fare_text: null, polyline: null, raw_json: null, computed_at: '' }],
+      [{ id: 'lx', day_id: 'd1', from_place_id: 'p2', to_place_id: 'p1', from_label: null, to_label: null, mode: 'driving', duration_sec: 300, distance_m: 1200, fare_text: null, polyline: null, raw_json: null, computed_at: '' }],
     ]]);
     const html = buildBrochureHtml(input);
     expect(html).toContain('そのほかの移動');

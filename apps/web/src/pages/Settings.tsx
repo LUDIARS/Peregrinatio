@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { getPrefs, setPrefs, type Prefs, type StatusFilterPref } from '../lib/prefs.js';
-import type { MapConfig, RouteMode } from '../types.js';
+import type { HomeLocation, MapConfig, RouteMode } from '../types.js';
 
 const STATUS_OPTS: { v: StatusFilterPref; label: string }[] = [
   { v: 'all', label: 'すべて' },
@@ -22,12 +22,46 @@ export function Settings() {
   const [mapErr, setMapErr] = useState('');
   const [prefs, setPrefsState] = useState<Prefs>(() => getPrefs());
 
+  // 自宅 (旅の出発地点に使い回す)。
+  const [home, setHome] = useState<HomeLocation | null>(null);
+  const [homeAddr, setHomeAddr] = useState('');
+  const [homeMsg, setHomeMsg] = useState('');
+  const [homeErr, setHomeErr] = useState('');
+  const [homeBusy, setHomeBusy] = useState(false);
+
   useEffect(() => {
     (async () => {
       try { setMap(await api.mapConfig()); }
       catch (e) { setMapErr(e instanceof Error ? e.message : '取得に失敗しました'); }
+      try {
+        const h = await api.getHome();
+        setHome(h);
+        setHomeAddr(h?.address ?? '');
+      } catch { /* 自宅未設定は無視 */ }
     })();
   }, []);
+
+  const saveHome = async () => {
+    setHomeBusy(true); setHomeErr(''); setHomeMsg('');
+    try {
+      const h = await api.setHome(homeAddr.trim());
+      setHome(h); setHomeAddr(h.address);
+      setHomeMsg('自宅を保存しました。');
+    } catch (e) {
+      setHomeErr(e instanceof Error ? e.message : '自宅の保存に失敗しました');
+    } finally { setHomeBusy(false); }
+  };
+
+  const removeHome = async () => {
+    setHomeBusy(true); setHomeErr(''); setHomeMsg('');
+    try {
+      await api.deleteHome();
+      setHome(null); setHomeAddr('');
+      setHomeMsg('自宅を削除しました。');
+    } catch (e) {
+      setHomeErr(e instanceof Error ? e.message : '自宅の削除に失敗しました');
+    } finally { setHomeBusy(false); }
+  };
 
   const update = (patch: Partial<Prefs>) => setPrefsState(setPrefs(patch));
 
@@ -75,6 +109,30 @@ export function Settings() {
           メニュー位置をリセット
         </button>
         <p className="muted" style={{ margin: 0 }}>PC のインタラクティブメニューを初期位置（右下）へ戻します。</p>
+      </div>
+
+      {/* 自宅 (旅の出発地点) */}
+      <div className="card foundation-form">
+        <h3 style={{ marginTop: 0 }}>自宅</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          旅のしおりで出発地点を「自宅」にすると、ここの住所から初日の往路・最終日の復路を自動算出します。
+        </p>
+        {homeErr && <div className="error">⚠ {homeErr}</div>}
+        {homeMsg && <p className="muted">{homeMsg}</p>}
+        {home
+          ? <p>登録済み: <strong>{home.address}</strong></p>
+          : <p className="muted">未登録</p>}
+        <input type="text" placeholder="自宅の住所" value={homeAddr}
+          onChange={(e) => setHomeAddr(e.target.value)} />
+        <div className="row" style={{ gap: 6 }}>
+          <button type="button" onClick={() => void saveHome()} disabled={homeBusy || !homeAddr.trim()}>
+            {homeBusy ? '保存中…' : '自宅を保存'}
+          </button>
+          {home && (
+            <button type="button" className="ghost" onClick={() => void removeHome()} disabled={homeBusy}>削除</button>
+          )}
+        </div>
+        <p className="muted" style={{ margin: 0 }}>住所はサーバでジオコーディング (Google) して座標化します。</p>
       </div>
 
       {/* 旅の管理 */}

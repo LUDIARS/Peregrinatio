@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
+import { geocode } from '@peregrinatio/places';
 import { sql } from '../db/index.js';
 import { newId, nowIso } from '../lib/ids.js';
 import { pick } from '../lib/http.js';
 import { enumerateDates } from '../lib/dates.js';
-import type { Trip, TripDay, TripPlace } from '../types.js';
+import { config } from '../config.js';
+import { getHome } from '../settings/home.js';
+import type { OriginKind, Trip, TripDay, TripPlace } from '../types.js';
 
 const app = new Hono();
 
@@ -57,6 +60,45 @@ app.patch('/api/trips/:id', async (c) => {
   const now = nowIso();
   await sql`UPDATE trips SET title=${m.title}, start_date=${m.start_date}, end_date=${m.end_date},
     notes=${m.notes}, cover_image_path=${m.cover_image_path}, archived=${m.archived}, updated_at=${now} WHERE id=${id}`;
+  const [t] = (await sql`SELECT * FROM trips WHERE id=${id}`) as Trip[];
+  return c.json(t);
+});
+
+// 出発地点 (自宅/集合地点) を設定する。座標はスナップショットして旅に保持する
+// (自宅は app_settings から、集合地点はジオコーディングから)。初日往路+最終日復路の再計算は
+// クライアントが /api/days/:id/route を呼んで行う。
+app.put('/api/trips/:id/origin', async (c) => {
+  const id = c.req.param('id');
+  const [trip] = (await sql`SELECT * FROM trips WHERE id=${id}`) as Trip[];
+  if (!trip) return c.json({ error: 'not found' }, 404);
+
+  const b = (await c.req.json().catch(() => ({}))) as { kind?: OriginKind; address?: string; label?: string };
+  const kind: OriginKind = b.kind ?? 'none';
+  const now = nowIso();
+
+  if (kind === 'none') {
+    await sql`UPDATE trips SET origin_kind='none', origin_label=NULL, origin_address=NULL,
+      origin_lat=NULL, origin_lng=NULL, updated_at=${now} WHERE id=${id}`;
+  } else if (kind === 'home') {
+    const home = await getHome();
+    if (!home) return c.json({ error: '自宅が未設定です (設定ページで登録してください)' }, 400);
+    await sql`UPDATE trips SET origin_kind='home', origin_label='自宅', origin_address=${home.address},
+      origin_lat=${home.lat}, origin_lng=${home.lng}, updated_at=${now} WHERE id=${id}`;
+  } else if (kind === 'meeting') {
+    const address = (b.address ?? '').trim();
+    if (!address) return c.json({ error: '集合地点の住所を入力してください' }, 400);
+    if (!config.googleMaps.apiKey) {
+      return c.json({ error: 'googleMaps.apiKey 未設定: 住所を座標化できません' }, 400);
+    }
+    const loc = await geocode(address, config.googleMaps.apiKey);
+    if (!loc) return c.json({ error: '住所から場所を特定できませんでした (住所を見直してください)' }, 422);
+    const label = (b.label ?? '').trim() || '集合地点';
+    await sql`UPDATE trips SET origin_kind='meeting', origin_label=${label}, origin_address=${address},
+      origin_lat=${loc.lat}, origin_lng=${loc.lng}, updated_at=${now} WHERE id=${id}`;
+  } else {
+    return c.json({ error: `未知の出発地点種別: ${String(b.kind)}` }, 400);
+  }
+
   const [t] = (await sql`SELECT * FROM trips WHERE id=${id}`) as Trip[];
   return c.json(t);
 });
