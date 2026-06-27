@@ -456,3 +456,111 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   display: flex; flex-direction: column; gap: 1px;
   font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--c-border);
 }
+.kanban-day-date {
+  margin-top: 4px; font-size: 12px; padding: 4px 6px; min-height: 0;
+  border: 1px solid var(--c-border); border-radius: 8px; width: 100%;
+}
+
+/* ============ グローバルナビ (NavMenu) ============ */
+/* 既定 (モバイル): 下部フッタータブ。PC 浮遊メニューは隠す。 */
+.navmenu-pc { display: none; }
+.navmenu-mobile {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  display: flex; height: calc(var(--tabbar-h) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  background: var(--c-surface); border-top: 1px solid var(--c-border);
+}
+.navmenu-tab {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; text-decoration: none; color: var(--c-muted); font-size: 10.5px;
+  -webkit-tap-highlight-color: transparent;
+}
+.navmenu-tab.active { color: var(--c-accent); font-weight: 700; }
+.navmenu-tab.disabled { opacity: 0.32; pointer-events: none; }
+.navmenu-tab .navmenu-ico { font-size: 20px; line-height: 1; }
+.navmenu-tab .navmenu-label { line-height: 1.1; text-align: center; }
+/* モバイルはフッター分の余白を本文下に確保。 */
+.app-shell { padding-bottom: calc(var(--tabbar-h) + var(--safe-b)); }
+
+/* PC (>=900px): フッターを隠し、移動可能な浮遊インタラクティブメニューにする。 */
+@media (min-width: 900px) {
+  .navmenu-mobile { display: none; }
+  .app-shell { padding-bottom: 0; }
+  .navmenu-pc { display: block; position: fixed; z-index: 80; }
+  .navmenu-bubble {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: var(--c-accent); color: #fff; border: none; font-size: 20px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.28); cursor: grab; touch-action: none;
+  }
+  .navmenu-bubble:active { cursor: grabbing; }
+  .navmenu-panel {
+    display: flex; flex-direction: column; gap: 4px; padding: 8px;
+    background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.22); min-width: 168px;
+  }
+  .navmenu-drag {
+    align-self: center; background: transparent; border: none; color: var(--c-muted);
+    font-size: 16px; cursor: grab; padding: 2px 8px; touch-action: none;
+  }
+  .navmenu-drag:active { cursor: grabbing; }
+  .navmenu-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    border-radius: 10px; text-decoration: none; color: var(--c-text); font-size: 14px;
+  }
+  .navmenu-item:hover { background: #f0f0ee; }
+  .navmenu-item.active { background: var(--c-accent); color: #fff; }
+  .navmenu-item.disabled { opacity: 0.4; pointer-events: none; }
+  .navmenu-item .navmenu-ico { font-size: 18px; width: 22px; text-align: center; }
+  .navmenu-collapse {
+    align-self: flex-end; background: transparent; border: none; color: var(--c-muted);
+    cursor: pointer; font-size: 13px; padding: 2px 6px;
+  }
+}
+
+/* ============ 地図上の「場所を検索」オーバーレイ ============ */
+.map-wrap { position: relative; }
+.map-search {
+  position: absolute; top: 10px; left: 10px; right: 10px; z-index: 5;
+  max-width: 460px; display: flex; flex-direction: column; gap: 6px; pointer-events: none;
+}
+.map-search > * { pointer-events: auto; }
+.map-search-bar {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.16);
+}
+.map-search-ico { font-size: 15px; }
+.map-search-bar input { flex: 1; min-height: 36px; border: none; background: transparent; }
+.map-search-bar input:focus { outline: none; }
+.map-search-bar button { min-height: 36px; padding: 0 14px; }
+.map-search-results {
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18); padding: 10px; max-height: 50vh; overflow-y: auto;
+}
+.map-search-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 0; border-top: 1px solid var(--c-border);
+}
+.map-search-row:first-of-type { border-top: none; }
+
+/* ============ 汎用: 中央寄せの単一カラムページ (情報追加 / 設定 / 時刻表) ============ */
+.page-narrow { max-width: 720px; margin: 0 auto; }
+.crumb { margin-bottom: 8px; font-size: 13px; }
+
+/* ============ モーダル (移動ピッカー等) ============ */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.modal {
+  background: var(--c-bg); border-radius: 14px; padding: 16px;
+  width: 100%; max-width: 520px; max-height: 80vh; overflow-y: auto;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+}
+
+/* ============ 時刻表 / 運行情報 ============ */
+.tt-dep { padding: 6px 8px; background: #f7f7f5; border-radius: 8px; font-size: 13px; }
+.chip.severity-warning { background: #fff3cd; color: #a15c00; }
+.chip.severity-suspended { background: #fde0e0; color: var(--c-danger); }
+.chip.severity-info { background: #e3f2fd; color: #1565c0; }
+.chip.severity-normal { background: #e8f5e9; color: #2e7d32; }

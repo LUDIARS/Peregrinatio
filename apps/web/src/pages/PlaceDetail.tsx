@@ -27,6 +27,8 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const [place, setPlace] = useState<TripPlace | null>(null);
   const [links, setLinks] = useState<PlaceLink[]>([]);
   const [error, setError] = useState('');
+  const [hotelBusy, setHotelBusy] = useState(false);
+  const [hotelMsg, setHotelMsg] = useState('');
 
   const loadPlace = async () => {
     const detail = await api.getTrip(tripId);
@@ -57,6 +59,26 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
       const p = await api.setTripBase(tripId, placeId, place.is_base === 1 ? 0 : 1);
       setPlace((prev) => (prev ? { ...prev, ...p } : p)); onChanged?.();
     } catch (e) { setError(e instanceof Error ? e.message : '拠点の更新に失敗しました'); }
+  };
+
+  /** 拠点ホテルの IN/OUT 時刻を手動保存 (後から調整可)。 */
+  const saveHotelTime = async (field: 'checkin_time' | 'checkout_time', value: string) => {
+    try {
+      const p = await api.patchTripPlace(tripId, placeId, { [field]: value || null });
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); onChanged?.();
+    } catch (e) { setHotelMsg(e instanceof Error ? e.message : '時刻の保存に失敗しました'); }
+  };
+
+  /** 拠点ホテルの IN/OUT 時刻を自動取得 (クロール→LLM)。 */
+  const autoFetchHotelTimes = async () => {
+    setHotelBusy(true); setHotelMsg('');
+    try {
+      const p = await api.fetchHotelTimes(tripId, placeId);
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); onChanged?.();
+      setHotelMsg('チェックイン/アウト時刻を取得しました。必要なら調整してください。');
+    } catch (e) {
+      setHotelMsg(e instanceof Error ? e.message : '自動取得に失敗しました（手入力で設定してください）');
+    } finally { setHotelBusy(false); }
   };
 
   const removeFromTrip = async () => {
@@ -125,6 +147,30 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
               <p className="muted">情報元はまだありません。</p>
             )}
           </div>
+
+          {/* 拠点ホテル: チェックイン/チェックアウト (自動取得 + 手動調整)。 */}
+          {place.is_base === 1 && (
+            <div className="place-section">
+              <h3 className="place-section-title">🏨 チェックイン / チェックアウト</h3>
+              <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+                <label style={{ flex: 1, minWidth: 120 }}>
+                  <span className="muted" style={{ fontSize: 12 }}>チェックイン</span>
+                  <input type="time" value={place.checkin_time ?? ''}
+                    onChange={(e) => void saveHotelTime('checkin_time', e.target.value)} />
+                </label>
+                <label style={{ flex: 1, minWidth: 120 }}>
+                  <span className="muted" style={{ fontSize: 12 }}>チェックアウト</span>
+                  <input type="time" value={place.checkout_time ?? ''}
+                    onChange={(e) => void saveHotelTime('checkout_time', e.target.value)} />
+                </label>
+              </div>
+              <button type="button" className="sm ghost" style={{ marginTop: 8 }}
+                onClick={() => void autoFetchHotelTimes()} disabled={hotelBusy}>
+                {hotelBusy ? '取得中…' : '🔄 公式サイトから自動取得'}
+              </button>
+              {hotelMsg && <div className="muted" style={{ marginTop: 4 }}>{hotelMsg}</div>}
+            </div>
+          )}
 
           {/* ここに行く: 旅のしおり (カンバン) を開き、どの日程に入れるか選ぶ。 */}
           <button type="button" className="goto-btn"

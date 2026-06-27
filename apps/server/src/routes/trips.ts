@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { sql } from '../db/index.js';
 import { newId, nowIso } from '../lib/ids.js';
 import { pick } from '../lib/http.js';
+import { enumerateDates } from '../lib/dates.js';
 import type { Trip, TripDay, TripPlace } from '../types.js';
 
 const app = new Hono();
@@ -18,6 +19,16 @@ app.post('/api/trips', async (c) => {
   const now = nowIso();
   await sql`INSERT INTO trips (id, title, start_date, end_date, notes, created_at, updated_at)
     VALUES (${id}, ${b.title}, ${b.start_date ?? null}, ${b.end_date ?? null}, ${b.notes ?? null}, ${now}, ${now})`;
+
+  // 日程が決まっていれば「旅のしおり」の日にちを自動生成する (後でしおり側で調整可)。
+  if (b.start_date && b.end_date) {
+    const dates = enumerateDates(b.start_date, b.end_date);
+    for (let i = 0; i < dates.length; i++) {
+      await sql`INSERT INTO trip_days (id, trip_id, day_index, date, title, notes)
+        VALUES (${newId()}, ${id}, ${i}, ${dates[i]!}, ${null}, ${null})`;
+    }
+  }
+
   const [t] = (await sql`SELECT * FROM trips WHERE id=${id}`) as Trip[];
   return c.json(t);
 });
@@ -28,7 +39,7 @@ app.get('/api/trips/:id', async (c) => {
   if (!trip) return c.json({ error: 'not found' }, 404);
   const days = (await sql`SELECT * FROM trip_days WHERE trip_id=${id} ORDER BY day_index`) as TripDay[];
   const places = (await sql`
-    SELECT p.*, tp.is_base FROM places p
+    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE tp.trip_id = ${id}
     ORDER BY tp.added_at`) as TripPlace[];

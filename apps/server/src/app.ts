@@ -21,6 +21,8 @@ import pdf from './routes/pdf.js';
 import recommend from './routes/recommend.js';
 import placeMedia from './routes/place-media.js';
 import baseSummary from './routes/base-summary.js';
+import hotel from './routes/hotel.js';
+import timetable from './routes/timetable.js';
 
 /** API ルートだけを束ねた Hono アプリ (静的配信なし)。 */
 export function buildApiApp(): Hono {
@@ -28,7 +30,7 @@ export function buildApiApp(): Hono {
   app.use('/api/*', cors());
   app.get('/healthz', (c) => c.json({ ok: true }));
 
-  for (const r of [map, trips, days, places, itinerary, crawl, links, search, images, routing, pdf, recommend, placeMedia, baseSummary]) {
+  for (const r of [map, trips, days, places, itinerary, crawl, links, search, images, routing, pdf, recommend, placeMedia, baseSummary, hotel, timetable]) {
     app.route('/', r);
   }
   return app;

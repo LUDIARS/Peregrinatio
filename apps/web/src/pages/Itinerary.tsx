@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
-import type { ItineraryItem, RouteLeg, RouteMode, Trip, TripDay, TripPlace } from '../types.js';
+import { getPrefs } from '../lib/prefs.js';
+import type {
+  ItineraryItem, RouteLeg, RouteMode, Timetable, TimetableDeparture, Trip, TripDay, TripPlace,
+} from '../types.js';
+
+const KIND_LABEL: Record<string, string> = { shinkansen: '新幹線', bus: 'バス', train: '電車' };
+
+/** その timetable の便を 1 行ラベル化する。 */
+interface DepartureOption {
+  dep: TimetableDeparture;
+  timetable: Timetable;
+}
 
 type ItemsByDay = Record<string, ItineraryItem[]>;
 
@@ -52,6 +63,10 @@ export function Itinerary() {
   const drag = useRef<{ itemId: string; fromDayId: string } | null>(null);
   const [overDay, setOverDay] = useState<string | null>(null);
 
+  // 時刻表 (移動の候補表示用) と、移動ピッカーを開いている day id。
+  const [departureOpts, setDepartureOpts] = useState<DepartureOption[]>([]);
+  const [movePickerDay, setMovePickerDay] = useState<string | null>(null);
+
   const placeMap = useMemo(() => new Map(places.map((p) => [p.id, p])), [places]);
   const pendingPlace = pendingPlaceId ? placeMap.get(pendingPlaceId) ?? null : null;
   const placeName = (id: string | null) => (id ? placeMap.get(id)?.name ?? '(不明)' : '(メモ)');
@@ -70,15 +85,23 @@ export function Itinerary() {
     const map: ItemsByDay = {};
     const legMap: Record<string, RouteLeg[]> = {};
     const modeMap: Record<string, RouteMode> = {};
+    const defaultMode = getPrefs().defaultRouteMode;
     sorted.forEach((d, i) => {
       map[d.id] = [...(lists[i] ?? [])].sort((a, b) => a.order_index - b.order_index);
       const lg = routes[i] ?? [];
       legMap[d.id] = lg;
-      modeMap[d.id] = lg[0]?.mode ?? 'driving';
+      modeMap[d.id] = lg[0]?.mode ?? defaultMode;
     });
     setItemsByDay(map);
     setLegsByDay(legMap);
     setModeByDay(modeMap);
+
+    // 移動候補に使う時刻表の便を読み込む (拠点周辺の登録済み時刻表を横断)。
+    const tts = await api.listTimetables(tripId);
+    const depLists = await Promise.all(tts.map((t) => api.listDepartures(t.id)));
+    const opts: DepartureOption[] = [];
+    tts.forEach((t, i) => { for (const dep of depLists[i] ?? []) opts.push({ dep, timetable: t }); });
+    setDepartureOpts(opts);
   };
 
   useEffect(() => {
@@ -227,6 +250,42 @@ export function Itinerary() {
     finally { setBusy(false); }
   };
 
+  /** 日付のインライン編集 (日程はしおりで調整可能)。 */
+  const setDayDateValue = async (dayId: string, date: string) => {
+    setDays((ds) => ds.map((d) => (d.id === dayId ? { ...d, date: date || null } : d)));
+    try { await api.patchDay(dayId, { date: date || null }); }
+    catch (e) { setError(e instanceof Error ? e.message : '日付の保存に失敗しました'); }
+  };
+
+  /** その日の最も遅い予定時刻 (移動候補の絞り込み基準)。無ければ ''。 */
+  const lastTimeOfDay = (dayId: string): string => {
+    const times = (itemsByDay[dayId] ?? [])
+      .map((i) => i.planned_time)
+      .filter((t): t is string => !!t)
+      .sort();
+    return times.at(-1) ?? '';
+  };
+
+  /** 時刻表の便から移動カードを作る (時間帯が合う一覧から選択)。 */
+  const addMoveFromDeparture = async (dayId: string, opt: DepartureOption) => {
+    const t = opt.timetable;
+    const seg = [t.from_station, t.to_station].filter(Boolean).join('→');
+    const head = [KIND_LABEL[t.kind] ?? t.kind, t.line_name, opt.dep.train_name, seg].filter(Boolean).join(' ');
+    const span = opt.dep.depart_time
+      ? ` (${opt.dep.depart_time}${opt.dep.arrive_time ? `→${opt.dep.arrive_time}` : ''})`
+      : '';
+    setBusy(true); setError('');
+    try {
+      const it = await api.createItem(dayId, {
+        kind: 'move', planned_time: opt.dep.depart_time || undefined, note: `${head}${span}`.trim(),
+      });
+      setItemsByDay((m) => ({ ...m, [dayId]: [...(m[dayId] ?? []), it] }));
+      setMovePickerDay(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '移動の追加に失敗しました');
+    } finally { setBusy(false); }
+  };
+
   if (!tripId) return null;
   if (error && !trip) return <div className="card error">⚠ {error}</div>;
   if (!trip) return <p className="muted">読み込み中…</p>;
@@ -296,11 +355,18 @@ export function Itinerary() {
                     <strong>{d.title || `${d.day_index + 1} 日目`}</strong>
                     <span className="chip">{items.length}</span>
                   </div>
-                  <div className="muted" style={{ fontSize: 12 }}>{d.date ?? '日付未定'}</div>
-                  {pendingPlaceId && pendingPlace && (
+                  {/* 日付はインライン編集可 (日程はしおりで調整可能)。 */}
+                  <input type="date" className="kanban-day-date" value={d.date ?? ''}
+                    onChange={(e) => void setDayDateValue(d.id, e.target.value)} aria-label="日付" />
+                  {pendingPlaceId && pendingPlace ? (
                     <button type="button" className="sm" style={{ marginTop: 6 }}
                       onClick={() => void addPendingToDay(d.id)} disabled={busy}>
                       ＋ ここに追加
+                    </button>
+                  ) : (
+                    <button type="button" className="sm ghost" style={{ marginTop: 6 }}
+                      onClick={() => setMovePickerDay(d.id)} disabled={busy}>
+                      🚃 移動を追加
                     </button>
                   )}
                 </header>
@@ -391,6 +457,46 @@ export function Itinerary() {
           </div>
         </div>
       )}
+
+      {/* 移動ピッカー: 登録済み時刻表から「時間帯が合う便」を選んで移動カードにする。 */}
+      {movePickerDay && (() => {
+        const ref = lastTimeOfDay(movePickerDay);
+        const cands = departureOpts
+          .filter((o) => o.dep.depart_time && (!ref || (o.dep.depart_time as string) >= ref))
+          .sort((a, b) => (a.dep.depart_time ?? '').localeCompare(b.dep.depart_time ?? ''));
+        return (
+          <div className="modal-backdrop" onClick={() => setMovePickerDay(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="spread">
+                <strong>🚃 移動を追加 — 時間帯が合う便</strong>
+                <button type="button" className="sm ghost" onClick={() => setMovePickerDay(null)}>閉じる</button>
+              </div>
+              {ref && <p className="muted" style={{ margin: '4px 0' }}>{ref} 以降の便を表示しています。</p>}
+              {departureOpts.length === 0 && (
+                <p className="muted">時刻表が未登録です。下部メニューの「時刻表/運行情報」で便を登録してください。</p>
+              )}
+              {departureOpts.length > 0 && cands.length === 0 && (
+                <p className="muted">条件に合う便がありません（時刻表の便を増やすか時刻を調整してください）。</p>
+              )}
+              <div className="stack">
+                {cands.map((o, i) => (
+                  <button key={`${o.dep.id}-${i}`} type="button" className="card card-link"
+                    onClick={() => void addMoveFromDeparture(movePickerDay, o)} disabled={busy}>
+                    <strong>{o.dep.depart_time}{o.dep.arrive_time ? ` → ${o.dep.arrive_time}` : ''}</strong>
+                    <div className="muted">
+                      {[KIND_LABEL[o.timetable.kind] ?? o.timetable.kind, o.timetable.line_name, o.dep.train_name]
+                        .filter(Boolean).join(' ')}
+                      {(o.timetable.from_station || o.timetable.to_station)
+                        ? ` ｜ ${o.timetable.from_station ?? '?'}→${o.timetable.to_station ?? '?'}` : ''}
+                      {o.dep.fare_text ? ` ｜ ${o.dep.fare_text}` : ''}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
