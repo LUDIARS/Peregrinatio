@@ -65,6 +65,17 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(msg, res.status, body);
   }
   if (res.status === 204) return undefined as T;
+  // 200 でも HTML 等が返ることがある (古いサーバが SPA フォールバックを返す等)。
+  // res.json() の「Unexpected token '<'」を分かりやすいエラーに変える ([[feedback_no_silent_fallback]])。
+  const ctype = res.headers.get('content-type') ?? '';
+  if (!ctype.includes('application/json')) {
+    const text = await res.text();
+    throw new ApiError(
+      `API が JSON 以外を返しました (HTTP ${res.status}, content-type: ${ctype || '不明'})。サーバが古い可能性があります（再起動/再デプロイしてください）。`,
+      res.status,
+      text.slice(0, 200),
+    );
+  }
   return (await res.json()) as T;
 }
 

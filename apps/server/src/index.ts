@@ -20,6 +20,11 @@ async function main() {
   // アップロード/合成画像の静的配信 (cwd=apps/server で uploads/ を指す)
   app.use('/uploads/*', serveStatic({ root: './', }));
 
+  // 未マッチの /api/* は SPA フォールバック (HTML) ではなく JSON 404 を返す。
+  // これが無いと、ルート欠落 (古いビルド等) で index.html が 200 で返り、クライアントが
+  // res.json() で「Unexpected token '<'」になって原因が分かりにくくなる ([[feedback_no_silent_fallback]])。
+  app.all('/api/*', (c) => c.json({ error: `Not Found: ${c.req.method} ${c.req.path}` }, 404));
+
   // 本番 (単一オリジン): apps/web/dist を配信。dev は vite:5179 を使うのでこちらは未ビルドでも可。
   // 実ファイルがあれば serveStatic が返し、無ければ SPA フォールバックで index.html を返す
   // (BrowserRouter の deep link 用)。/api・/uploads は上で先にマッチするのでここには来ない。

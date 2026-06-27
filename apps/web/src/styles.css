@@ -626,14 +626,19 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 
 /* ============ 旅のしおり (PC オーバーレイ) ============ */
 .itinerary-open-btn { width: 100%; text-align: left; background: var(--c-surface); color: inherit; border: 1px solid var(--c-border); }
+/* PC は全画面でなく「移動可能なウインドウ」。位置は left/top をインラインで与える。 */
 .itinerary-overlay {
-  position: fixed; inset: 16px; z-index: 80;
+  position: fixed; z-index: 80;
+  width: min(960px, 92vw); height: min(80vh, 760px);
+  min-width: 380px; min-height: 320px; max-width: 96vw; max-height: 92vh;
   background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 16px;
   box-shadow: 0 16px 48px rgba(0,0,0,0.32);
   display: flex; flex-direction: column; overflow: hidden;
+  resize: both; /* 右下ハンドルでサイズ変更可 */
 }
 .itinerary-overlay-bar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 16px; border-bottom: 1px solid var(--c-border); background: var(--c-surface);
+  cursor: move; user-select: none; touch-action: none; /* バーをドラッグして移動 */
 }
 .itinerary-overlay-body { flex: 1; overflow: auto; padding: 16px; }

@@ -30,12 +30,35 @@ export function TripDetail() {
   const navigate = useNavigate();
   const [data, setData] = useState<TripDetailData | null>(null);
   const [error, setError] = useState('');
-  // 旅のしおり: PC はオーバーレイ表示、モバイルは専用ルートへ遷移。
+  // 旅のしおり: PC は移動可能なオーバーレイウインドウ、モバイルは専用ルートへ遷移。
   const [showItinerary, setShowItinerary] = useState(false);
   const openItinerary = () => {
     if (window.matchMedia('(min-width: 900px)').matches) setShowItinerary(true);
     else navigate(`/trips/${tripId}/itinerary`);
   };
+
+  // しおりウインドウの位置 (左上座標)。初期は画面中央寄せ。ドラッグで移動・保持する。
+  const [winPos, setWinPos] = useState(() => {
+    const w = Math.min(960, window.innerWidth * 0.92);
+    const h = Math.min(window.innerHeight * 0.8, 760);
+    return { x: Math.max(8, (window.innerWidth - w) / 2), y: Math.max(8, (window.innerHeight - h) / 2) };
+  });
+  const winDrag = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+  const onWinBarPointerDown = (e: React.PointerEvent) => {
+    // 閉じる等のボタン上では掴まない。
+    if ((e.target as HTMLElement).closest('button')) return;
+    winDrag.current = { startX: e.clientX, startY: e.clientY, baseX: winPos.x, baseY: winPos.y };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+  };
+  const onWinBarPointerMove = (e: React.PointerEvent) => {
+    const d = winDrag.current;
+    if (!d) return;
+    // タイトルバーが必ず掴める範囲に収める (画面外に消さない)。
+    const x = Math.min(Math.max(0, d.baseX + (e.clientX - d.startX)), window.innerWidth - 120);
+    const y = Math.min(Math.max(0, d.baseY + (e.clientY - d.startY)), window.innerHeight - 48);
+    setWinPos({ x, y });
+  };
+  const onWinBarPointerUp = () => { winDrag.current = null; };
 
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapObj = useRef<any>(null);
@@ -334,8 +357,13 @@ export function TripDetail() {
 
       {/* 旅のしおり (PC オーバーレイ)。モバイルは専用ルートへ遷移するのでここには出ない。 */}
       {showItinerary && (
-        <div className="itinerary-overlay" role="dialog" aria-label="旅のしおり">
-          <div className="itinerary-overlay-bar">
+        <div className="itinerary-overlay" role="dialog" aria-label="旅のしおり"
+          style={{ left: winPos.x, top: winPos.y }}>
+          <div className="itinerary-overlay-bar"
+            onPointerDown={onWinBarPointerDown}
+            onPointerMove={onWinBarPointerMove}
+            onPointerUp={onWinBarPointerUp}
+            onPointerCancel={onWinBarPointerUp}>
             <strong>🗓 旅のしおり</strong>
             <button type="button" className="icon-btn" onClick={() => setShowItinerary(false)} aria-label="閉じる">✕</button>
           </div>
