@@ -14,8 +14,8 @@ import type { Place, PlaceLink } from '../types.js';
 
 const app = new Hono();
 
-/** HTML から og:image (無ければ twitter:image) の content を抜く。無ければ null。 */
-function extractOgImage(html: string): string | null {
+/** HTML から og:image (無ければ twitter:image) の content を抜き、相対URLを絶対化して返す。 */
+function extractOgImage(html: string, baseUrl: string): string | null {
   const props = ['og:image', 'og:image:url', 'twitter:image', 'twitter:image:src'];
   for (const prop of props) {
     const re = new RegExp(
@@ -28,8 +28,13 @@ function extractOgImage(html: string): string | null {
     );
     const m = re.exec(html) ?? re2.exec(html);
     if (m && m[1]) {
-      const url = decodeEntities(m[1]).trim();
-      if (url) return url;
+      const raw = decodeEntities(m[1]).trim();
+      if (!raw) continue;
+      try {
+        return new URL(raw, baseUrl).href;
+      } catch {
+        return raw;
+      }
     }
   }
   return null;
@@ -58,7 +63,7 @@ app.post('/api/places/:id/image-from-web', async (c) => {
       respectRobots: config.crawl.respectRobots,
     });
     const res = await fetcher.fetch(pageUrl);
-    if (res.ok) imageUrl = extractOgImage(res.html);
+    if (res.ok) imageUrl = extractOgImage(res.html, pageUrl);
   }
 
   // 2) 取れなければ Places photo に fallback (API キー必須)。
