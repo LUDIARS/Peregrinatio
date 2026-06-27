@@ -52,7 +52,7 @@ port: server=8090 / web(dev)=5179 / docker Postgres=15433。
 - **場所を検索 (地図オーバーレイ)**: 旧インテリジェント検索のキーワード検索分を地図上のオーバーレイ化 (`components/MapSearchOverlay.tsx`)。URL/画像からの情報追加は独立ページ「情報追加」(`pages/AddInfo.tsx`、`lib/enrich.ts`) に分離。
 - **日程の自動決定**: 旅作成時に開始日〜終了日から trip_days を日付つきで自動生成 (`POST /api/trips`、`lib/dates.ts`)。しおり (カンバン) で日付をインライン編集可。
 - **拠点ホテルの IN/OUT**: 拠点の詳細で公式サイトから自動取得 (`POST /api/trips/:id/places/:pid/hotel-times`、クロール→LLM) + 手動調整。`trip_places.checkin_time/checkout_time`。
-- **時刻表/運行情報 (骨組み)**: 区間ボード+便+運行情報を手入力で管理 (`pages/Transit.tsx`、`routes/timetable.ts`)。しおりの「移動を追加」で時間帯が合う便を候補表示→移動カード化。自動取得 (fetch/refresh) はデータ源未配線で 501 を返す差し替え口。
+- **時刻表/運行情報**: 区間ボード+便+運行情報を手入力で管理 (`pages/Transit.tsx`、`routes/timetable.ts`)。しおりの「移動を追加」で時間帯が合う便を候補表示→移動カード化。**自動取得 (fetch/refresh) を provider 化** (`apps/server/src/transit/`): `crawl-llm`=時刻表/運行情報ページの URL をクロール→LLM(claude CLI)抽出 (契約・キー不要・既定) / `ekispert`=駅すぱあと契約 (`EKISPERT_API_KEY` 登録時のみ有効、区間 from/to で経路探索)。`GET /api/transit/config` が利用可能 provider を返し、UI は provider 選択+URL 入力を出す。未設定 provider/URL 欠落は silent fallback せず明示エラー (501/400)。
 
 ## 既知の制約・残作業
 
@@ -67,5 +67,5 @@ port: server=8090 / web(dev)=5179 / docker Postgres=15433。
 9. ~~**テスト/CI 未整備**~~ ✅ 対応済 — `apps/server/src/app.ts`(`buildApiApp`)でルートを分離し、使い捨て SQLite + 本番 migration 上で `app.request()` する統合テスト (`routes/places.test.ts` / `routes/trips.test.ts`、計11) を追加。`.github/workflows/ci.yml` が PR/main push で全 workspace の `npm ci → build → test` を実行 (Node 24)。spec は `spec/test/server-integration.md` に方針を記載。残: days/itinerary や外部依存ルートの統合は未カバー。
 10. 軽微: recommend の半径指定UI無し / og:image 相対URL絶対化未対応。
 11. 保留: リゾナーレ那須(49件)再シード要否は未回答。
-12. **時刻表/運行情報のデータ源未配線** — `routes/timetable.ts` の fetch/refresh は既定 501。NAVITIME/駅すぱあと(契約) または ODPT(登録) を差し込むと自動取得が有効化。手入力では候補表示→移動カード化まで動作。
+12. ~~**時刻表/運行情報のデータ源未配線**~~ ✅ 対応済 — `apps/server/src/transit/` に provider 抽象 (`crawl-llm`/`ekispert`) を実装。`crawl-llm` は URL クロール→LLM 抽出で**契約不要・即利用可**。`ekispert` (駅すぱあと) は `npm run config-set EKISPERT_API_KEY <値>` 登録で有効化 (※実応答 JSON 形は契約キーでの実走で要検証。写像 `mapEkispertDepartures` を純関数分離+単体テスト済)。運行情報 refresh は crawl-llm のみ対応 (ekispert は別契約 API のため未対応=501 明示)。
 13. **server 再起動が必要** — 今回の改修は server コード + migration (006/007) を含む。稼働 server (8090) はフロント (build:web) は即反映だが、新ルート/日程自動生成/IN/OUT/時刻表を有効にするには `npm run migrate` 済 + server 再起動が必要。

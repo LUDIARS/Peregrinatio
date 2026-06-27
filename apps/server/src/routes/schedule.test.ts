@@ -94,11 +94,25 @@ describe('時刻表 / 運行情報', () => {
     expect(list).toHaveLength(1);
   });
 
-  it('自動取得 fetch はデータ源未配線で 501 を返す (握り潰さない)', async () => {
+  it('既定プロバイダ(crawl-llm)で url 無しの fetch は 400 (握り潰さない)', async () => {
     const t = await json<{ id: string }>(await post('/api/trips', { title: '旅' }));
     const tt = await json<Timetable>(await post(`/api/trips/${t.id}/timetables`, { kind: 'train' }));
     const res = await post(`/api/timetables/${tt.id}/fetch`, {});
+    expect(res.status).toBe(400); // crawl-llm は URL 必須
+  });
+
+  it('未設定の ekispert を明示要求すると 501 (silent fallback しない)', async () => {
+    const t = await json<{ id: string }>(await post('/api/trips', { title: '旅' }));
+    const tt = await json<Timetable>(
+      await post(`/api/trips/${t.id}/timetables`, { kind: 'shinkansen', from_station: '東京', to_station: '金沢' }),
+    );
+    const res = await post(`/api/timetables/${tt.id}/fetch`, { provider: 'ekispert' });
     expect(res.status).toBe(501);
+  });
+
+  it('存在しない timetable への fetch は 404', async () => {
+    const res = await post('/api/timetables/nope/fetch', { url: 'https://example.com/tt' });
+    expect(res.status).toBe(404);
   });
 
   it('運行情報を手入力で作成・一覧できる', async () => {
@@ -109,7 +123,14 @@ describe('時刻表 / 運行情報', () => {
     expect(alerts[0]?.severity).toBe('warning');
 
     const refresh = await post(`/api/trips/${t.id}/service-alerts/refresh`, {});
-    expect(refresh.status).toBe(501);
+    expect(refresh.status).toBe(400); // crawl-llm は URL 必須
+  });
+
+  it('ekispert は運行情報 refresh に未対応で 501', async () => {
+    const t = await json<{ id: string }>(await post('/api/trips', { title: '旅' }));
+    // ekispert キーは未設定なので factory 段階で 501 (未配線)。明示要求でも fallback しない。
+    const res = await post(`/api/trips/${t.id}/service-alerts/refresh`, { provider: 'ekispert' });
+    expect(res.status).toBe(501);
   });
 
   it('旅を削除すると時刻表/運行情報も連鎖削除される', async () => {

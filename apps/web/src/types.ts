@@ -126,6 +126,9 @@ export interface MapConfig {
 // ── 時刻表 / 運行情報 ──────────────────────────────────────────────────────
 export type TimetableKind = 'shinkansen' | 'bus' | 'train';
 
+/** 時刻表/運行情報の取得プロバイダ。crawl-llm=URL クロール+LLM / ekispert=駅すぱあと契約。 */
+export type TransitProviderKind = 'crawl-llm' | 'ekispert';
+
 export interface Timetable {
   id: string;
   trip_id: string;

@@ -17,6 +17,7 @@ import type {
   Timetable,
   TimetableDeparture,
   TimetableKind,
+  TransitProviderKind,
   Trip,
   TripDay,
   TripDetail,
@@ -203,9 +204,20 @@ export const api = {
     input: { depart_time?: string; arrive_time?: string; train_name?: string; platform?: string; fare_text?: string; note?: string },
   ) => req<TimetableDeparture>(`/api/timetables/${timetableId}/departures`, { method: 'POST', body: json(input) }),
   deleteDeparture: (id: string) => req<{ ok: true }>(`/api/departures/${id}`, { method: 'DELETE' }),
-  /** 自動取得 (データ源未配線なら 501)。 */
-  fetchTimetable: (timetableId: string) =>
-    req<TimetableDeparture[]>(`/api/timetables/${timetableId}/fetch`, { method: 'POST', body: json({}) }),
+  /** 利用可能な取得プロバイダ (crawl-llm 常時 / ekispert はキー設定時)。 */
+  getTransitConfig: () =>
+    req<{ providers: TransitProviderKind[]; default: TransitProviderKind; ekispertEnabled: boolean }>(
+      '/api/transit/config',
+    ),
+  /** 便の自動取得。crawl-llm は url 必須、ekispert は区間 from/to を使用。 */
+  fetchTimetable: (
+    timetableId: string,
+    opts: { provider?: TransitProviderKind; url?: string; date?: string } = {},
+  ) =>
+    req<{ provider: string; added: number; departures: TimetableDeparture[] }>(
+      `/api/timetables/${timetableId}/fetch`,
+      { method: 'POST', body: json(opts) },
+    ),
 
   // --- 運行情報 ---
   listServiceAlerts: (tripId: string) => req<ServiceAlert[]>(`/api/trips/${tripId}/service-alerts`),
@@ -214,7 +226,13 @@ export const api = {
     input: { line_name?: string; severity?: string; title?: string; body?: string; source_url?: string },
   ) => req<ServiceAlert>(`/api/trips/${tripId}/service-alerts`, { method: 'POST', body: json(input) }),
   deleteServiceAlert: (id: string) => req<{ ok: true }>(`/api/service-alerts/${id}`, { method: 'DELETE' }),
-  /** 運行情報の更新 (データ源未配線なら 501)。 */
-  refreshServiceAlerts: (tripId: string) =>
-    req<ServiceAlert[]>(`/api/trips/${tripId}/service-alerts/refresh`, { method: 'POST', body: json({}) }),
+  /** 運行情報の更新。crawl-llm は url 必須 (ekispert は運行情報未対応で 501)。 */
+  refreshServiceAlerts: (
+    tripId: string,
+    opts: { provider?: TransitProviderKind; url?: string; line_name?: string } = {},
+  ) =>
+    req<{ provider: string; added: number; alerts: ServiceAlert[] }>(
+      `/api/trips/${tripId}/service-alerts/refresh`,
+      { method: 'POST', body: json(opts) },
+    ),
 };
