@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { sql } from '../db/index.js';
 import { newId } from '../lib/ids.js';
-import { pick } from '../lib/http.js';
+import { pick, userOf } from '../lib/http.js';
 import type { ItineraryItem } from '../types.js';
 
 const app = new Hono();
@@ -17,9 +17,9 @@ app.post('/api/days/:id/items', async (c) => {
   const cnt = (await sql`SELECT COUNT(*) AS n FROM itinerary_items WHERE day_id=${day_id}`) as { n: number }[];
   const n = cnt[0]?.n ?? 0;
   const id = newId();
-  await sql`INSERT INTO itinerary_items (id, day_id, place_id, order_index, planned_time, kind, note)
+  await sql`INSERT INTO itinerary_items (id, day_id, place_id, order_index, planned_time, kind, note, edited_by)
     VALUES (${id}, ${day_id}, ${b.place_id ?? null}, ${b.order_index ?? n}, ${b.planned_time ?? null},
-            ${b.kind ?? 'visit'}, ${b.note ?? null})`;
+            ${b.kind ?? 'visit'}, ${b.note ?? null}, ${userOf(c)})`;
   const [it] = (await sql`SELECT * FROM itinerary_items WHERE id=${id}`) as ItineraryItem[];
   return c.json(it);
 });
@@ -33,8 +33,9 @@ app.patch('/api/items/:id', async (c) => {
     'day_id', 'place_id', 'order_index', 'planned_time', 'kind', 'note',
   ]);
   const m = { ...cur, ...b };
+  const editedBy = userOf(c) ?? cur.edited_by;
   await sql`UPDATE itinerary_items SET day_id=${m.day_id}, place_id=${m.place_id}, order_index=${m.order_index},
-    planned_time=${m.planned_time}, kind=${m.kind}, note=${m.note} WHERE id=${id}`;
+    planned_time=${m.planned_time}, kind=${m.kind}, note=${m.note}, edited_by=${editedBy} WHERE id=${id}`;
   const [it] = (await sql`SELECT * FROM itinerary_items WHERE id=${id}`) as ItineraryItem[];
   return c.json(it);
 });

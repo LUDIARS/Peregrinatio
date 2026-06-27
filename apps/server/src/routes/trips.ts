@@ -42,10 +42,15 @@ app.get('/api/trips/:id', async (c) => {
   if (!trip) return c.json({ error: 'not found' }, 404);
   const days = (await sql`SELECT * FROM trip_days WHERE trip_id=${id} ORDER BY day_index`) as TripDay[];
   const places = (await sql`
-    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time FROM places p
+    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE tp.trip_id = ${id}
-    ORDER BY tp.added_at`) as TripPlace[];
+      AND NOT EXISTS (
+        SELECT 1 FROM place_jobs j
+        WHERE j.place_id = p.id AND j.trip_id = tp.trip_id AND j.is_new_place = 1
+          AND j.status IN ('pending','processing','needs_info','failed')
+      )
+    ORDER BY CASE WHEN p.status='interested' THEN 0 ELSE 1 END, tp.added_at DESC`) as TripPlace[];
   return c.json({ trip, days, places });
 });
 

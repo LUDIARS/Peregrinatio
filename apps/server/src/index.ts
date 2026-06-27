@@ -8,6 +8,7 @@ import { initSql, sql } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
 import { buildApiApp } from './app.js';
 import { startBaseSummaryQueue } from './base-summary/queue.js';
+import { startJobQueue } from './jobs/queue.js';
 
 async function main() {
   await hydrateSecrets();
@@ -19,6 +20,11 @@ async function main() {
   const app = buildApiApp();
   // アップロード/合成画像の静的配信 (cwd=apps/server で uploads/ を指す)
   app.use('/uploads/*', serveStatic({ root: './', }));
+
+  // 未マッチの /api/* は SPA フォールバック (HTML) ではなく JSON 404 を返す。
+  // これが無いと、ルート欠落 (古いビルド等) で index.html が 200 で返り、クライアントが
+  // res.json() で「Unexpected token '<'」になって原因が分かりにくくなる ([[feedback_no_silent_fallback]])。
+  app.all('/api/*', (c) => c.json({ error: `Not Found: ${c.req.method} ${c.req.path}` }, 404));
 
   // 本番 (単一オリジン): apps/web/dist を配信。dev は vite:5179 を使うのでこちらは未ビルドでも可。
   // 実ファイルがあれば serveStatic が返し、無ければ SPA フォールバックで index.html を返す
@@ -48,6 +54,8 @@ async function main() {
 
   // 拠点サマリーの自動生成バックグラウンドを開始。
   if (config.baseSummary.enabled) startBaseSummaryQueue();
+  // 取り込みジョブ (画像解析/クロール) の順次処理キューを開始。
+  if (config.jobs.enabled) startJobQueue();
 
   // 終了シグナルで WAL をチェックポイントして安全に閉じる (取りこぼし防止)。
   const shutdown = () => { void sql.end().finally(() => process.exit(0)); };
@@ -55,12 +63,28 @@ async function main() {
   process.on('SIGTERM', shutdown);
 }
 
+/** クライアント切断 (リクエスト中断) 由来のエラーか。これはサーバのバグではないので致命にしない。 */
+function isClientAbort(err: unknown): boolean {
+  const e = err as NodeJS.ErrnoException | undefined;
+  return !!e && (e.code === 'ECONNRESET' || e.message === 'aborted');
+}
+
 // プロセスレベルでも例外/未処理 rejection を握りつぶさず必ず出力して fail-fast する。
+// ただしクライアント切断 (ECONNRESET / aborted) はプロセスを落とさずログのみ
+// (長いリクエスト中にブラウザが離脱/リロードした等。サーバを巻き込まない)。
 process.on('uncaughtException', (err) => {
+  if (isClientAbort(err)) {
+    console.warn('[warn] クライアント切断を無視:', (err as Error).message);
+    return;
+  }
   console.error('[fatal] uncaughtException:', err);
   process.exit(1);
 });
 process.on('unhandledRejection', (reason) => {
+  if (isClientAbort(reason)) {
+    console.warn('[warn] クライアント切断を無視:', (reason as Error).message);
+    return;
+  }
   console.error('[fatal] unhandledRejection:', reason);
   process.exit(1);
 });

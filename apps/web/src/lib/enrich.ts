@@ -1,7 +1,8 @@
 // 「場所の情報を追加する」共通処理。受け取ったものが URL か画像かで分岐する。
-//   URL  → クロール→LLM 要約して place に summary/住所/画像を付与。
-//   画像 → 連結→vision 解析して place に住所/解析を付与。
-// 対象 place が無ければ新規作成する。AddInfo ページから利用 (旧 IntelligentSearch の URL/画像分を抽出)。
+//   URL  → クロール→LLM 要約 (取り込みキューに積んで順次処理)。
+//   画像 → アップロード+連結まで即時、解析は取り込みキューに積んで順次処理。
+// 対象 place が無ければ新規作成する (新規はドラフト = 成立するまで場所リストに出ない)。
+// 重い解析/クロールはサーバの worker がキューから 1 件ずつ処理する。AddInfo ページから利用。
 
 import { api } from '../api.js';
 
@@ -38,22 +39,22 @@ async function ensureTarget(
   return { id: p.id, created: true };
 }
 
-/** URL をクロール→要約して place に付与。作成/対象の place id を返す。 */
+/** URL のクロール→要約を取り込みキューに積む。作成/対象の place id を返す。 */
 export async function enrichFromUrl(
   tripId: string, targetId: string | null, url: string,
 ): Promise<{ id: string; created: boolean }> {
   const t = await ensureTarget(tripId, targetId, hostOf(url));
-  await api.crawlPlace(t.id, { url });
+  await api.createJob(tripId, { place_id: t.id, kind: 'crawl', source_url: url, is_new_place: t.created });
   return t;
 }
 
-/** 画像を連結→解析して place に付与。作成/対象の place id を返す。 */
+/** 画像をアップロード+連結し、解析を取り込みキューに積む。作成/対象の place id を返す。 */
 export async function enrichFromImages(
   tripId: string, targetId: string | null, files: File[],
 ): Promise<{ id: string; created: boolean }> {
   const t = await ensureTarget(tripId, targetId, '画像から取り込み中…');
   await api.uploadImages(t.id, files);
-  const comp = await api.composeImages(t.id, 'rtl');
-  await api.analyzeImage(comp.id);
+  await api.composeImages(t.id, 'rtl');
+  await api.createJob(tripId, { place_id: t.id, kind: 'image', is_new_place: t.created });
   return t;
 }

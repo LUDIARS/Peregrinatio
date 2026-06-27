@@ -37,15 +37,16 @@ export function AddInfo() {
     setBusy(true); setMsg(''); setError('');
     try {
       if (images.length > 0) {
-        const { id } = await enrichFromImages(tripId, target, images);
+        const { id, created } = await enrichFromImages(tripId, target, images);
         setImages([]);
-        setMsg(target ? '画像を解析してこの場所に情報を追加しました。' : '画像を解析して新しい場所を追加しました。');
-        navigate(`/trips/${tripId}/places/${id}`);
+        setMsg('画像を取り込みキューに追加しました。解析が終わると場所リストに表示されます。');
+        // 新規はドラフト (一覧に出ない) のでキューが見える旅トップへ。既存はその場所へ。
+        navigate(created ? `/trips/${tripId}` : `/trips/${tripId}/places/${id}`);
       } else if (isUrl(url)) {
-        const { id } = await enrichFromUrl(tripId, target, url.trim());
+        const { id, created } = await enrichFromUrl(tripId, target, url.trim());
         setUrl('');
-        setMsg(target ? 'URL を要約してこの場所に情報を追加しました。' : 'URL を要約して新しい場所を追加しました。');
-        navigate(`/trips/${tripId}/places/${id}`);
+        setMsg('URL を取り込みキューに追加しました。要約が終わると場所リストに表示されます。');
+        navigate(created ? `/trips/${tripId}` : `/trips/${tripId}/places/${id}`);
       } else {
         setError('URL を入力するか、画像を貼り付け/選択してください。');
       }
@@ -56,8 +57,8 @@ export function AddInfo() {
 
   const canRun = images.length > 0 || isUrl(url);
   const runLabel = images.length > 0
-    ? (busy ? '解析中…' : `画像を解析して追加 (${images.length})`)
-    : (busy ? '取り込み中…' : 'URL を取り込んで追加');
+    ? (busy ? 'キューに追加中…' : `画像を取り込みキューに追加 (${images.length})`)
+    : (busy ? 'キューに追加中…' : 'URL を取り込みキューに追加');
 
   return (
     <div className="page-narrow">

@@ -52,6 +52,7 @@ export interface Place {
   notes: string | null;
   image_url: string | null;
   status: PlaceStatus;
+  status_by: string | null; // 状態を最後に変更した人の表示名 (複数人編集用)
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +62,7 @@ export interface TripPlace extends Place {
   is_base: number;
   checkin_time: string | null;  // 拠点ホテルのチェックイン 'HH:MM'
   checkout_time: string | null; // 拠点ホテルのチェックアウト 'HH:MM'
+  postponed: number;            // 0/1 「また今度」(旅ごと。場所リストから隔離)
 }
 
 export interface PlaceLink {
@@ -107,6 +109,7 @@ export interface ItineraryItem {
   planned_time: string | null;
   kind: ItineraryItemKind;
   note: string | null;
+  edited_by: string | null; // 予定を最後に作成/編集した人の表示名 (複数人編集用)
 }
 
 export type RouteMode = 'driving' | 'walking' | 'transit' | 'bicycling';
@@ -181,6 +184,29 @@ export interface ServiceAlert {
   source_url: string | null;
   fetched_at: string | null;
   created_at: string;
+}
+
+/** 取り込みジョブ (画像解析/クロールの順次処理キュー)。 */
+export type PlaceJobKind = 'image' | 'crawl';
+export type PlaceJobStatus = 'pending' | 'processing' | 'done' | 'needs_info' | 'failed';
+
+export interface PlaceJob {
+  id: string;
+  trip_id: string;
+  place_id: string;
+  kind: PlaceJobKind;
+  status: PlaceJobStatus;
+  source_url: string | null;
+  is_new_place: number;
+  missing_info: string | null; // 未成立時の不足情報 (ユーザ向け)
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** キュー表示用にジョブへ place 名を添えたもの。 */
+export interface PlaceJobView extends PlaceJob {
+  place_name: string | null;
 }
 
 export interface TripDetail {

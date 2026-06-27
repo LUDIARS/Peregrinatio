@@ -10,6 +10,9 @@ import type {
   OriginKind,
   Place,
   PlaceImage,
+  PlaceJob,
+  PlaceJobKind,
+  PlaceJobView,
   PlaceLink,
   PlaceSearchResult,
   PlaceStatus,
@@ -25,6 +28,8 @@ import type {
   TripDetail,
   TripPlace,
 } from './types.js';
+
+import { currentUserName } from './lib/prefs.js';
 
 // 既定は同一オリジン (相対)。dev は vite proxy が /api・/uploads を server:8090 へ中継し、
 // 本番は server 自身が web/dist を配信するため、どちらも相対で通る。
@@ -54,6 +59,11 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   // multipart のときは content-type をブラウザに任せる (boundary 付与のため)。
   const isForm = init.body instanceof FormData;
   if (!isForm && init.body != null) headers['content-type'] = 'application/json';
+  // 複数人編集の表示名。日本語も入りうるので encode して ASCII ヘッダにする。
+  try {
+    const u = currentUserName();
+    if (u) headers['x-pe-user'] = encodeURIComponent(u);
+  } catch { /* prefs 未準備時は付けない */ }
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   if (!res.ok) {
@@ -65,6 +75,17 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(msg, res.status, body);
   }
   if (res.status === 204) return undefined as T;
+  // 200 でも HTML 等が返ることがある (古いサーバが SPA フォールバックを返す等)。
+  // res.json() の「Unexpected token '<'」を分かりやすいエラーに変える ([[feedback_no_silent_fallback]])。
+  const ctype = res.headers.get('content-type') ?? '';
+  if (!ctype.includes('application/json')) {
+    const text = await res.text();
+    throw new ApiError(
+      `API が JSON 以外を返しました (HTTP ${res.status}, content-type: ${ctype || '不明'})。サーバが古い可能性があります（再起動/再デプロイしてください）。`,
+      res.status,
+      text.slice(0, 200),
+    );
+  }
   return (await res.json()) as T;
 }
 
@@ -128,11 +149,14 @@ export const api = {
   /** この旅での拠点フラグ切替 (メンバーシップ)。 */
   setTripBase: (tripId: string, placeId: string, is_base: number) =>
     req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json({ is_base }) }),
-  /** この旅でのメンバーシップ更新 (拠点ホテルの IN/OUT 時刻など)。 */
+  /** この旅でのメンバーシップ更新 (拠点ホテルの IN/OUT 時刻 / また今度フラグなど)。 */
   patchTripPlace: (
     tripId: string, placeId: string,
-    input: { is_base?: number; checkin_time?: string | null; checkout_time?: string | null },
+    input: { is_base?: number; checkin_time?: string | null; checkout_time?: string | null; postponed?: number },
   ) => req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json(input) }),
+  /** 「また今度」フラグ切替 (旅ごと。場所リストから隔離する)。 */
+  setPostponed: (tripId: string, placeId: string, postponed: boolean) =>
+    req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json({ postponed: postponed ? 1 : 0 }) }),
   /** 拠点ホテルのチェックイン/アウト時刻を自動取得 (クロール→LLM)。 */
   fetchHotelTimes: (tripId: string, placeId: string) =>
     req<TripPlace>(`/api/trips/${tripId}/places/${placeId}/hotel-times`, { method: 'POST', body: json({}) }),
@@ -227,6 +251,19 @@ export const api = {
       `/api/timetables/${timetableId}/fetch`,
       { method: 'POST', body: json(opts) },
     ),
+
+  // --- 取り込みジョブ (画像解析/クロールの順次処理キュー) ---
+  /** ジョブを積む。is_new_place=true は取り込みで新規作成したドラフト place (成立まで一覧に出さない)。 */
+  createJob: (
+    tripId: string,
+    input: { place_id: string; kind: PlaceJobKind; source_url?: string; is_new_place?: boolean },
+  ) => req<PlaceJob>(`/api/trips/${tripId}/jobs`, {
+    method: 'POST',
+    body: json({ ...input, is_new_place: input.is_new_place ? 1 : 0 }),
+  }),
+  listJobs: (tripId: string) => req<PlaceJobView[]>(`/api/trips/${tripId}/jobs`),
+  retryJob: (id: string) => req<PlaceJob>(`/api/jobs/${id}/retry`, { method: 'POST', body: json({}) }),
+  deleteJob: (id: string) => req<{ ok: true }>(`/api/jobs/${id}`, { method: 'DELETE' }),
 
   // --- 運行情報 ---
   listServiceAlerts: (tripId: string) => req<ServiceAlert[]>(`/api/trips/${tripId}/service-alerts`),

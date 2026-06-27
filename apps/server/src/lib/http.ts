@@ -7,3 +7,13 @@ export function pick<T extends object>(o: unknown, keys: readonly string[]): Par
   }
   return out as Partial<T>;
 }
+
+/** リクエストの x-pe-user ヘッダ (複数人編集の表示名) を取り出す。最大8文字。未指定は null。 */
+export function userOf(c: { req: { header: (name: string) => string | undefined } }): string | null {
+  const raw = c.req.header('x-pe-user');
+  if (!raw) return null;
+  let name: string;
+  try { name = decodeURIComponent(raw); } catch { name = raw; }
+  name = name.trim().slice(0, 8);
+  return name || null;
+}

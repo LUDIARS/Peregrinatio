@@ -77,6 +77,60 @@ async function enrichPlaceFromWeb(placeId: string): Promise<void> {
   }
 }
 
+/**
+ * クロール本体: URL を取得 → 本文抽出 → LLM 要約 → place を更新し、住所が取れたら geocode。
+ * HTTP ルートと取り込みジョブ worker の両方から呼ぶ (SRP: 重い処理を route から分離)。
+ * 取得失敗/LLM 失敗は例外を投げる (呼び出し側が 502 / job=failed にマップする)。
+ */
+export async function runPlaceCrawl(placeId: string, url: string): Promise<{ place: Place; geocodeWarning?: string }> {
+  const [place] = (await sql`SELECT * FROM places WHERE id=${placeId}`) as Place[];
+  if (!place) throw new Error('place not found');
+
+  const fetcher = new PoliteFetcher({
+    userAgent: config.crawl.userAgent,
+    fetchTimeoutMs: config.crawl.fetchTimeoutMs,
+    minIntervalMs: config.crawl.minIntervalMs,
+    respectRobots: config.crawl.respectRobots,
+  });
+  const res = await fetcher.fetch(url);
+  if (!res.ok) throw new Error(`取得に失敗しました (${res.reason}): ${res.message}`);
+
+  const text = htmlToText(res.html);
+  const info = await extractPlaceInfo(text, place.name, config.llm.summaryModel);
+
+  const summary = info.summary;
+  const category = info.category ?? place.category;
+  const address = info.address ?? place.address;
+  const now = nowIso();
+  await sql`UPDATE places SET summary=${summary}, category=${category}, address=${address},
+    source_url=${url}, updated_at=${now} WHERE id=${placeId}`;
+
+  // 住所が取れたらジオコーディングして lat/lng を立てる。未設定キーは握り潰さず warning で surface。
+  let geocodeWarning: string | undefined;
+  if (info.address) {
+    try {
+      const geo = await geocodeCached(info.address);
+      if (geo) {
+        await sql`UPDATE places SET lat=${geo.lat}, lng=${geo.lng}, updated_at=${nowIso()} WHERE id=${placeId}`;
+      }
+    } catch (err) {
+      if (err instanceof GeocodeNotConfiguredError) geocodeWarning = err.message;
+      else throw err;
+    }
+  }
+
+  // 公式サイト等が新たに分かれば place_links に追記 (ベストエフォート。本体は壊さない)。
+  try {
+    await enrichPlaceFromWeb(placeId);
+  } catch {
+    // ignore: クロール結果は返す
+  }
+
+  const [updated] = (await sql`SELECT * FROM places WHERE id=${placeId}`) as Place[];
+  if (!updated) throw new Error('place not found after crawl');
+  return { place: updated, geocodeWarning };
+}
+
 // ── 施設サマリー: クロール → 要約 ────────────────────────────────────────
 app.post('/api/places/:id/crawl', async (c) => {
   const id = c.req.param('id');
@@ -89,57 +143,21 @@ app.post('/api/places/:id/crawl', async (c) => {
     return c.json({ error: 'url が必要です (body.url か place.source_url を設定してください)' }, 400);
   }
 
-  const fetcher = new PoliteFetcher({
-    userAgent: config.crawl.userAgent,
-    fetchTimeoutMs: config.crawl.fetchTimeoutMs,
-    minIntervalMs: config.crawl.minIntervalMs,
-    respectRobots: config.crawl.respectRobots,
-  });
-  const res = await fetcher.fetch(url);
-  if (!res.ok) {
-    return c.json({ error: `取得に失敗しました (${res.reason}): ${res.message}` }, 502);
-  }
-
-  const text = htmlToText(res.html);
-  const info = await extractPlaceInfo(text, place.name, config.llm.summaryModel);
-
-  const summary = info.summary;
-  const category = info.category ?? place.category;
-  const address = info.address ?? place.address;
-  const now = nowIso();
-  await sql`UPDATE places SET summary=${summary}, category=${category}, address=${address},
-    source_url=${url}, updated_at=${now} WHERE id=${id}`;
-
-  // 住所が取れたらジオコーディングして lat/lng を立てる。未設定キーは握り潰さず warning で surface。
-  let geocodeWarning: string | undefined;
-  if (info.address) {
-    try {
-      const geo = await geocodeCached(info.address);
-      if (geo) {
-        await sql`UPDATE places SET lat=${geo.lat}, lng=${geo.lng}, updated_at=${nowIso()} WHERE id=${id}`;
-      }
-    } catch (err) {
-      if (err instanceof GeocodeNotConfiguredError) geocodeWarning = err.message;
-      else throw err;
-    }
-  }
-
-  // 公式サイト等が新たに分かれば place_links に追記 (ベストエフォート。本体は壊さない)。
   try {
-    await enrichPlaceFromWeb(id);
-  } catch {
-    // ignore: クロール結果は返す
+    const { place: updated, geocodeWarning } = await runPlaceCrawl(id, url);
+    return c.json(geocodeWarning ? { place: updated, geocodeWarning } : updated);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'crawl failed' }, 502);
   }
-
-  const [updated] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
-  return c.json(geocodeWarning ? { place: updated, geocodeWarning } : updated);
 });
 
-// ── 画像を解析 (vision) ──────────────────────────────────────────────────
-app.post('/api/images/:id/analyze', async (c) => {
-  const imageId = c.req.param('id');
+/**
+ * 画像解析本体: composite 画像を vision で読み取り → image_analyses 記録 → 住所が取れたら
+ * geocode して place の lat/lng/address を補完。HTTP ルートと取り込みジョブ worker の両方から呼ぶ。
+ */
+export async function runImageAnalysis(imageId: string): Promise<{ analysis: ImageAnalysis; geocodeWarning?: string }> {
   const [image] = (await sql`SELECT * FROM place_images WHERE id=${imageId}`) as PlaceImage[];
-  if (!image) return c.json({ error: 'image not found' }, 404);
+  if (!image) throw new Error('image not found');
 
   const absPath = imageAbsPath(image.path);
   const prompt = [
@@ -204,7 +222,17 @@ app.post('/api/images/:id/analyze', async (c) => {
   }
 
   const [row] = (await sql`SELECT * FROM image_analyses WHERE id=${analysisId}`) as ImageAnalysis[];
-  return c.json(geocodeWarning ? { ...row, geocodeWarning } : row);
+  if (!row) throw new Error('analysis not found after insert');
+  return { analysis: row, geocodeWarning };
+}
+
+// ── 画像を解析 (vision) ──────────────────────────────────────────────────
+app.post('/api/images/:id/analyze', async (c) => {
+  const imageId = c.req.param('id');
+  const [image] = (await sql`SELECT * FROM place_images WHERE id=${imageId}`) as PlaceImage[];
+  if (!image) return c.json({ error: 'image not found' }, 404);
+  const { analysis, geocodeWarning } = await runImageAnalysis(imageId);
+  return c.json(geocodeWarning ? { ...analysis, geocodeWarning } : analysis);
 });
 
 export default app;

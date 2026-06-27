@@ -275,6 +275,27 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   cursor: pointer; color: inherit; font: inherit; -webkit-tap-highlight-color: transparent;
 }
 .place-row.selected { border-color: var(--c-accent); box-shadow: 0 0 0 2px rgba(14, 124, 134, 0.18); }
+.place-postpone { color: var(--c-muted); }
+
+/* ---- 「また今度」セクション (旅ごとに隔離した場所) ---- */
+.postponed-box {
+  margin: 12px 0; padding: 6px 10px;
+  border: 1px dashed var(--c-border); border-radius: 12px; background: #fafafa;
+}
+.postponed-box > summary { cursor: pointer; font-weight: 600; color: var(--c-muted); padding: 4px 0; }
+.postponed-box .place-row { padding: 8px; }
+.postponed-box .place-row.postponed { opacity: 0.85; }
+
+/* ---- 取り込みキュー ---- */
+.import-queue { margin-top: 12px; }
+.queue-row { padding: 8px 10px; border: 1px solid var(--c-border); border-radius: 10px; background: var(--c-surface); }
+.queue-row.queue-processing { border-color: var(--c-accent); }
+.queue-row.queue-needs_info { border-color: #e8b339; background: #fffdf5; }
+.queue-row.queue-failed { border-color: #f0c0c0; background: #fff7f7; }
+.chip.qstat-pending { background: #eef0f1; color: var(--c-muted); }
+.chip.qstat-processing { background: rgba(14,124,134,0.14); color: var(--c-accent-d); }
+.chip.qstat-needs_info { background: #fbe6bf; color: #7a5a00; }
+.chip.qstat-failed { background: #f6d6d6; color: var(--c-danger); }
 
 .icon-btn {
   background: transparent; border: 1px solid var(--c-border); border-radius: 8px;
@@ -423,7 +444,12 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   padding: 10px; cursor: grab; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   /* タッチ: 縦スクロールは許可しつつ長押しドラッグを検出する。 */
   touch-action: pan-y;
+  /* スマホの長押しでテキスト選択/コールアウトを出さない (長押し=移動に専有する)。
+     中の入力 (時刻) は下で選択を戻す。 */
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
+/* カード内の入力だけは選択/編集できるよう戻す (時刻ピッカー等)。 */
+.kanban-card input { -webkit-user-select: auto; user-select: auto; }
 .kanban-card:active { cursor: grabbing; }
 /* 長押しで持ち上げ中 (Trello 風)。 */
 .kanban-card.lifting {
@@ -621,14 +647,19 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 
 /* ============ 旅のしおり (PC オーバーレイ) ============ */
 .itinerary-open-btn { width: 100%; text-align: left; background: var(--c-surface); color: inherit; border: 1px solid var(--c-border); }
+/* PC は全画面でなく「移動可能なウインドウ」。位置は left/top をインラインで与える。 */
 .itinerary-overlay {
-  position: fixed; inset: 16px; z-index: 80;
+  position: fixed; z-index: 80;
+  width: min(960px, 92vw); height: min(80vh, 760px);
+  min-width: 380px; min-height: 320px; max-width: 96vw; max-height: 92vh;
   background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 16px;
   box-shadow: 0 16px 48px rgba(0,0,0,0.32);
   display: flex; flex-direction: column; overflow: hidden;
+  resize: both; /* 右下ハンドルでサイズ変更可 */
 }
 .itinerary-overlay-bar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 16px; border-bottom: 1px solid var(--c-border); background: var(--c-surface);
+  cursor: move; user-select: none; touch-action: none; /* バーをドラッグして移動 */
 }
 .itinerary-overlay-body { flex: 1; overflow: auto; padding: 16px; }

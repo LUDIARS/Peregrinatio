@@ -55,6 +55,11 @@ export const config = {
     intervalMs: 120_000,   // 走査間隔
     minPlaces: 4,          // 拠点を含む旅にこれ以上の場所が集まったら自動要約
   },
+  // 取り込みジョブ (画像解析/クロール) を 1 件ずつ順次処理するキュー。
+  jobs: {
+    enabled: true,
+    intervalMs: 2_000,     // ポーリング間隔。pending を 1 件取り出して処理する。
+  },
   // アップロード/合成画像・生成 PDF の保存先 (gitignore 済)。
   uploadsDir: resolve(PROJECT_ROOT, 'apps/server/uploads'),
   exportsDir: resolve(PROJECT_ROOT, 'apps/server/exports'),

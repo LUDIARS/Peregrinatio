@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, assetUrl, pdfUrl } from '../api.js';
-import type { PlaceStatus, TripDetail as TripDetailData, TripPlace } from '../types.js';
+import type { PlaceJobView, PlaceStatus, TripDetail as TripDetailData, TripPlace } from '../types.js';
 
 const STATUS_LABEL: Record<string, string> = { interested: '気になる', visited: '訪問済み' };
+const JOB_STATUS_LABEL: Record<string, string> = {
+  pending: '待機中', processing: '処理中', needs_info: '情報不足', failed: '失敗', done: '完了',
+};
 type StatusFilter = 'all' | PlaceStatus;
 const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'all', label: 'すべて' },
@@ -30,12 +33,35 @@ export function TripDetail() {
   const navigate = useNavigate();
   const [data, setData] = useState<TripDetailData | null>(null);
   const [error, setError] = useState('');
-  // 旅のしおり: PC はオーバーレイ表示、モバイルは専用ルートへ遷移。
+  // 旅のしおり: PC は移動可能なオーバーレイウインドウ、モバイルは専用ルートへ遷移。
   const [showItinerary, setShowItinerary] = useState(false);
   const openItinerary = () => {
     if (window.matchMedia('(min-width: 900px)').matches) setShowItinerary(true);
     else navigate(`/trips/${tripId}/itinerary`);
   };
+
+  // しおりウインドウの位置 (左上座標)。初期は画面中央寄せ。ドラッグで移動・保持する。
+  const [winPos, setWinPos] = useState(() => {
+    const w = Math.min(960, window.innerWidth * 0.92);
+    const h = Math.min(window.innerHeight * 0.8, 760);
+    return { x: Math.max(8, (window.innerWidth - w) / 2), y: Math.max(8, (window.innerHeight - h) / 2) };
+  });
+  const winDrag = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+  const onWinBarPointerDown = (e: React.PointerEvent) => {
+    // 閉じる等のボタン上では掴まない。
+    if ((e.target as HTMLElement).closest('button')) return;
+    winDrag.current = { startX: e.clientX, startY: e.clientY, baseX: winPos.x, baseY: winPos.y };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+  };
+  const onWinBarPointerMove = (e: React.PointerEvent) => {
+    const d = winDrag.current;
+    if (!d) return;
+    // タイトルバーが必ず掴める範囲に収める (画面外に消さない)。
+    const x = Math.min(Math.max(0, d.baseX + (e.clientX - d.startX)), window.innerWidth - 120);
+    const y = Math.min(Math.max(0, d.baseY + (e.clientY - d.startY)), window.innerHeight - 48);
+    setWinPos({ x, y });
+  };
+  const onWinBarPointerUp = () => { winDrag.current = null; };
 
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapObj = useRef<any>(null);
@@ -54,12 +80,35 @@ export function TripDetail() {
   const [recommendMsg, setRecommendMsg] = useState('');
   const [recommendRadius, setRecommendRadius] = useState(8000);
 
+  // 取り込みキュー (画像解析/クロールの順次処理)。3 秒ごとにポーリングして進捗を表示する。
+  const [jobs, setJobs] = useState<PlaceJobView[]>([]);
+  const prevActiveJobs = useRef(0);
+
   const reload = async () => {
     if (!tripId) return;
     try { setData(await api.getTrip(tripId)); }
     catch (e) { setError(e instanceof Error ? e.message : '読み込みに失敗しました'); }
   };
   useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [tripId]);
+
+  // 取り込みキューのポーリング。ジョブが完了 (active が減った) ら場所リストを再読込して
+  // 成立した場所を一覧に反映する。
+  const loadJobs = async () => {
+    if (!tripId) return;
+    try {
+      const js = await api.listJobs(tripId);
+      setJobs(js);
+      const active = js.filter((j) => j.status === 'pending' || j.status === 'processing').length;
+      if (active < prevActiveJobs.current) void reload();
+      prevActiveJobs.current = active;
+    } catch { /* ポーリングの失敗は無視 (次回再試行) */ }
+  };
+  useEffect(() => {
+    void loadJobs();
+    const t = window.setInterval(() => void loadJobs(), 3000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId]);
 
   // 地図初期化
   useEffect(() => {
@@ -106,7 +155,7 @@ export function TripDetail() {
   const fitAll = () => {
     if (!mapObj.current || !data) return;
     const g = window.google;
-    const pinned = data.places.filter((p) => p.lat != null && p.lng != null);
+    const pinned = data.places.filter((p) => p.lat != null && p.lng != null && p.postponed !== 1);
     if (pinned.length === 0) return;
     const b = new g.maps.LatLngBounds();
     for (const p of pinned) b.extend({ lat: p.lat as number, lng: p.lng as number });
@@ -131,7 +180,7 @@ export function TripDetail() {
     const g = window.google;
     for (const m of markers.current) m.setMap(null);
     markers.current = [];
-    const pinned = data.places.filter((p) => p.lat != null && p.lng != null);
+    const pinned = data.places.filter((p) => p.lat != null && p.lng != null && p.postponed !== 1);
     const bases = pinned.filter((p) => p.is_base === 1);
 
     for (const p of pinned) {
@@ -184,13 +233,36 @@ export function TripDetail() {
     } finally { setRecommending(false); }
   };
 
+  /** 「また今度」フラグ切替 (旅ごと)。場所リストから隔離 / 復帰させる。楽観更新→失敗時リロード。 */
+  const setPostpone = async (p: TripPlace, v: boolean) => {
+    if (!tripId) return;
+    setData((d) => (d ? { ...d, places: d.places.map((x) => (x.id === p.id ? { ...x, postponed: v ? 1 : 0 } : x)) } : d));
+    if (selectedId === p.id) setSelectedId(null);
+    try { await api.setPostponed(tripId, p.id, v); }
+    catch (e) { setError(e instanceof Error ? e.message : '「また今度」の切替に失敗しました'); await reload(); }
+  };
+
+  /** キューのジョブを再実行する (情報不足/失敗から pending へ)。 */
+  const retryJob = async (id: string) => {
+    try { await api.retryJob(id); await loadJobs(); }
+    catch (e) { setError(e instanceof Error ? e.message : '再試行に失敗しました'); }
+  };
+  /** キューのジョブを破棄する (未成立のドラフト場所も掃除される)。 */
+  const dismissJob = async (id: string) => {
+    try { await api.deleteJob(id); await loadJobs(); await reload(); }
+    catch (e) { setError(e instanceof Error ? e.message : '破棄に失敗しました'); }
+  };
+
   if (!tripId) return null;
   if (error && !data) return <div className="card error">⚠ {error}</div>;
   if (!data) return <p className="muted">読み込み中…</p>;
 
-  const { trip, days, places } = data;
+  const { trip, places } = data;
   const bases = places.filter((p) => p.is_base === 1 && p.lat != null && p.lng != null);
-  const visiblePlaces = statusFilter === 'all' ? places : places.filter((p) => p.status === statusFilter);
+  // 「また今度」は場所リスト/地図から隔離し、専用セクションにだけ出す。
+  const activePlaces = places.filter((p) => p.postponed !== 1);
+  const postponedPlaces = places.filter((p) => p.postponed === 1);
+  const visiblePlaces = statusFilter === 'all' ? activePlaces : activePlaces.filter((p) => p.status === statusFilter);
 
   return (
     <div className={`trip-ws${selectedId ? ' has-detail' : ''}${drawerOpen ? ' drawer-open' : ''}`}>
@@ -245,22 +317,48 @@ export function TripDetail() {
                     </div>
                     <div className="row" style={{ gap: 6, marginTop: 2 }}>
                       {p.status !== 'none' && STATUS_LABEL[p.status] && (
-                        <span className={`chip status-${p.status}`}>{STATUS_LABEL[p.status]}</span>
+                        <span className={`chip status-${p.status}`}>
+                          {STATUS_LABEL[p.status]}{p.status_by ? ` · ${p.status_by}` : ''}
+                        </span>
                       )}
                       {p.category && <span className="muted">{p.category}</span>}
                     </div>
                   </div>
                 </div>
               </button>
+              <div className="place-row-actions">
+                <button type="button" className="sm ghost place-postpone" title="また今度（この旅の一覧から隠す）"
+                  onClick={() => void setPostpone(p, true)}>また今度</button>
+              </div>
             </div>
           ))}
         </div>
 
-        {/* 日程 (日リスト) は左メニューに出さない。しおりはオーバーレイ (PC) / 専用ルート (モバイル) で開く。 */}
-        <button type="button" className="card card-link itinerary-open-btn" onClick={openItinerary}>
-          <strong>🗓 旅のしおりを開く</strong>
-          <div className="muted">日程・経路を{days.length > 0 ? `（${days.length}日）` : ''}まとめて編集します。</div>
-        </button>
+        {/* 「また今度」リスト (旅ごとに隔離した場所)。折りたたみで一覧から邪魔しない。 */}
+        {postponedPlaces.length > 0 && (
+          <details className="postponed-box">
+            <summary>🕓 また今度 ({postponedPlaces.length})</summary>
+            <div className="stack" style={{ marginTop: 8 }}>
+              {postponedPlaces.map((p: TripPlace) => (
+                <div key={p.id} className="place-row postponed">
+                  <button type="button" className="place-row-main" onClick={() => selectPlace(p)}>
+                    <div className="row" style={{ gap: 10, alignItems: 'center', flexWrap: 'nowrap' }}>
+                      {p.image_url && (
+                        <img className="thumb" src={assetUrl(p.image_url)} alt={p.name}
+                          style={{ width: 40, aspectRatio: '1 / 1', flex: '0 0 auto' }} />
+                      )}
+                      <strong style={{ flex: 1, minWidth: 0 }}>{p.name}</strong>
+                    </div>
+                  </button>
+                  <div className="place-row-actions">
+                    <button type="button" className="sm ghost" title="一覧に戻す"
+                      onClick={() => void setPostpone(p, false)}>戻す</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
 
         {/* 近くのおすすめを収集 (左メニュー最下部) */}
         <div className="card foundation-form">
@@ -280,6 +378,50 @@ export function TripDetail() {
           {recommendMsg && <div className="muted">{recommendMsg}</div>}
           <p className="muted" style={{ margin: 0 }}>拠点の周辺から候補を探してこの旅に追加します（拠点の設定が必要です）。</p>
         </div>
+
+        {/* 取り込みキュー (画像解析/クロールの順次処理)。おすすめ収集の直下に置く。 */}
+        {(() => {
+          const queue = jobs.filter((j) => j.status !== 'done');
+          const working = queue.some((j) => j.status === 'pending' || j.status === 'processing');
+          return (
+            <div className="card import-queue">
+              <div className="spread">
+                <strong>📥 取り込みキュー</strong>
+                {working && <span className="muted" style={{ fontSize: 12 }}>処理中…</span>}
+              </div>
+              {queue.length === 0 && (
+                <p className="muted" style={{ margin: '6px 0 0' }}>取り込み中の項目はありません。</p>
+              )}
+              <div className="stack" style={{ marginTop: 8 }}>
+                {queue.map((j) => (
+                  <div key={j.id} className={`queue-row queue-${j.status}`}>
+                    <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                      <span>{j.kind === 'image' ? '🖼' : '🌐'}</span>
+                      <strong style={{ flex: 1, minWidth: 0 }}>{j.place_name || '(無題)'}</strong>
+                      <span className={`chip qstat-${j.status}`}>{JOB_STATUS_LABEL[j.status] ?? j.status}</span>
+                    </div>
+                    {j.status === 'needs_info' && j.missing_info && (
+                      <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>不足: {j.missing_info}</div>
+                    )}
+                    {j.status === 'failed' && j.error && (
+                      <div className="error" style={{ fontSize: 12, marginTop: 4 }}>⚠ {j.error}</div>
+                    )}
+                    {(j.status === 'needs_info' || j.status === 'failed') && (
+                      <div className="place-row-actions" style={{ marginTop: 6 }}>
+                        {j.status === 'needs_info' && (
+                          <button type="button" className="sm ghost"
+                            onClick={() => { setSelectedId(j.place_id); setDrawerOpen(false); }}>開いて補足</button>
+                        )}
+                        <button type="button" className="sm ghost" onClick={() => void retryJob(j.id)}>再試行</button>
+                        <button type="button" className="sm ghost" onClick={() => void dismissJob(j.id)}>破棄</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </aside>
 
       {/* 中央: 地図 + 拠点バー + 検索 */}
@@ -334,8 +476,13 @@ export function TripDetail() {
 
       {/* 旅のしおり (PC オーバーレイ)。モバイルは専用ルートへ遷移するのでここには出ない。 */}
       {showItinerary && (
-        <div className="itinerary-overlay" role="dialog" aria-label="旅のしおり">
-          <div className="itinerary-overlay-bar">
+        <div className="itinerary-overlay" role="dialog" aria-label="旅のしおり"
+          style={{ left: winPos.x, top: winPos.y }}>
+          <div className="itinerary-overlay-bar"
+            onPointerDown={onWinBarPointerDown}
+            onPointerMove={onWinBarPointerMove}
+            onPointerUp={onWinBarPointerUp}
+            onPointerCancel={onWinBarPointerUp}>
             <strong>🗓 旅のしおり</strong>
             <button type="button" className="icon-btn" onClick={() => setShowItinerary(false)} aria-label="閉じる">✕</button>
           </div>
