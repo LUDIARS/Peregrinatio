@@ -172,4 +172,56 @@ describe('places library + trip membership', () => {
     );
     expect(patched.is_base).toBe(1);
   });
+
+  it('「また今度」は旅ごと: 旅A で postponed=1 にしても旅B では 0 のまま', async () => {
+    const tripA = await createTrip('旅A');
+    const tripB = await createTrip('旅B');
+    const created = await json<{ id: string }>(
+      await app.request(`/api/trips/${tripA.id}/places`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'また今度の店' }),
+      }),
+    );
+    // 旅B にも同じ場所を紐付け (使い回し)
+    await app.request(`/api/trips/${tripB.id}/places`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ place_id: created.id }),
+    });
+    // 旅A だけ また今度 に
+    const patched = await json<{ postponed: number }>(
+      await app.request(`/api/trips/${tripA.id}/places/${created.id}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ postponed: 1 }),
+      }),
+    );
+    expect(patched.postponed).toBe(1);
+
+    const aPlaces = await json<{ id: string; postponed: number }[]>(await app.request(`/api/trips/${tripA.id}/places`));
+    const bPlaces = await json<{ id: string; postponed: number }[]>(await app.request(`/api/trips/${tripB.id}/places`));
+    expect(aPlaces.find((p) => p.id === created.id)!.postponed).toBe(1); // 旅A は隔離
+    expect(bPlaces.find((p) => p.id === created.id)!.postponed).toBe(0); // 旅B は通常 (旅データなので独立)
+  });
+
+  it('場所リストは「気になる」を先頭に並べる', async () => {
+    const trip = await createTrip('旅A');
+    // 通常追加 (status=none)
+    await app.request(`/api/trips/${trip.id}/places`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '普通の場所' }),
+    });
+    // 後から追加して「気になる」に
+    const fav = await json<{ id: string }>(
+      await app.request(`/api/trips/${trip.id}/places`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: '気になる場所' }),
+      }),
+    );
+    await app.request(`/api/places/${fav.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'interested' }),
+    });
+
+    const list = await json<{ name: string }[]>(await app.request(`/api/trips/${trip.id}/places`));
+    expect(list[0]!.name).toBe('気になる場所'); // interested が先頭
+  });
 });

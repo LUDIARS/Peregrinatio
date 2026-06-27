@@ -53,10 +53,10 @@ app.delete('/api/places/:id', async (c) => {
 /** GET /api/trips/:id/places — この旅に紐づく場所 (is_base 付き)。 */
 app.get('/api/trips/:id/places', async (c) => {
   const rows = (await sql`
-    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time FROM places p
+    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE tp.trip_id = ${c.req.param('id')}
-    ORDER BY tp.added_at`) as TripPlace[];
+    ORDER BY CASE WHEN p.status='interested' THEN 0 ELSE 1 END, tp.added_at DESC`) as TripPlace[];
   return c.json(rows);
 });
 
@@ -82,18 +82,18 @@ app.post('/api/trips/:id/places', async (c) => {
     VALUES (${trip_id}, ${placeId}, ${b.is_base ?? 0}, ${now})`;
 
   const [p] = (await sql`
-    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time FROM places p
+    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE p.id = ${placeId} AND tp.trip_id = ${trip_id}`) as TripPlace[];
   return c.json(p);
 });
 
-/** PATCH /api/trips/:id/places/:placeId — この旅でのメンバーシップ (is_base 切替 / 拠点ホテルの IN・OUT)。 */
+/** PATCH /api/trips/:id/places/:placeId — この旅でのメンバーシップ (is_base 切替 / 拠点ホテルの IN・OUT / また今度)。 */
 app.patch('/api/trips/:id/places/:placeId', async (c) => {
   const trip_id = c.req.param('id');
   const placeId = c.req.param('placeId');
   const b = (await c.req.json().catch(() => ({}))) as {
-    is_base?: number; checkin_time?: string | null; checkout_time?: string | null;
+    is_base?: number; checkin_time?: string | null; checkout_time?: string | null; postponed?: number;
   };
   if (typeof b.is_base === 'number') {
     await sql`UPDATE trip_places SET is_base=${b.is_base} WHERE trip_id=${trip_id} AND place_id=${placeId}`;
@@ -104,8 +104,11 @@ app.patch('/api/trips/:id/places/:placeId', async (c) => {
   if ('checkout_time' in b) {
     await sql`UPDATE trip_places SET checkout_time=${b.checkout_time ?? null} WHERE trip_id=${trip_id} AND place_id=${placeId}`;
   }
+  if (typeof b.postponed === 'number') {
+    await sql`UPDATE trip_places SET postponed=${b.postponed} WHERE trip_id=${trip_id} AND place_id=${placeId}`;
+  }
   const [p] = (await sql`
-    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time FROM places p
+    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE p.id = ${placeId} AND tp.trip_id = ${trip_id}`) as TripPlace[];
   if (!p) return c.json({ error: 'not found' }, 404);

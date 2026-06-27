@@ -129,7 +129,7 @@ export function TripDetail() {
   const fitAll = () => {
     if (!mapObj.current || !data) return;
     const g = window.google;
-    const pinned = data.places.filter((p) => p.lat != null && p.lng != null);
+    const pinned = data.places.filter((p) => p.lat != null && p.lng != null && p.postponed !== 1);
     if (pinned.length === 0) return;
     const b = new g.maps.LatLngBounds();
     for (const p of pinned) b.extend({ lat: p.lat as number, lng: p.lng as number });
@@ -154,7 +154,7 @@ export function TripDetail() {
     const g = window.google;
     for (const m of markers.current) m.setMap(null);
     markers.current = [];
-    const pinned = data.places.filter((p) => p.lat != null && p.lng != null);
+    const pinned = data.places.filter((p) => p.lat != null && p.lng != null && p.postponed !== 1);
     const bases = pinned.filter((p) => p.is_base === 1);
 
     for (const p of pinned) {
@@ -207,13 +207,25 @@ export function TripDetail() {
     } finally { setRecommending(false); }
   };
 
+  /** 「また今度」フラグ切替 (旅ごと)。場所リストから隔離 / 復帰させる。楽観更新→失敗時リロード。 */
+  const setPostpone = async (p: TripPlace, v: boolean) => {
+    if (!tripId) return;
+    setData((d) => (d ? { ...d, places: d.places.map((x) => (x.id === p.id ? { ...x, postponed: v ? 1 : 0 } : x)) } : d));
+    if (selectedId === p.id) setSelectedId(null);
+    try { await api.setPostponed(tripId, p.id, v); }
+    catch (e) { setError(e instanceof Error ? e.message : '「また今度」の切替に失敗しました'); await reload(); }
+  };
+
   if (!tripId) return null;
   if (error && !data) return <div className="card error">⚠ {error}</div>;
   if (!data) return <p className="muted">読み込み中…</p>;
 
-  const { trip, days, places } = data;
+  const { trip, places } = data;
   const bases = places.filter((p) => p.is_base === 1 && p.lat != null && p.lng != null);
-  const visiblePlaces = statusFilter === 'all' ? places : places.filter((p) => p.status === statusFilter);
+  // 「また今度」は場所リスト/地図から隔離し、専用セクションにだけ出す。
+  const activePlaces = places.filter((p) => p.postponed !== 1);
+  const postponedPlaces = places.filter((p) => p.postponed === 1);
+  const visiblePlaces = statusFilter === 'all' ? activePlaces : activePlaces.filter((p) => p.status === statusFilter);
 
   return (
     <div className={`trip-ws${selectedId ? ' has-detail' : ''}${drawerOpen ? ' drawer-open' : ''}`}>
@@ -275,15 +287,39 @@ export function TripDetail() {
                   </div>
                 </div>
               </button>
+              <div className="place-row-actions">
+                <button type="button" className="sm ghost place-postpone" title="また今度（この旅の一覧から隠す）"
+                  onClick={() => void setPostpone(p, true)}>また今度</button>
+              </div>
             </div>
           ))}
         </div>
 
-        {/* 日程 (日リスト) は左メニューに出さない。しおりはオーバーレイ (PC) / 専用ルート (モバイル) で開く。 */}
-        <button type="button" className="card card-link itinerary-open-btn" onClick={openItinerary}>
-          <strong>🗓 旅のしおりを開く</strong>
-          <div className="muted">日程・経路を{days.length > 0 ? `（${days.length}日）` : ''}まとめて編集します。</div>
-        </button>
+        {/* 「また今度」リスト (旅ごとに隔離した場所)。折りたたみで一覧から邪魔しない。 */}
+        {postponedPlaces.length > 0 && (
+          <details className="postponed-box">
+            <summary>🕓 また今度 ({postponedPlaces.length})</summary>
+            <div className="stack" style={{ marginTop: 8 }}>
+              {postponedPlaces.map((p: TripPlace) => (
+                <div key={p.id} className="place-row postponed">
+                  <button type="button" className="place-row-main" onClick={() => selectPlace(p)}>
+                    <div className="row" style={{ gap: 10, alignItems: 'center', flexWrap: 'nowrap' }}>
+                      {p.image_url && (
+                        <img className="thumb" src={assetUrl(p.image_url)} alt={p.name}
+                          style={{ width: 40, aspectRatio: '1 / 1', flex: '0 0 auto' }} />
+                      )}
+                      <strong style={{ flex: 1, minWidth: 0 }}>{p.name}</strong>
+                    </div>
+                  </button>
+                  <div className="place-row-actions">
+                    <button type="button" className="sm ghost" title="一覧に戻す"
+                      onClick={() => void setPostpone(p, false)}>戻す</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
 
         {/* 近くのおすすめを収集 (左メニュー最下部) */}
         <div className="card foundation-form">

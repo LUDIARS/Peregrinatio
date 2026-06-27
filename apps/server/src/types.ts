@@ -54,6 +54,7 @@ export interface TripPlace extends Place {
   is_base: number;               // 0/1 この旅での拠点
   checkin_time: string | null;   // 拠点ホテルのチェックイン時刻 'HH:MM' (自動取得→調整可)
   checkout_time: string | null;  // 拠点ホテルのチェックアウト時刻 'HH:MM'
+  postponed: number;             // 0/1 「また今度」(旅ごと。場所リストから隔離)
 }
 
 export interface PlaceLink {

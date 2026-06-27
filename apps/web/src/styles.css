@@ -275,6 +275,16 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   cursor: pointer; color: inherit; font: inherit; -webkit-tap-highlight-color: transparent;
 }
 .place-row.selected { border-color: var(--c-accent); box-shadow: 0 0 0 2px rgba(14, 124, 134, 0.18); }
+.place-postpone { color: var(--c-muted); }
+
+/* ---- 「また今度」セクション (旅ごとに隔離した場所) ---- */
+.postponed-box {
+  margin: 12px 0; padding: 6px 10px;
+  border: 1px dashed var(--c-border); border-radius: 12px; background: #fafafa;
+}
+.postponed-box > summary { cursor: pointer; font-weight: 600; color: var(--c-muted); padding: 4px 0; }
+.postponed-box .place-row { padding: 8px; }
+.postponed-box .place-row.postponed { opacity: 0.85; }
 
 .icon-btn {
   background: transparent; border: 1px solid var(--c-border); border-radius: 8px;

@@ -139,11 +139,14 @@ export const api = {
   /** この旅での拠点フラグ切替 (メンバーシップ)。 */
   setTripBase: (tripId: string, placeId: string, is_base: number) =>
     req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json({ is_base }) }),
-  /** この旅でのメンバーシップ更新 (拠点ホテルの IN/OUT 時刻など)。 */
+  /** この旅でのメンバーシップ更新 (拠点ホテルの IN/OUT 時刻 / また今度フラグなど)。 */
   patchTripPlace: (
     tripId: string, placeId: string,
-    input: { is_base?: number; checkin_time?: string | null; checkout_time?: string | null },
+    input: { is_base?: number; checkin_time?: string | null; checkout_time?: string | null; postponed?: number },
   ) => req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json(input) }),
+  /** 「また今度」フラグ切替 (旅ごと。場所リストから隔離する)。 */
+  setPostponed: (tripId: string, placeId: string, postponed: boolean) =>
+    req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json({ postponed: postponed ? 1 : 0 }) }),
   /** 拠点ホテルのチェックイン/アウト時刻を自動取得 (クロール→LLM)。 */
   fetchHotelTimes: (tripId: string, placeId: string) =>
     req<TripPlace>(`/api/trips/${tripId}/places/${placeId}/hotel-times`, { method: 'POST', body: json({}) }),
