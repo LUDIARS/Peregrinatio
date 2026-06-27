@@ -242,14 +242,6 @@ export function Itinerary() {
     } finally { setBusy(false); }
   };
 
-  const addDay = async () => {
-    if (!tripId) return;
-    setBusy(true); setError('');
-    try { await api.createDay(tripId, {}); await load(); }
-    catch (e) { setError(e instanceof Error ? e.message : '日の追加に失敗しました'); }
-    finally { setBusy(false); }
-  };
-
   /** 日付のインライン編集 (日程はしおりで調整可能)。 */
   const setDayDateValue = async (dayId: string, date: string) => {
     setDays((ds) => ds.map((d) => (d.id === dayId ? { ...d, date: date || null } : d)));
@@ -332,8 +324,7 @@ export function Itinerary() {
 
       {days.length === 0 ? (
         <div className="card">
-          <p className="muted" style={{ marginTop: 0 }}>まだ日程がありません。日を追加して予定を組みましょう。</p>
-          <button type="button" onClick={() => void addDay()} disabled={busy}>＋ 日を追加</button>
+          <p className="muted" style={{ marginTop: 0 }}>まだ日程がありません。旅の開始日・終了日を設定すると日程が自動で作成されます。</p>
         </div>
       ) : (
         <div className="kanban-board">
@@ -451,10 +442,6 @@ export function Itinerary() {
               </section>
             );
           })}
-
-          <div className="kanban-col kanban-addcol">
-            <button type="button" className="ghost" onClick={() => void addDay()} disabled={busy}>＋ 日を追加</button>
-          </div>
         </div>
       )}
 
