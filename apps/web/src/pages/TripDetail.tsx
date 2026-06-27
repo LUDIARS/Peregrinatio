@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, assetUrl, pdfUrl } from '../api.js';
 import type { PlaceStatus, TripDetail as TripDetailData, TripPlace } from '../types.js';
 
@@ -13,6 +13,7 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
 import { loadMaps, PIN_PATH } from '../lib/maps.js';
 import { getPrefs } from '../lib/prefs.js';
 import { PlaceDetailPane } from './PlaceDetail.js';
+import { Itinerary } from './Itinerary.js';
 import { LibraryPicker } from './LibraryPicker.js';
 import { MapSearchOverlay } from '../components/MapSearchOverlay.js';
 
@@ -26,8 +27,15 @@ const AREA_ZOOM = 11; // 初期 (拠点中心の周辺)
 
 export function TripDetail() {
   const { tripId } = useParams<{ tripId: string }>();
+  const navigate = useNavigate();
   const [data, setData] = useState<TripDetailData | null>(null);
   const [error, setError] = useState('');
+  // 旅のしおり: PC はオーバーレイ表示、モバイルは専用ルートへ遷移。
+  const [showItinerary, setShowItinerary] = useState(false);
+  const openItinerary = () => {
+    if (window.matchMedia('(min-width: 900px)').matches) setShowItinerary(true);
+    else navigate(`/trips/${tripId}/itinerary`);
+  };
 
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapObj = useRef<any>(null);
@@ -190,7 +198,7 @@ export function TripDetail() {
       <div className="ws-topbar">
         <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((o) => !o)} aria-label="場所一覧">☰ 一覧</button>
         <span className="ws-trip-title">{trip.title}</span>
-        <Link to={`/trips/${trip.id}/itinerary`} className="icon-btn" aria-label="旅のしおり">🗓</Link>
+        <button type="button" className="icon-btn" aria-label="旅のしおり" onClick={openItinerary}>🗓</button>
         <a href={pdfUrl(trip.id)} target="_blank" rel="noreferrer" className="icon-btn" aria-label="PDF">📄</a>
       </div>
 
@@ -248,20 +256,11 @@ export function TripDetail() {
           ))}
         </div>
 
-        <h3>日程 ({days.length} 日)</h3>
-        <Link to={`/trips/${trip.id}/itinerary`} className="card card-link" style={{ display: 'block' }}>
-          <strong>🗓 旅のしおり (カンバン) を開く</strong>
-          <div className="muted">日ごとの予定をドラッグで自由に組み替えられます。</div>
-        </Link>
-        <div className="stack">
-          {days.map((d) => (
-            <Link key={d.id} to={`/trips/${trip.id}/itinerary`} className="card card-link">
-              <strong>{d.title || `${d.day_index + 1} 日目`}</strong>
-              <div className="muted">{d.date ?? '日付未定'}</div>
-            </Link>
-          ))}
-        </div>
-        {/* 日程は旅の開始日〜終了日から自動生成される (手動の「日を追加」UI は廃止)。 */}
+        {/* 日程 (日リスト) は左メニューに出さない。しおりはオーバーレイ (PC) / 専用ルート (モバイル) で開く。 */}
+        <button type="button" className="card card-link itinerary-open-btn" onClick={openItinerary}>
+          <strong>🗓 旅のしおりを開く</strong>
+          <div className="muted">日程・経路を{days.length > 0 ? `（${days.length}日）` : ''}まとめて編集します。</div>
+        </button>
 
         {/* 近くのおすすめを収集 (左メニュー最下部) */}
         <div className="card foundation-form">
@@ -332,6 +331,19 @@ export function TripDetail() {
 
       {/* モバイル: ドロワー背景 */}
       <div className="ws-backdrop" onClick={() => setDrawerOpen(false)} />
+
+      {/* 旅のしおり (PC オーバーレイ)。モバイルは専用ルートへ遷移するのでここには出ない。 */}
+      {showItinerary && (
+        <div className="itinerary-overlay" role="dialog" aria-label="旅のしおり">
+          <div className="itinerary-overlay-bar">
+            <strong>🗓 旅のしおり</strong>
+            <button type="button" className="icon-btn" onClick={() => setShowItinerary(false)} aria-label="閉じる">✕</button>
+          </div>
+          <div className="itinerary-overlay-body">
+            <Itinerary />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

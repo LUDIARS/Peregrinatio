@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
-import type { PlaceLink, PlaceStatus, TripPlace } from '../types.js';
+import type { PlaceImage, PlaceLink, PlaceStatus, TripPlace } from '../types.js';
 
 const STATUS_OPTIONS: { key: PlaceStatus; label: string }[] = [
   { key: 'interested', label: '気になる' },
@@ -26,6 +26,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const navigate = useNavigate();
   const [place, setPlace] = useState<TripPlace | null>(null);
   const [links, setLinks] = useState<PlaceLink[]>([]);
+  const [images, setImages] = useState<PlaceImage[]>([]);
   const [error, setError] = useState('');
   const [hotelBusy, setHotelBusy] = useState(false);
   const [hotelMsg, setHotelMsg] = useState('');
@@ -37,10 +38,12 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     setPlace(p);
   };
   const loadLinks = async () => { setLinks(await api.listLinks(placeId)); };
+  // 取り込んだ画像 (Kindle 連番などの連結 composite + 元画像 source)。
+  const loadImages = async () => { setImages(await api.listImages(placeId)); };
 
   useEffect(() => {
     (async () => {
-      try { await Promise.all([loadPlace(), loadLinks()]); }
+      try { await Promise.all([loadPlace(), loadLinks(), loadImages()]); }
       catch (e) { setError(e instanceof Error ? e.message : '読み込みに失敗しました'); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,6 +151,23 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
             )}
           </div>
 
+          {/* 取り込んだ画像 (連結 composite を先頭に、元画像 source を続けて表示)。 */}
+          {images.length > 0 && (
+            <div className="place-section">
+              <h3 className="place-section-title">取り込んだ画像</h3>
+              <div className="place-images">
+                {[...images]
+                  .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'composite' ? -1 : 1))
+                  .map((img) => (
+                    <a key={img.id} href={assetUrl(img.path)} target="_blank" rel="noreferrer">
+                      <img className="place-image-thumb" src={assetUrl(img.path)}
+                        alt={img.kind === 'composite' ? '連結画像' : '取り込み画像'} />
+                    </a>
+                  ))}
+              </div>
+            </div>
+          )}
+
           {/* 拠点ホテル: チェックイン/チェックアウト (自動取得 + 手動調整)。 */}
           {place.is_base === 1 && (
             <div className="place-section">
@@ -171,6 +191,12 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
               {hotelMsg && <div className="muted" style={{ marginTop: 4 }}>{hotelMsg}</div>}
             </div>
           )}
+
+          {/* 情報を追加: この場所に URL/画像から情報を足す。 */}
+          <button type="button" className="add-info-btn"
+            onClick={() => navigate(`/trips/${tripId}/places/${placeId}/add`)}>
+            ➕ 情報を追加（URL / 画像）
+          </button>
 
           {/* ここに行く: 旅のしおり (カンバン) を開き、どの日程に入れるか選ぶ。 */}
           <button type="button" className="goto-btn"

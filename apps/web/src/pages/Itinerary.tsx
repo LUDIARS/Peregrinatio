@@ -68,6 +68,10 @@ export function Itinerary() {
   const drag = useRef<{ itemId: string; fromDayId: string } | null>(null);
   const [overDay, setOverDay] = useState<string | null>(null);
 
+  // タッチ長押しドラッグ (Trello 風)。マウスは HTML5 DnD、タッチは長押し→指で移動。
+  const touchRef = useRef<{ itemId: string; fromDayId: string; active: boolean; timer: number | null; startX: number; startY: number } | null>(null);
+  const [touchDragId, setTouchDragId] = useState<string | null>(null);
+
   // 時刻表 (移動の候補表示用) と、移動ピッカーを開いている day id。
   const [departureOpts, setDepartureOpts] = useState<DepartureOption[]>([]);
   const [movePickerDay, setMovePickerDay] = useState<string | null>(null);
@@ -344,13 +348,71 @@ export function Itinerary() {
     if (d) moveItemBefore(d.itemId, d.fromDayId, toDayId, null);
   };
 
+  // ── タッチ長押しドラッグ (Trello 風) ──────────────────────────────────────
+  const LONG_PRESS_MS = 350;
+  /** 指の座標から、ドロップ先の日と「この item の前」を求める (elementFromPoint でヒットテスト)。 */
+  const dropTargetAt = (x: number, y: number): { dayId: string; beforeItemId: string | null } | null => {
+    const el = document.elementFromPoint(x, y) as HTMLElement | null;
+    const col = el?.closest('[data-day-id]') as HTMLElement | null;
+    if (!col) return null;
+    const dayId = col.getAttribute('data-day-id')!;
+    const card = el?.closest('[data-item-id]') as HTMLElement | null;
+    let beforeItemId: string | null = null;
+    const draggingId = touchRef.current?.itemId;
+    if (card) {
+      const overId = card.getAttribute('data-item-id')!;
+      if (overId !== draggingId) {
+        const r = card.getBoundingClientRect();
+        const arr = itemsByDay[dayId] ?? [];
+        const idx = arr.findIndex((i) => i.id === overId);
+        beforeItemId = y < r.top + r.height / 2 ? overId : arr[idx + 1]?.id ?? null;
+      }
+    }
+    return { dayId, beforeItemId };
+  };
+  const cancelTouch = () => {
+    if (touchRef.current?.timer) clearTimeout(touchRef.current.timer);
+    touchRef.current = null;
+    setTouchDragId(null);
+    setOverDay(null);
+  };
+  const onCardPointerDown = (e: React.PointerEvent, itemId: string, fromDayId: string) => {
+    if (e.pointerType === 'mouse') return; // マウスは HTML5 DnD を使う
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    touchRef.current = {
+      itemId, fromDayId, active: false, startX: e.clientX, startY: e.clientY,
+      timer: window.setTimeout(() => {
+        if (touchRef.current) { touchRef.current.active = true; setTouchDragId(itemId); }
+      }, LONG_PRESS_MS),
+    };
+  };
+  const onCardPointerMove = (e: React.PointerEvent) => {
+    const t = touchRef.current;
+    if (!t) return;
+    if (!t.active) {
+      // 長押し成立前に動いたらスクロール意図とみなしキャンセル。
+      if (Math.hypot(e.clientX - t.startX, e.clientY - t.startY) > 12) cancelTouch();
+      return;
+    }
+    e.preventDefault(); // ドラッグ中はスクロールさせない
+    setOverDay(dropTargetAt(e.clientX, e.clientY)?.dayId ?? null);
+  };
+  const onCardPointerUp = (e: React.PointerEvent) => {
+    const t = touchRef.current;
+    if (t?.active) {
+      const tgt = dropTargetAt(e.clientX, e.clientY);
+      if (tgt) moveItemBefore(t.itemId, t.fromDayId, tgt.dayId, tgt.beforeItemId);
+    }
+    cancelTouch();
+  };
+
   return (
     <div className="itinerary-page">
       <div className="kanban-head">
         <div className="crumb"><Link to={`/trips/${tripId}`}>← 旅へ戻る</Link></div>
         <h2 style={{ margin: 0 }}>🗓 {trip.title} — 旅のしおり</h2>
         <p className="muted" style={{ margin: 0 }}>
-          カードをドラッグ、またはカードの ◀▶ で日を移動、▲▼ で並べ替え。並びを変えると経路を自動で再計算します。
+          カードをドラッグ (PC) / 長押しして移動 (スマホ)、または ◀▶ で日を移動・▲▼ で並べ替え。並びを変えると経路を自動で再計算します。
         </p>
 
         {/* 出発地点 (自宅/集合地点)。初日の往路・最終日の復路を自動算出する。 */}
@@ -409,6 +471,7 @@ export function Itinerary() {
             return (
               <section
                 key={d.id}
+                data-day-id={d.id}
                 className={`kanban-col${overDay === d.id ? ' over' : ''}`}
                 onDragOver={(e) => { e.preventDefault(); setOverDay(d.id); }}
                 onDragLeave={() => setOverDay((cur) => (cur === d.id ? null : cur))}
@@ -442,11 +505,16 @@ export function Itinerary() {
                     return (
                       <article
                         key={it.id}
-                        className="kanban-card"
+                        data-item-id={it.id}
+                        className={`kanban-card${touchDragId === it.id ? ' lifting' : ''}`}
                         draggable
                         onDragStart={(e) => onCardDragStart(e, it.id, d.id)}
                         onDragOver={(e) => { e.preventDefault(); }}
                         onDrop={(e) => onCardDrop(e, d.id, it.id)}
+                        onPointerDown={(e) => onCardPointerDown(e, it.id, d.id)}
+                        onPointerMove={onCardPointerMove}
+                        onPointerUp={onCardPointerUp}
+                        onPointerCancel={cancelTouch}
                       >
                         <div className="kanban-card-body">
                           {p?.image_url && (

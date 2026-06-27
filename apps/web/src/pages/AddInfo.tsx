@@ -10,7 +10,9 @@ import { collectImageFiles, enrichFromImages, enrichFromUrl, isUrl } from '../li
  * 完了したら新しい場所として登録され、マップとメモで確認できる。
  */
 export function AddInfo() {
-  const { tripId } = useParams<{ tripId: string }>();
+  // placeId が付くルート (/places/:placeId/add) では既存の場所に情報を追加する。
+  const { tripId, placeId } = useParams<{ tripId: string; placeId?: string }>();
+  const target = placeId ?? null;
   const navigate = useNavigate();
   const [url, setUrl] = useState('');
   const [images, setImages] = useState<File[]>([]);
@@ -35,14 +37,14 @@ export function AddInfo() {
     setBusy(true); setMsg(''); setError('');
     try {
       if (images.length > 0) {
-        const { id } = await enrichFromImages(tripId, null, images);
+        const { id } = await enrichFromImages(tripId, target, images);
         setImages([]);
-        setMsg('画像を解析して新しい場所を追加しました。');
+        setMsg(target ? '画像を解析してこの場所に情報を追加しました。' : '画像を解析して新しい場所を追加しました。');
         navigate(`/trips/${tripId}/places/${id}`);
       } else if (isUrl(url)) {
-        const { id } = await enrichFromUrl(tripId, null, url.trim());
+        const { id } = await enrichFromUrl(tripId, target, url.trim());
         setUrl('');
-        setMsg('URL を要約して新しい場所を追加しました。');
+        setMsg(target ? 'URL を要約してこの場所に情報を追加しました。' : 'URL を要約して新しい場所を追加しました。');
         navigate(`/trips/${tripId}/places/${id}`);
       } else {
         setError('URL を入力するか、画像を貼り付け/選択してください。');
@@ -59,11 +61,15 @@ export function AddInfo() {
 
   return (
     <div className="page-narrow">
-      <div className="crumb"><Link to={`/trips/${tripId}`}>← マップとメモへ</Link></div>
-      <h2>➕ 場所の情報を追加する</h2>
+      <div className="crumb">
+        <Link to={target ? `/trips/${tripId}/places/${target}` : `/trips/${tripId}`}>
+          {target ? '← 場所の詳細へ' : '← マップとメモへ'}
+        </Link>
+      </div>
+      <h2>➕ {target ? 'この場所に情報を追加する' : '場所の情報を追加する'}</h2>
       <p className="muted">
         URL を入力するか、画像を貼り付け/選択してください。受け取ったものに応じて
-        要約 (URL) または画像解析 (画像) を行い、新しい場所として登録します。
+        要約 (URL) または画像解析 (画像) を行い、{target ? 'この場所に情報を追加します。' : '新しい場所として登録します。'}
       </p>
 
       <div className="card foundation-form">
