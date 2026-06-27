@@ -16,7 +16,7 @@ const ROOT = resolve(_dir, '../../../..'); // リポジトリルート
 const DEFAULT_CONFIG_PATH = resolve(ROOT, 'peregrinatio.config.json');
 
 /** 暗号化して保存するキー。それ以外 (port 等) は plain。 */
-export const SECRET_KEYS = new Set(['GOOGLE_MAPS_API_KEY']);
+export const SECRET_KEYS = new Set(['GOOGLE_MAPS_API_KEY', 'EKISPERT_API_KEY']);
 
 const STORE_OPTS: StoreOptions = {
   secretKeys: SECRET_KEYS,

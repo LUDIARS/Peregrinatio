@@ -43,6 +43,12 @@ export const config = {
     perQuery: 6,
     queries: ['観光スポット', 'レストラン', 'カフェ', '名所', 'アクティビティ 体験', 'お土産'],
   },
+  // 時刻表/運行情報の自動取得。既定プロバイダは crawl-llm (URL→クロール→LLM 抽出, キー不要)。
+  // 駅すぱあと(Ekispert) の契約 API キーを登録すると ekispert プロバイダが有効化する。
+  transit: {
+    ekispertKey: '',
+    ekispertBaseUrl: 'https://api.ekispert.jp/v1/json',
+  },
   // 拠点サマリー自動生成のバックグラウンド設定。
   baseSummary: {
     enabled: true,
@@ -72,7 +78,8 @@ export async function hydrateSecrets(): Promise<void> {
   if (typeof secrets.GOOGLE_MAPS_API_KEY === 'string') config.googleMaps.apiKey = secrets.GOOGLE_MAPS_API_KEY;
   if (typeof secrets.DATABASE_URL === 'string') config.databaseUrl = secrets.DATABASE_URL;
   if (secrets.LLM_BACKEND === 'cli' || secrets.LLM_BACKEND === 'api') config.llmBackend = secrets.LLM_BACKEND;
+  if (typeof secrets.EKISPERT_API_KEY === 'string') config.transit.ekispertKey = secrets.EKISPERT_API_KEY;
 
-  const applied = ['GOOGLE_MAPS_API_KEY', 'DATABASE_URL', 'LLM_BACKEND'].filter((k) => secrets[k]);
+  const applied = ['GOOGLE_MAPS_API_KEY', 'DATABASE_URL', 'LLM_BACKEND', 'EKISPERT_API_KEY'].filter((k) => secrets[k]);
   if (applied.length > 0) console.log(`[secrets] hydrated ${applied.length} key(s): ${applied.join(', ')}`);
 }
