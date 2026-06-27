@@ -40,9 +40,11 @@ export interface Place {
   updated_at: string;
 }
 
-/** 旅に紐づいた場所 (メンバーシップの is_base を付与)。 */
+/** 旅に紐づいた場所 (メンバーシップの is_base / 拠点ホテルの IN・OUT を付与)。 */
 export interface TripPlace extends Place {
-  is_base: number; // 0/1 この旅での拠点
+  is_base: number;               // 0/1 この旅での拠点
+  checkin_time: string | null;   // 拠点ホテルのチェックイン時刻 'HH:MM' (自動取得→調整可)
+  checkout_time: string | null;  // 拠点ホテルのチェックアウト時刻 'HH:MM'
 }
 
 export interface PlaceLink {
@@ -116,4 +118,46 @@ export interface PlaceSearchResult {
   category?: string | null;
   websiteUri?: string | null;
   photoName?: string | null;
+}
+
+// ── 時刻表 / 運行情報 ──────────────────────────────────────────────────────
+export type TimetableKind = 'shinkansen' | 'bus' | 'train';
+
+/** 時刻表ボード = 区間 (from→to) の保存単位。 */
+export interface Timetable {
+  id: string;
+  trip_id: string;
+  kind: TimetableKind;
+  line_name: string | null;
+  from_station: string | null;
+  to_station: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+/** 便 (1 本の列車/バス)。時刻は 'HH:MM'。 */
+export interface TimetableDeparture {
+  id: string;
+  timetable_id: string;
+  depart_time: string | null;
+  arrive_time: string | null;
+  train_name: string | null;
+  platform: string | null;
+  fare_text: string | null;
+  note: string | null;
+  order_index: number;
+  created_at: string;
+}
+
+/** 運行情報 (遅延/運休など)。 */
+export interface ServiceAlert {
+  id: string;
+  trip_id: string;
+  line_name: string | null;
+  severity: string;
+  title: string | null;
+  body: string | null;
+  source_url: string | null;
+  fetched_at: string | null;
+  created_at: string;
 }

@@ -40,9 +40,11 @@ export interface Place {
   updated_at: string;
 }
 
-/** 旅に紐づいた場所 (is_base 付き)。TripDetail の places はこれ。 */
+/** 旅に紐づいた場所 (is_base / 拠点ホテルの IN・OUT 付き)。TripDetail の places はこれ。 */
 export interface TripPlace extends Place {
   is_base: number;
+  checkin_time: string | null;  // 拠点ホテルのチェックイン 'HH:MM'
+  checkout_time: string | null; // 拠点ホテルのチェックアウト 'HH:MM'
 }
 
 export interface PlaceLink {
@@ -119,6 +121,45 @@ export interface PlaceSearchResult {
 export interface MapConfig {
   enabled: boolean;
   apiKey: string;
+}
+
+// ── 時刻表 / 運行情報 ──────────────────────────────────────────────────────
+export type TimetableKind = 'shinkansen' | 'bus' | 'train';
+
+export interface Timetable {
+  id: string;
+  trip_id: string;
+  kind: TimetableKind;
+  line_name: string | null;
+  from_station: string | null;
+  to_station: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface TimetableDeparture {
+  id: string;
+  timetable_id: string;
+  depart_time: string | null;
+  arrive_time: string | null;
+  train_name: string | null;
+  platform: string | null;
+  fare_text: string | null;
+  note: string | null;
+  order_index: number;
+  created_at: string;
+}
+
+export interface ServiceAlert {
+  id: string;
+  trip_id: string;
+  line_name: string | null;
+  severity: string;
+  title: string | null;
+  body: string | null;
+  source_url: string | null;
+  fetched_at: string | null;
+  created_at: string;
 }
 
 export interface TripDetail {

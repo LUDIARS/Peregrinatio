@@ -13,6 +13,10 @@ import type {
   PlaceStatus,
   RouteLeg,
   RouteMode,
+  ServiceAlert,
+  Timetable,
+  TimetableDeparture,
+  TimetableKind,
   Trip,
   TripDay,
   TripDetail,
@@ -114,6 +118,14 @@ export const api = {
   /** この旅での拠点フラグ切替 (メンバーシップ)。 */
   setTripBase: (tripId: string, placeId: string, is_base: number) =>
     req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json({ is_base }) }),
+  /** この旅でのメンバーシップ更新 (拠点ホテルの IN/OUT 時刻など)。 */
+  patchTripPlace: (
+    tripId: string, placeId: string,
+    input: { is_base?: number; checkin_time?: string | null; checkout_time?: string | null },
+  ) => req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json(input) }),
+  /** 拠点ホテルのチェックイン/アウト時刻を自動取得 (クロール→LLM)。 */
+  fetchHotelTimes: (tripId: string, placeId: string) =>
+    req<TripPlace>(`/api/trips/${tripId}/places/${placeId}/hotel-times`, { method: 'POST', body: json({}) }),
   /** 旅から外す (場所はライブラリに残る)。 */
   removeFromTrip: (tripId: string, placeId: string) =>
     req<{ ok: true }>(`/api/trips/${tripId}/places/${placeId}`, { method: 'DELETE' }),
@@ -176,4 +188,33 @@ export const api = {
   // --- 拠点サマリー生成 (place.summary を埋める) ---
   summarizeBase: (placeId: string) =>
     req<Place>(`/api/places/${placeId}/summarize-base`, { method: 'POST', body: json({}) }),
+
+  // --- 時刻表 (区間ボード + 便) ---
+  listTimetables: (tripId: string) => req<Timetable[]>(`/api/trips/${tripId}/timetables`),
+  createTimetable: (
+    tripId: string,
+    input: { kind: TimetableKind; line_name?: string; from_station?: string; to_station?: string; notes?: string },
+  ) => req<Timetable>(`/api/trips/${tripId}/timetables`, { method: 'POST', body: json(input) }),
+  deleteTimetable: (id: string) => req<{ ok: true }>(`/api/timetables/${id}`, { method: 'DELETE' }),
+  listDepartures: (timetableId: string) =>
+    req<TimetableDeparture[]>(`/api/timetables/${timetableId}/departures`),
+  addDeparture: (
+    timetableId: string,
+    input: { depart_time?: string; arrive_time?: string; train_name?: string; platform?: string; fare_text?: string; note?: string },
+  ) => req<TimetableDeparture>(`/api/timetables/${timetableId}/departures`, { method: 'POST', body: json(input) }),
+  deleteDeparture: (id: string) => req<{ ok: true }>(`/api/departures/${id}`, { method: 'DELETE' }),
+  /** 自動取得 (データ源未配線なら 501)。 */
+  fetchTimetable: (timetableId: string) =>
+    req<TimetableDeparture[]>(`/api/timetables/${timetableId}/fetch`, { method: 'POST', body: json({}) }),
+
+  // --- 運行情報 ---
+  listServiceAlerts: (tripId: string) => req<ServiceAlert[]>(`/api/trips/${tripId}/service-alerts`),
+  addServiceAlert: (
+    tripId: string,
+    input: { line_name?: string; severity?: string; title?: string; body?: string; source_url?: string },
+  ) => req<ServiceAlert>(`/api/trips/${tripId}/service-alerts`, { method: 'POST', body: json(input) }),
+  deleteServiceAlert: (id: string) => req<{ ok: true }>(`/api/service-alerts/${id}`, { method: 'DELETE' }),
+  /** 運行情報の更新 (データ源未配線なら 501)。 */
+  refreshServiceAlerts: (tripId: string) =>
+    req<ServiceAlert[]>(`/api/trips/${tripId}/service-alerts/refresh`, { method: 'POST', body: json({}) }),
 };

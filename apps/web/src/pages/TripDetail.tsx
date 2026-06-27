@@ -11,9 +11,10 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'visited', label: '訪問済み' },
 ];
 import { loadMaps, PIN_PATH } from '../lib/maps.js';
+import { getPrefs } from '../lib/prefs.js';
 import { PlaceDetailPane } from './PlaceDetail.js';
 import { LibraryPicker } from './LibraryPicker.js';
-import { IntelligentSearch } from './IntelligentSearch.js';
+import { MapSearchOverlay } from '../components/MapSearchOverlay.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -43,7 +44,7 @@ export function TripDetail() {
   const [dayDate, setDayDate] = useState('');
   const [dayTitle, setDayTitle] = useState('');
 
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => getPrefs().defaultStatusFilter);
   const [recommending, setRecommending] = useState(false);
   const [recommendMsg, setRecommendMsg] = useState('');
 
@@ -308,15 +309,15 @@ export function TripDetail() {
         )}
         {mapStatus === 'disabled' && <div className="card">地図の API キーが未設定です（地図以外は利用可）。</div>}
         {mapStatus === 'error' && <div className="card error">⚠ {mapError}</div>}
-        <div ref={mapRef} className="map-canvas" style={{ display: mapStatus === 'disabled' ? 'none' : 'block' }} />
-
-        {/* インテリジェント検索 (キーワード / URL / 画像 を 1 つの入口で) */}
-        <IntelligentSearch
-          tripId={tripId}
-          selectedPlace={places.find((p) => p.id === selectedId) ?? null}
-          onChanged={reload}
-          onSelectPlace={(id) => setSelectedId(id)}
-        />
+        <div className="map-wrap">
+          <div ref={mapRef} className="map-canvas" style={{ display: mapStatus === 'disabled' ? 'none' : 'block' }} />
+          {/* 場所を検索 — 地図の上にオーバーレイ。結果も地図に重ねて表示。 */}
+          <MapSearchOverlay
+            tripId={tripId}
+            center={bases[0] ? { lat: bases[0].lat as number, lng: bases[0].lng as number } : null}
+            onChanged={reload}
+          />
+        </div>
 
         {/* 既存ライブラリ場所の使い回し (他の旅で登録済みの場所をこの旅にも紐付け) */}
         <LibraryPicker
@@ -325,7 +326,9 @@ export function TripDetail() {
           onAdded={reload}
         />
 
-        <p className="muted" style={{ marginTop: 6 }}>ピンタップで詳細（🏨拠点はズーム）。</p>
+        <p className="muted" style={{ marginTop: 6 }}>
+          ピンタップで詳細（🏨拠点はズーム）。URL/画像からの情報追加は下部メニューの「情報追加」へ。
+        </p>
       </section>
 
       {/* 右: 場所詳細 (PC=カラム / モバイル=ポップアップ) */}

@@ -48,6 +48,11 @@ port: server=8090 / web(dev)=5179 / docker Postgres=15433。
 
 地図(拠点中心・周囲~10-30km/z11)、周辺施設検索(Places)、施設サマリー(クロール→LLM)、Kindle連番画像の右→左連結、画像解析(vision→住所→ピン)、PDFしおり出力、**おすすめ自動収集**(拠点周辺Places検索→登録+公式サイト資料リンク+Places写真)、**Web/Places画像取得**、**拠点サマリー自動生成**(daemon)、**日程の自動経路**(車/徒歩/自転車)、状態フィルタ。
 - UI: PC=3カラム(一覧左/地図中/詳細右) / モバイル=地図ベース+左上☰ドロワー+詳細ポップアップ。旅一覧=計画/過去/アーカイブ。
+- **グローバルナビ (NavMenu)**: 5セクション (マップとメモ/旅のしおり/情報追加/時刻表・運行情報/設定)。モバイル=下部フッタータブ / PC=画面上を移動できる「インタラクティブメニュー」(☰折りたたみ⇔展開、位置は localStorage 永続)。旅未選択時は旅依存項目を無効化。`apps/web/src/components/NavMenu.tsx`。
+- **場所を検索 (地図オーバーレイ)**: 旧インテリジェント検索のキーワード検索分を地図上のオーバーレイ化 (`components/MapSearchOverlay.tsx`)。URL/画像からの情報追加は独立ページ「情報追加」(`pages/AddInfo.tsx`、`lib/enrich.ts`) に分離。
+- **日程の自動決定**: 旅作成時に開始日〜終了日から trip_days を日付つきで自動生成 (`POST /api/trips`、`lib/dates.ts`)。しおり (カンバン) で日付をインライン編集可。
+- **拠点ホテルの IN/OUT**: 拠点の詳細で公式サイトから自動取得 (`POST /api/trips/:id/places/:pid/hotel-times`、クロール→LLM) + 手動調整。`trip_places.checkin_time/checkout_time`。
+- **時刻表/運行情報 (骨組み)**: 区間ボード+便+運行情報を手入力で管理 (`pages/Transit.tsx`、`routes/timetable.ts`)。しおりの「移動を追加」で時間帯が合う便を候補表示→移動カード化。自動取得 (fetch/refresh) はデータ源未配線で 501 を返す差し替え口。
 
 ## 既知の制約・残作業
 
@@ -62,3 +67,5 @@ port: server=8090 / web(dev)=5179 / docker Postgres=15433。
 9. ~~**テスト/CI 未整備**~~ ✅ 対応済 — `apps/server/src/app.ts`(`buildApiApp`)でルートを分離し、使い捨て SQLite + 本番 migration 上で `app.request()` する統合テスト (`routes/places.test.ts` / `routes/trips.test.ts`、計11) を追加。`.github/workflows/ci.yml` が PR/main push で全 workspace の `npm ci → build → test` を実行 (Node 24)。spec は `spec/test/server-integration.md` に方針を記載。残: days/itinerary や外部依存ルートの統合は未カバー。
 10. 軽微: recommend の半径指定UI無し / og:image 相対URL絶対化未対応。
 11. 保留: リゾナーレ那須(49件)再シード要否は未回答。
+12. **時刻表/運行情報のデータ源未配線** — `routes/timetable.ts` の fetch/refresh は既定 501。NAVITIME/駅すぱあと(契約) または ODPT(登録) を差し込むと自動取得が有効化。手入力では候補表示→移動カード化まで動作。
+13. **server 再起動が必要** — 今回の改修は server コード + migration (006/007) を含む。稼働 server (8090) はフロント (build:web) は即反映だが、新ルート/日程自動生成/IN/OUT/時刻表を有効にするには `npm run migrate` 済 + server 再起動が必要。
