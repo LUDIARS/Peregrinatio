@@ -14,6 +14,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:server": "npm --workspace apps/server run dev",
     "dev:web": "npm --workspace apps/web run dev",
+    "start": "npm --workspace apps/server run start",
     "build:server": "npm --workspace apps/server run build",
     "build:web": "npm --workspace apps/web run build",
     "build": "npm run build --workspaces --if-present",

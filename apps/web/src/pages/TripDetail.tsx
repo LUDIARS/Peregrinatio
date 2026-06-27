@@ -47,6 +47,7 @@ export function TripDetail() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => getPrefs().defaultStatusFilter);
   const [recommending, setRecommending] = useState(false);
   const [recommendMsg, setRecommendMsg] = useState('');
+  const [recommendRadius, setRecommendRadius] = useState(8000);
 
   const reload = async () => {
     if (!tripId) return;
@@ -170,7 +171,7 @@ export function TripDetail() {
     if (!tripId) return;
     setRecommending(true); setRecommendMsg('');
     try {
-      const { added } = await api.recommendTrip(tripId, {});
+      const { added } = await api.recommendTrip(tripId, { radius: recommendRadius });
       setRecommendMsg(added.length > 0 ? `おすすめを ${added.length} 件追加しました。` : '新しいおすすめは見つかりませんでした。');
       await reload();
     } catch (e) {
@@ -283,6 +284,16 @@ export function TripDetail() {
 
         {/* 近くのおすすめを収集 (左メニュー最下部) */}
         <div className="card foundation-form">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}>
+            半径
+            <input
+              type="number" min={500} max={50000} step={500}
+              value={recommendRadius}
+              onChange={(e) => setRecommendRadius(Number(e.target.value))}
+              style={{ width: 72 }}
+            />
+            m
+          </label>
           <button type="button" onClick={() => void collectRecommendations()} disabled={recommending}>
             {recommending ? '収集中…' : '📍 近くのおすすめを収集'}
           </button>
