@@ -75,10 +75,24 @@ function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
+const LAST_TRIP_KEY = 'pe.lastTrip';
+
 export function NavMenu() {
   const { pathname } = useLocation();
-  const tripId = tripIdOf(pathname);
+  const pathTripId = tripIdOf(pathname);
   const active = activeKey(pathname);
+
+  // 旅を選択済みなら、旅に紐づかない画面 (設定など) でも旅依存ボタンを活性に保つため、
+  // 直近に開いていた tripId を覚えてフォールバックに使う。
+  const [lastTripId, setLastTripId] = useState<string | null>(() => {
+    try { return localStorage.getItem(LAST_TRIP_KEY); } catch { return null; }
+  });
+  useEffect(() => {
+    if (!pathTripId) return;
+    setLastTripId(pathTripId);
+    try { localStorage.setItem(LAST_TRIP_KEY, pathTripId); } catch { /* ignore */ }
+  }, [pathTripId]);
+  const tripId = pathTripId ?? lastTripId;
 
   const [{ x, y, open }, setState] = useState<Persisted>(() => loadState());
   // ドラッグ管理: 移動量がしきい値未満なら「クリック (開閉)」とみなす。

@@ -202,6 +202,25 @@ describe('places library + trip membership', () => {
     expect(bPlaces.find((p) => p.id === created.id)!.postponed).toBe(0); // 旅B は通常 (旅データなので独立)
   });
 
+  it('x-pe-user ヘッダで status_by (変更者の表示名) を記録する', async () => {
+    const trip = await createTrip('旅A');
+    const created = await json<{ id: string }>(
+      await app.request(`/api/trips/${trip.id}/places`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: '気になる候補' }),
+      }),
+    );
+    const patched = await json<{ status: string; status_by: string | null }>(
+      await app.request(`/api/places/${created.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'x-pe-user': encodeURIComponent('たろう') },
+        body: JSON.stringify({ status: 'interested' }),
+      }),
+    );
+    expect(patched.status).toBe('interested');
+    expect(patched.status_by).toBe('たろう'); // 誰が「気になる」にしたか
+  });
+
   it('場所リストは「気になる」を先頭に並べる', async () => {
     const trip = await createTrip('旅A');
     // 通常追加 (status=none)

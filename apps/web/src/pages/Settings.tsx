@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
-import { getPrefs, setPrefs, type Prefs, type StatusFilterPref } from '../lib/prefs.js';
+import { getPrefs, setPrefs, USER_NAME_MAX, type Prefs, type StatusFilterPref } from '../lib/prefs.js';
 import type { HomeLocation, MapConfig, RouteMode } from '../types.js';
 
 const STATUS_OPTS: { v: StatusFilterPref; label: string }[] = [
@@ -104,6 +104,13 @@ export function Settings() {
           onChange={(e) => update({ defaultRouteMode: e.target.value as RouteMode })}>
           {MODE_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
         </select>
+
+        <label htmlFor="pref-username" style={{ marginTop: 12 }}>表示名（複数人編集用・最大{USER_NAME_MAX}文字）</label>
+        <input id="pref-username" type="text" maxLength={USER_NAME_MAX} value={prefs.userName}
+          onChange={(e) => update({ userName: e.target.value })} placeholder="あなたの表示名" />
+        <p className="muted" style={{ margin: 0 }}>
+          「気になる」や日程の編集に、誰が操作したかを表示します。初回はランダムな名前が割り当てられます。
+        </p>
 
         <button type="button" className="ghost" onClick={resetMenu} style={{ marginTop: 14 }}>
           メニュー位置をリセット

@@ -317,7 +317,9 @@ export function TripDetail() {
                     </div>
                     <div className="row" style={{ gap: 6, marginTop: 2 }}>
                       {p.status !== 'none' && STATUS_LABEL[p.status] && (
-                        <span className={`chip status-${p.status}`}>{STATUS_LABEL[p.status]}</span>
+                        <span className={`chip status-${p.status}`}>
+                          {STATUS_LABEL[p.status]}{p.status_by ? ` · ${p.status_by}` : ''}
+                        </span>
                       )}
                       {p.category && <span className="muted">{p.category}</span>}
                     </div>

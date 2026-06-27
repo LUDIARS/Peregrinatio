@@ -29,6 +29,8 @@ import type {
   TripPlace,
 } from './types.js';
 
+import { currentUserName } from './lib/prefs.js';
+
 // 既定は同一オリジン (相対)。dev は vite proxy が /api・/uploads を server:8090 へ中継し、
 // 本番は server 自身が web/dist を配信するため、どちらも相対で通る。
 // 別オリジンの server を叩く場合のみ VITE_API_BASE に絶対 URL を入れる。
@@ -57,6 +59,11 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   // multipart のときは content-type をブラウザに任せる (boundary 付与のため)。
   const isForm = init.body instanceof FormData;
   if (!isForm && init.body != null) headers['content-type'] = 'application/json';
+  // 複数人編集の表示名。日本語も入りうるので encode して ASCII ヘッダにする。
+  try {
+    const u = currentUserName();
+    if (u) headers['x-pe-user'] = encodeURIComponent(u);
+  } catch { /* prefs 未準備時は付けない */ }
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   if (!res.ok) {

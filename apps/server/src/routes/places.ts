@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { sql } from '../db/index.js';
 import { newId, nowIso } from '../lib/ids.js';
-import { pick } from '../lib/http.js';
+import { pick, userOf } from '../lib/http.js';
 import type { Place, TripPlace } from '../types.js';
 
 const app = new Hono();
@@ -35,9 +35,11 @@ app.patch('/api/places/:id', async (c) => {
   ]);
   const m = { ...cur, ...b };
   const now = nowIso();
+  // 状態 (気になる/訪問済み) を変更した時だけ、変更者の表示名を記録する。
+  const statusBy = 'status' in b ? userOf(c) : cur.status_by;
   await sql`UPDATE places SET name=${m.name}, address=${m.address}, lat=${m.lat}, lng=${m.lng},
     category=${m.category}, source_url=${m.source_url}, summary=${m.summary}, notes=${m.notes},
-    image_url=${m.image_url}, status=${m.status}, updated_at=${now} WHERE id=${id}`;
+    image_url=${m.image_url}, status=${m.status}, status_by=${statusBy}, updated_at=${now} WHERE id=${id}`;
   const [p] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
   return c.json(p);
 });
@@ -78,9 +80,10 @@ app.post('/api/trips/:id/places', async (c) => {
   if (!placeId) {
     if (!b.name) return c.json({ error: 'name required' }, 400);
     placeId = newId();
-    await sql`INSERT INTO places (id, name, address, lat, lng, category, source_url, notes, image_url, status, created_at, updated_at)
+    const statusBy = b.status && b.status !== 'none' ? userOf(c) : null;
+    await sql`INSERT INTO places (id, name, address, lat, lng, category, source_url, notes, image_url, status, status_by, created_at, updated_at)
       VALUES (${placeId}, ${b.name}, ${b.address ?? null}, ${b.lat ?? null}, ${b.lng ?? null}, ${b.category ?? null},
-              ${b.source_url ?? null}, ${b.notes ?? null}, ${b.image_url ?? null}, ${b.status ?? 'none'}, ${now}, ${now})`;
+              ${b.source_url ?? null}, ${b.notes ?? null}, ${b.image_url ?? null}, ${b.status ?? 'none'}, ${statusBy}, ${now}, ${now})`;
   }
 
   await sql`INSERT OR IGNORE INTO trip_places (trip_id, place_id, is_base, added_at)

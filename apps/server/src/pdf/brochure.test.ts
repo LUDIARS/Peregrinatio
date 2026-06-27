@@ -13,7 +13,7 @@ const trip: Trip = {
 };
 const place = (id: string, name: string): Place => ({
   id, name, address: '住所', lat: 36, lng: 136, category: 'カテゴリ', source_url: null,
-  summary: '概要', notes: null, image_url: null, status: 'interested', created_at: '', updated_at: '',
+  summary: '概要', notes: null, image_url: null, status: 'interested', status_by: null, created_at: '', updated_at: '',
 });
 
 function baseInput(over: Partial<BrochureInput> = {}): BrochureInput {
@@ -21,8 +21,8 @@ function baseInput(over: Partial<BrochureInput> = {}): BrochureInput {
   const p1 = place('p1', '兼六園');
   const p2 = place('p2', '21世紀美術館');
   const items: ItineraryItem[] = [
-    { id: 'i1', day_id: 'd1', place_id: 'p1', order_index: 0, planned_time: '09:30', kind: 'visit', note: null },
-    { id: 'i2', day_id: 'd1', place_id: 'p2', order_index: 1, planned_time: '11:30', kind: 'visit', note: null },
+    { id: 'i1', day_id: 'd1', place_id: 'p1', order_index: 0, planned_time: '09:30', kind: 'visit', note: null, edited_by: null },
+    { id: 'i2', day_id: 'd1', place_id: 'p2', order_index: 1, planned_time: '11:30', kind: 'visit', note: null, edited_by: null },
   ];
   const legs: RouteLeg[] = [
     { id: 'l1', day_id: 'd1', from_place_id: 'p1', to_place_id: 'p2', from_label: null, to_label: null, mode: 'walking', duration_sec: 720, distance_m: 850, fare_text: null, polyline: null, raw_json: null, computed_at: '' },

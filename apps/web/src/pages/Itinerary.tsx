@@ -531,6 +531,7 @@ export function Itinerary() {
                               {p ? `${p.is_base === 1 ? '🏨 ' : ''}${p.name}` : (it.note || '(メモ)')}
                             </strong>
                             {p?.category && <div className="muted" style={{ fontSize: 12 }}>{p.category}</div>}
+                            {it.edited_by && <div className="muted" style={{ fontSize: 11 }}>✎ {it.edited_by}</div>}
                             <input
                               type="time"
                               className="kanban-time"

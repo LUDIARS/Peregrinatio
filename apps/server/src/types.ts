@@ -45,6 +45,7 @@ export interface Place {
   notes: string | null;
   image_url: string | null; // Web/Places から取得した代表画像
   status: PlaceStatus;       // 'interested'(気になる) | 'visited'(訪問済み) | 'none'
+  status_by: string | null;  // 状態を最後に変更した人の表示名 (複数人編集用)
   created_at: string;
   updated_at: string;
 }
@@ -101,6 +102,7 @@ export interface ItineraryItem {
   planned_time: string | null;
   kind: ItineraryItemKind;
   note: string | null;
+  edited_by: string | null; // 予定を最後に作成/編集した人の表示名 (複数人編集用)
 }
 
 export type RouteMode = 'driving' | 'walking' | 'transit' | 'bicycling';
