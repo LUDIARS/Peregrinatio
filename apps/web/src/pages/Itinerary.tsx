@@ -405,6 +405,11 @@ export function Itinerary() {
     }
     cancelTouch();
   };
+  /** タッチ操作中 (長押し待ち/移動中) の contextmenu を抑止 — Android の長押しコールアウト対策。
+   *  PC の右クリックは touchRef が無いので通常どおり。 */
+  const onCardContextMenu = (e: React.MouseEvent) => {
+    if (touchRef.current) e.preventDefault();
+  };
 
   return (
     <div className="itinerary-page">
@@ -515,6 +520,7 @@ export function Itinerary() {
                         onPointerMove={onCardPointerMove}
                         onPointerUp={onCardPointerUp}
                         onPointerCancel={cancelTouch}
+                        onContextMenu={onCardContextMenu}
                       >
                         <div className="kanban-card-body">
                           {p?.image_url && (
