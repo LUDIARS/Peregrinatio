@@ -69,6 +69,7 @@ export function TripDetail() {
   const mapObj = useRef<any>(null);
   const infoObj = useRef<any>(null);
   const mapDivRef = useRef<HTMLDivElement | null>(null); // 保持している地図 DOM (付け替え用)
+  const markerById = useRef<Map<string, any>>(new Map()); // placeId → marker (情報窓のアンカー用)
   const [mapStatus, setMapStatus] = useState<MapStatus>('loading');
   const [mapError, setMapError] = useState('');
   const [activeBaseId, setActiveBaseId] = useState<string | null>(null);
@@ -76,6 +77,8 @@ export function TripDetail() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // 地図ピン/一覧の強調用。詳細を開く selectedId とは分離し、フォーカス (スマホのタップ) でも強調する。
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  // スマホ: 情報窓 (ピン上に出す名前+詳細ボタン) を表示する place。詳細を開くと閉じる。
+  const [infoPlaceId, setInfoPlaceId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => getPrefs().defaultStatusFilter);
@@ -183,10 +186,11 @@ export function TripDetail() {
     setActiveBaseId(null);
   };
 
-  /** 場所を選択 = 詳細を開く + ピン強調 + 地図を寄せる。モバイルはドロワーを閉じる。 */
+  /** 場所を選択 = 詳細を開く + ピン強調 + 地図を寄せる。情報窓は閉じる。モバイルはドロワーを閉じる。 */
   const selectPlace = (p: TripPlace) => {
     setSelectedId(p.id);
     setFocusedId(p.id);
+    setInfoPlaceId(null); // 詳細を開くのでピン上の情報窓は閉じる
     setDrawerOpen(false);
     // 場所選択は中心を寄せるだけ (周辺が見える広域ズームは維持。寄り過ぎ防止)。
     if (mapObj.current && p.lat != null && p.lng != null) {
@@ -195,14 +199,38 @@ export function TripDetail() {
     }
   };
 
-  /** 詳細を開かずにピンの位置へ寄せて強調する (スマホの通常タップ用)。 */
+  /** 詳細を開かずにピンを選択状態 (強調 + ピン上に情報窓) にする (スマホの通常タップ用)。 */
   const focusPlace = (p: TripPlace) => {
     setFocusedId(p.id);
+    setInfoPlaceId(p.id); // ピンの上に情報窓 (名前 + 詳細ボタン) を出す
     setDrawerOpen(false);
     if (mapObj.current && p.lat != null && p.lng != null) {
       mapObj.current.panTo({ lat: p.lat, lng: p.lng });
       if (mapObj.current.getZoom() < 12) mapObj.current.setZoom(BASE_ZOOM);
     }
+  };
+
+  /** ピン上の情報窓の中身 (名前 + カテゴリ + 詳細ボタン) を DOM で作る。 */
+  const buildPinInfoContent = (p: TripPlace): HTMLElement => {
+    const root = document.createElement('div');
+    root.className = 'pin-info';
+    const name = document.createElement('div');
+    name.className = 'pin-info-name';
+    name.textContent = `${p.is_base === 1 ? '🏨 ' : ''}${p.name}`;
+    root.appendChild(name);
+    if (p.category) {
+      const cat = document.createElement('div');
+      cat.className = 'pin-info-cat';
+      cat.textContent = p.category;
+      root.appendChild(cat);
+    }
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pin-info-btn';
+    btn.textContent = '詳細を開く';
+    btn.addEventListener('click', () => selectPlace(p));
+    root.appendChild(btn);
+    return root;
   };
 
   // スマホ判定 (PC は従来どおりタップで詳細を開く / スマホはタップ=ピン移動・長押し/ボタン=詳細)。
@@ -241,6 +269,7 @@ export function TripDetail() {
     if (mapStatus !== 'ready' || !mapObj.current || !data) return;
     const g = window.google;
     clearMarkers();
+    markerById.current.clear();
     const pinned = data.places.filter((p) => p.lat != null && p.lng != null && p.postponed !== 1);
     const bases = pinned.filter((p) => p.is_base === 1);
 
@@ -264,10 +293,25 @@ export function TripDetail() {
         },
       });
       marker.addListener('click', () => {
-        if (isBase) { focusBase(p); }
+        // スマホ: ピンタップ=強調+情報窓 / PC: 拠点はズーム・その他は詳細。
+        if (isMobile()) { focusPlace(p); }
+        else if (isBase) { focusBase(p); }
         else { selectPlace(p); }
       });
+      markerById.current.set(p.id, marker);
       addMarker(marker);
+    }
+
+    // スマホ: フォーカスした場所のピン上に情報窓 (名前 + 詳細ボタン) を出す。それ以外は閉じる。
+    if (infoObj.current) {
+      const target = isMobile() && infoPlaceId ? pinned.find((x) => x.id === infoPlaceId) : null;
+      const marker = target ? markerById.current.get(target.id) : null;
+      if (target && marker) {
+        infoObj.current.setContent(buildPinInfoContent(target));
+        infoObj.current.open({ anchor: marker, map: mapObj.current });
+      } else {
+        infoObj.current.close();
+      }
     }
 
     // 自動センタリングはこの旅で 1 回だけ (同じ旅に戻った時はユーザの操作位置を保つ)。
@@ -281,7 +325,7 @@ export function TripDetail() {
       } else { fitAll(); }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, mapStatus, focusedId]);
+  }, [data, mapStatus, focusedId, infoPlaceId]);
 
   const collectRecommendations = async () => {
     if (!tripId) return;
