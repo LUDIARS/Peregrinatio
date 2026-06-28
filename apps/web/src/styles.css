@@ -682,6 +682,22 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   height: 88px; width: auto; max-width: 100%;
   border-radius: 10px; border: 1px solid var(--c-border); object-fit: cover; display: block;
 }
+/* サムネを包むボタン (旧 <a> ナビゲートをやめ、ページ内ライトボックスを開く)。 */
+.place-image-thumb-btn {
+  padding: 0; border: none; background: none; cursor: pointer; display: block; line-height: 0;
+}
+.place-hero-img[role='button'] { cursor: pointer; }
+/* 画像ライトボックス (ページ内オーバーレイ。タップで閉じる)。 */
+.image-lightbox {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px; cursor: zoom-out;
+}
+.image-lightbox img {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain; border-radius: 6px;
+}
 .add-info-btn {
   width: 100%; margin: 6px 0 4px; min-height: 44px; font-size: 14px; font-weight: 700;
   background: transparent; color: var(--c-accent); border: 1px solid var(--c-accent);

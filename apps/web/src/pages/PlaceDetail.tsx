@@ -30,6 +30,11 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const [error, setError] = useState('');
   const [hotelBusy, setHotelBusy] = useState(false);
   const [hotelMsg, setHotelMsg] = useState('');
+  // 画像のライトボックス (ページ内オーバーレイ)。
+  // 旧実装は <a target="_blank"> でナビゲートしていたが、PWA の SW navigation fallback が
+  // index.html を返し ルータ * → / リダイレクトでトップへ飛ぶ不具合があったため、遷移せず
+  // ページ内で開く。
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   const loadPlace = async () => {
     const detail = await api.getTrip(tripId);
@@ -118,7 +123,9 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
           {/* 画像 → 説明 → 情報元。名前/住所はデータ由来のため編集不可 (表示のみ)。 */}
           <div className="place-hero">
             {place.image_url
-              ? <img className="place-hero-img" src={assetUrl(place.image_url)} alt={place.name} />
+              ? <img className="place-hero-img" src={assetUrl(place.image_url)} alt={place.name}
+                  role="button" tabIndex={0}
+                  onClick={() => setLightbox(assetUrl(place.image_url!))} />
               : <div className="place-hero-img placeholder">画像なし</div>}
             <h2 className="place-hero-name">{place.is_base === 1 ? '🏨 ' : ''}{place.name}</h2>
             {place.address && <div className="place-hero-addr">{place.address}</div>}
@@ -168,10 +175,11 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
                 {[...images]
                   .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'composite' ? -1 : 1))
                   .map((img) => (
-                    <a key={img.id} href={assetUrl(img.path)} target="_blank" rel="noreferrer">
+                    <button key={img.id} type="button" className="place-image-thumb-btn"
+                      onClick={() => setLightbox(assetUrl(img.path))}>
                       <img className="place-image-thumb" src={assetUrl(img.path)}
                         alt={img.kind === 'composite' ? '連結画像' : '取り込み画像'} />
-                    </a>
+                    </button>
                   ))}
               </div>
             </div>
@@ -245,6 +253,13 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
           </div>
 
           {error && <div className="card error">⚠ {error}</div>}
+        </div>
+      )}
+
+      {lightbox && (
+        <div className="image-lightbox" role="dialog" aria-modal="true"
+          onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="" />
         </div>
       )}
     </div>
