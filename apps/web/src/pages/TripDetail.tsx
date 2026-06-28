@@ -74,6 +74,8 @@ export function TripDetail() {
   const [activeBaseId, setActiveBaseId] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // 地図ピン/一覧の強調用。詳細を開く selectedId とは分離し、フォーカス (スマホのタップ) でも強調する。
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => getPrefs().defaultStatusFilter);
@@ -181,9 +183,10 @@ export function TripDetail() {
     setActiveBaseId(null);
   };
 
-  /** 場所を選択 = 詳細を開く + 地図を寄せる。モバイルはドロワーを閉じる。 */
+  /** 場所を選択 = 詳細を開く + ピン強調 + 地図を寄せる。モバイルはドロワーを閉じる。 */
   const selectPlace = (p: TripPlace) => {
     setSelectedId(p.id);
+    setFocusedId(p.id);
     setDrawerOpen(false);
     // 場所選択は中心を寄せるだけ (周辺が見える広域ズームは維持。寄り過ぎ防止)。
     if (mapObj.current && p.lat != null && p.lng != null) {
@@ -192,8 +195,9 @@ export function TripDetail() {
     }
   };
 
-  /** 詳細を開かずにピンの位置へ寄せるだけ (スマホの通常タップ用)。 */
+  /** 詳細を開かずにピンの位置へ寄せて強調する (スマホの通常タップ用)。 */
   const focusPlace = (p: TripPlace) => {
+    setFocusedId(p.id);
     setDrawerOpen(false);
     if (mapObj.current && p.lat != null && p.lng != null) {
       mapObj.current.panTo({ lat: p.lat, lng: p.lng });
@@ -242,7 +246,7 @@ export function TripDetail() {
 
     for (const p of pinned) {
       const isBase = p.is_base === 1;
-      const isSelected = p.id === selectedId; // 選択中はピンの色を変える (強調)
+      const isSelected = p.id === focusedId; // フォーカス/選択中はピンの色を変える (強調)
       const pos = { lat: p.lat as number, lng: p.lng as number };
       const marker = new g.maps.Marker({
         position: pos, map: mapObj.current, title: p.name,
@@ -277,7 +281,7 @@ export function TripDetail() {
       } else { fitAll(); }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, mapStatus, selectedId]);
+  }, [data, mapStatus, focusedId]);
 
   const collectRecommendations = async () => {
     if (!tripId) return;
@@ -372,7 +376,7 @@ export function TripDetail() {
         <div className="stack">
           {visiblePlaces.map((p: TripPlace) => (
             <div key={p.id}
-              className={`place-row${p.is_base === 1 ? ' is-base' : ''}${selectedId === p.id ? ' selected' : ''}`}>
+              className={`place-row${p.is_base === 1 ? ' is-base' : ''}${focusedId === p.id ? ' selected' : ''}`}>
               <button type="button" className="place-row-main"
                 onClick={() => onRowTap(p)}
                 onPointerDown={(e) => onRowPointerDown(e, p)}
@@ -494,7 +498,7 @@ export function TripDetail() {
                       <div className="place-row-actions" style={{ marginTop: 6 }}>
                         {j.status === 'needs_info' && (
                           <button type="button" className="sm ghost"
-                            onClick={() => { setSelectedId(j.place_id); setDrawerOpen(false); }}>開いて補足</button>
+                            onClick={() => { setSelectedId(j.place_id); setFocusedId(j.place_id); setDrawerOpen(false); }}>開いて補足</button>
                         )}
                         <button type="button" className="sm ghost" onClick={() => void retryJob(j.id)}>再試行</button>
                         <button type="button" className="sm ghost" onClick={() => void dismissJob(j.id)}>破棄</button>
