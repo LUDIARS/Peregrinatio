@@ -286,6 +286,11 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .postponed-box .place-row { padding: 8px; }
 .postponed-box .place-row.postponed { opacity: 0.85; }
 
+/* ---- 予約サジェスト (新幹線/飛行機) ---- */
+.reservation-suggest { margin-bottom: 14px; }
+.reservation-row { display: block; text-decoration: none; color: inherit; padding: 10px; }
+.reservation-row:hover { border-color: var(--c-accent); }
+
 /* ---- 取り込みキュー ---- */
 .import-queue { margin-top: 12px; }
 .queue-row { padding: 8px 10px; border: 1px solid var(--c-border); border-radius: 10px; background: var(--c-surface); }

@@ -209,6 +209,24 @@ export interface PlaceJobView extends PlaceJob {
   place_name: string | null;
 }
 
+/** 新幹線/飛行機の予約サジェスト 1 件。 */
+export interface ReservationSuggestion {
+  mode: 'shinkansen' | 'flight';
+  title: string;
+  operator: string;
+  from: string;
+  to: string;
+  url: string;
+  note?: string;
+  distance_km: number;
+  destination: string; // どの目的地に対するサジェストか
+}
+
+export interface ReservationSuggestionsResult {
+  origin: string | null;
+  suggestions: ReservationSuggestion[];
+}
+
 export interface TripDetail {
   trip: Trip;
   days: TripDay[];
