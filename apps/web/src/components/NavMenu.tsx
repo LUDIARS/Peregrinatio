@@ -201,7 +201,7 @@ export function NavMenu() {
             title="メニュー (ドラッグで移動)"
             aria-label="メニューを開く"
           >
-            ☰
+            メニュー
           </button>
         )}
       </div>
