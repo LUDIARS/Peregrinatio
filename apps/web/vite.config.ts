@@ -13,6 +13,44 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
+      workbox: {
+        cleanupOutdatedCaches: true,
+        // 地図タイル/JS・取り込み画像・API をオフラインや再訪時にキャッシュする。
+        runtimeCaching: [
+          {
+            // Google Maps の JS / タイル / 静的アセット (cross-origin = opaque を許可)。
+            urlPattern: ({ url }) =>
+              /(\bmaps\.googleapis\.com|\bmaps\.gstatic\.com|\bkhms\d*\.googleapis\.com|\.ggpht\.com)/.test(url.hostname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-maps',
+              expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // 取り込み/合成画像。
+            urlPattern: ({ url }) => url.pathname.startsWith('/uploads/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'pe-uploads',
+              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // 旅データ等の API (GET)。オンラインは最新優先、オフラインはキャッシュ。
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'pe-api',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
+      },
       manifest: {
         name: 'Peregrinatio',
         short_name: 'Pe旅',

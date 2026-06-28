@@ -14,6 +14,8 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'visited', label: '訪問済み' },
 ];
 import { loadMaps, PIN_PATH } from '../lib/maps.js';
+import { acquireMap, releaseMap, needsCentering, markCentered, clearMarkers, addMarker } from '../lib/mapInstance.js';
+import { getCachedTrip, fetchTrip } from '../lib/dataCache.js';
 import { getPrefs } from '../lib/prefs.js';
 import { PlaceDetailPane } from './PlaceDetail.js';
 import { Itinerary } from './Itinerary.js';
@@ -63,11 +65,10 @@ export function TripDetail() {
   };
   const onWinBarPointerUp = () => { winDrag.current = null; };
 
-  const mapRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<HTMLDivElement | null>(null); // 地図をぶら下げるホスト要素
   const mapObj = useRef<any>(null);
   const infoObj = useRef<any>(null);
-  const markers = useRef<any[]>([]);
-  const didCenter = useRef(false);
+  const mapDivRef = useRef<HTMLDivElement | null>(null); // 保持している地図 DOM (付け替え用)
   const [mapStatus, setMapStatus] = useState<MapStatus>('loading');
   const [mapError, setMapError] = useState('');
   const [activeBaseId, setActiveBaseId] = useState<string | null>(null);
@@ -84,12 +85,20 @@ export function TripDetail() {
   const [jobs, setJobs] = useState<PlaceJobView[]>([]);
   const prevActiveJobs = useRef(0);
 
+  // 拠点を追加するピッカー (場所リストから選ぶ)。
+  const [showBasePicker, setShowBasePicker] = useState(false);
+
   const reload = async () => {
     if (!tripId) return;
-    try { setData(await api.getTrip(tripId)); }
+    try { setData(await fetchTrip(tripId)); }
     catch (e) { setError(e instanceof Error ? e.message : '読み込みに失敗しました'); }
   };
-  useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [tripId]);
+  useEffect(() => {
+    // キャッシュがあれば即表示 (タブ切替のちらつき防止) → 裏で最新取得して差し替え。
+    if (tripId) setData(getCachedTrip(tripId) ?? null);
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId]);
 
   // 取り込みキューのポーリング。ジョブが完了 (active が減った) ら場所リストを再読込して
   // 成立した場所を一覧に反映する。
@@ -120,11 +129,17 @@ export function TripDetail() {
         if (!cfg.enabled || !cfg.apiKey) { setMapStatus('disabled'); return; }
         await loadMaps(cfg.apiKey);
         if (cancelled || !mapRef.current) return;
-        mapObj.current = new window.google.maps.Map(mapRef.current, {
+        // 保持している地図インスタンスを取得 (初回のみ生成)、ホストへ付け替える。
+        const { map, info, div } = acquireMap({
           center: { lat: 35.681, lng: 139.767 }, zoom: 11,
           mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
         });
-        infoObj.current = new window.google.maps.InfoWindow();
+        mapObj.current = map;
+        infoObj.current = info;
+        mapDivRef.current = div;
+        mapRef.current.appendChild(div);
+        // ホスト付け替え後はサイズ再計算を促す (タイルは再取得されない)。
+        window.google.maps.event.trigger(map, 'resize');
         setMapStatus('ready');
       } catch (e) {
         if (!cancelled) {
@@ -133,7 +148,10 @@ export function TripDetail() {
         }
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      releaseMap(); // 地図 DOM をホストから外して保持 (再生成・タイル再取得しない)。
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -174,12 +192,51 @@ export function TripDetail() {
     }
   };
 
+  /** 詳細を開かずにピンの位置へ寄せるだけ (スマホの通常タップ用)。 */
+  const focusPlace = (p: TripPlace) => {
+    setDrawerOpen(false);
+    if (mapObj.current && p.lat != null && p.lng != null) {
+      mapObj.current.panTo({ lat: p.lat, lng: p.lng });
+      if (mapObj.current.getZoom() < 12) mapObj.current.setZoom(BASE_ZOOM);
+    }
+  };
+
+  // スマホ判定 (PC は従来どおりタップで詳細を開く / スマホはタップ=ピン移動・長押し/ボタン=詳細)。
+  const isMobile = () => window.matchMedia('(max-width: 899px)').matches;
+  // 行の長押し検出 (スマホ)。長押し成立で詳細、直後の click は抑止する。
+  const rowPress = useRef<{ timer: number | null; moved: boolean; x: number; y: number } | null>(null);
+  const suppressRowClick = useRef(false);
+  const onRowPointerDown = (e: React.PointerEvent, p: TripPlace) => {
+    if (e.pointerType === 'mouse') return; // PC はマウス click で処理
+    rowPress.current = {
+      moved: false, x: e.clientX, y: e.clientY,
+      timer: window.setTimeout(() => {
+        if (rowPress.current && !rowPress.current.moved) {
+          suppressRowClick.current = true;
+          selectPlace(p);
+        }
+      }, 500),
+    };
+  };
+  const onRowPointerMove = (e: React.PointerEvent) => {
+    const r = rowPress.current;
+    if (r && Math.hypot(e.clientX - r.x, e.clientY - r.y) > 10) r.moved = true;
+  };
+  const onRowPointerUp = () => {
+    if (rowPress.current?.timer) clearTimeout(rowPress.current.timer);
+    rowPress.current = null;
+  };
+  /** 行タップ: スマホ=ピンへ移動 / PC=詳細。長押し直後の click は無視。 */
+  const onRowTap = (p: TripPlace) => {
+    if (suppressRowClick.current) { suppressRowClick.current = false; return; }
+    if (isMobile()) focusPlace(p); else selectPlace(p);
+  };
+
   // ピン描画
   useEffect(() => {
     if (mapStatus !== 'ready' || !mapObj.current || !data) return;
     const g = window.google;
-    for (const m of markers.current) m.setMap(null);
-    markers.current = [];
+    clearMarkers();
     const pinned = data.places.filter((p) => p.lat != null && p.lng != null && p.postponed !== 1);
     const bases = pinned.filter((p) => p.is_base === 1);
 
@@ -206,11 +263,12 @@ export function TripDetail() {
         if (isBase) { focusBase(p); }
         else { selectPlace(p); }
       });
-      markers.current.push(marker);
+      addMarker(marker);
     }
 
-    if (!didCenter.current && pinned.length > 0) {
-      didCenter.current = true;
+    // 自動センタリングはこの旅で 1 回だけ (同じ旅に戻った時はユーザの操作位置を保つ)。
+    if (tripId && needsCentering(tripId) && pinned.length > 0) {
+      markCentered(tripId);
       if (bases.length > 0) {
         const b0 = bases[0]!;
         setActiveBaseId(b0.id);
@@ -253,6 +311,13 @@ export function TripDetail() {
     catch (e) { setError(e instanceof Error ? e.message : '破棄に失敗しました'); }
   };
 
+  /** 選んだ場所をこの旅の拠点にする (拠点を追加ピッカーから)。 */
+  const makeBase = async (placeId: string) => {
+    if (!tripId) return;
+    try { await api.setTripBase(tripId, placeId, 1); setShowBasePicker(false); await reload(); }
+    catch (e) { setError(e instanceof Error ? e.message : '拠点の設定に失敗しました'); }
+  };
+
   if (!tripId) return null;
   if (error && !data) return <div className="card error">⚠ {error}</div>;
   if (!data) return <p className="muted">読み込み中…</p>;
@@ -284,6 +349,12 @@ export function TripDetail() {
         <p className="muted">{trip.start_date ?? '日付未定'}{trip.end_date ? ` 〜 ${trip.end_date}` : ''}</p>
 
         <h3>ピン / 場所 ({places.length})</h3>
+        {/* 拠点が未設定なら促す (旅は拠点ありきで設計)。 */}
+        {bases.length === 0 && (
+          <div className="base-setup-note">
+            🏨 拠点が未設定です。宿泊地などを地図の検索から追加し、下の「拠点を追加」で設定しましょう。
+          </div>
+        )}
         {/* 状態フィルタ (情報過多対策): すべて / 気になる / 訪問済み */}
         {places.length > 0 && (
           <div className="base-bar">
@@ -302,7 +373,12 @@ export function TripDetail() {
           {visiblePlaces.map((p: TripPlace) => (
             <div key={p.id}
               className={`place-row${p.is_base === 1 ? ' is-base' : ''}${selectedId === p.id ? ' selected' : ''}`}>
-              <button type="button" className="place-row-main" onClick={() => selectPlace(p)}>
+              <button type="button" className="place-row-main"
+                onClick={() => onRowTap(p)}
+                onPointerDown={(e) => onRowPointerDown(e, p)}
+                onPointerMove={onRowPointerMove}
+                onPointerUp={onRowPointerUp}
+                onPointerCancel={onRowPointerUp}>
                 <div className="row" style={{ gap: 10, alignItems: 'flex-start', flexWrap: 'nowrap' }}>
                   {p.image_url && (
                     <img className="thumb" src={assetUrl(p.image_url)} alt={p.name}
@@ -311,8 +387,9 @@ export function TripDetail() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="spread">
                       <strong>{p.is_base === 1 ? '🏨 ' : ''}{p.name}</strong>
+                      {/* 位置インジケータ。PC のみ表示 (スマホは右の「詳細」ボタンに置き換え)。 */}
                       {p.lat != null && p.lng != null
-                        ? <span className="chip">📍</span>
+                        ? <span className="chip pin-indicator">📍</span>
                         : <span className="chip" style={{ background: '#f3f3f1', color: 'var(--c-muted)' }}>位置なし</span>}
                     </div>
                     <div className="row" style={{ gap: 6, marginTop: 2 }}>
@@ -326,13 +403,20 @@ export function TripDetail() {
                   </div>
                 </div>
               </button>
-              <div className="place-row-actions">
-                <button type="button" className="sm ghost place-postpone" title="また今度（この旅の一覧から隠す）"
-                  onClick={() => void setPostpone(p, true)}>また今度</button>
+              {/* スマホのみ: 通常タップはピン移動なので、詳細は明示ボタンで開く。 */}
+              <div className="place-row-actions mobile-only">
+                <button type="button" className="place-row-detail-btn"
+                  onClick={() => selectPlace(p)}>詳細を開く</button>
               </div>
             </div>
           ))}
         </div>
+
+        {/* 拠点を追加 (場所リストの最後)。旅は通常 1 拠点なので、場所から選んで拠点にする。 */}
+        <button type="button" className="card card-link add-base-btn" onClick={() => setShowBasePicker(true)}>
+          <strong>🏨 拠点を追加</strong>
+          <div className="muted">場所リストから宿泊地などを選んで拠点に設定します。</div>
+        </button>
 
         {/* 「また今度」リスト (旅ごとに隔離した場所)。折りたたみで一覧から邪魔しない。 */}
         {postponedPlaces.length > 0 && (
@@ -491,6 +575,35 @@ export function TripDetail() {
           </div>
         </div>
       )}
+
+      {/* 拠点を追加ピッカー: この旅の (位置のある) 場所から拠点を選ぶ。 */}
+      {showBasePicker && (() => {
+        const choices = activePlaces.filter((p) => p.lat != null && p.lng != null && p.is_base !== 1);
+        return (
+          <div className="modal-backdrop" onClick={() => setShowBasePicker(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="spread">
+                <strong>🏨 拠点を選ぶ</strong>
+                <button type="button" className="sm ghost" onClick={() => setShowBasePicker(false)}>閉じる</button>
+              </div>
+              <p className="muted" style={{ margin: '4px 0 8px' }}>
+                この旅の場所から拠点（宿泊地など）を選びます。位置情報のある場所のみ表示します。
+              </p>
+              {choices.length === 0 && (
+                <p className="muted">選べる場所がありません。地図の検索から宿泊地などを追加してください。</p>
+              )}
+              <div className="stack">
+                {choices.map((p) => (
+                  <button key={p.id} type="button" className="card card-link" onClick={() => void makeBase(p.id)}>
+                    <strong>{p.name}</strong>
+                    {p.address && <div className="muted">{p.address}</div>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

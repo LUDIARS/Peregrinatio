@@ -277,6 +277,24 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .place-row.selected { border-color: var(--c-accent); box-shadow: 0 0 0 2px rgba(14, 124, 134, 0.18); }
 .place-postpone { color: var(--c-muted); }
 
+/* 拠点を追加 (場所リスト末尾) / 拠点未設定の促し */
+.add-base-btn { width: 100%; text-align: left; background: #fff8f3; border: 1px solid #f0a070; color: inherit; margin-top: 4px; }
+.base-setup-note {
+  margin: 4px 0 8px; padding: 8px 10px; font-size: 13px;
+  background: #fff8f3; border: 1px solid #f0a070; border-radius: 10px; color: #8a4b16;
+}
+/* スマホで場所行に出す「詳細」ボタン (通常タップはピン移動に使う) */
+.place-row-detail-btn {
+  flex: 0 0 auto; min-height: 30px; padding: 4px 10px; font-size: 12px;
+  background: var(--c-surface); color: var(--c-accent); border: 1px solid var(--c-border); border-radius: 999px;
+}
+/* PC は従来どおり (行タップで詳細)。スマホのみ「詳細」ボタンを出し、📍 は隠す。 */
+.mobile-only { display: none; }
+@media (max-width: 899px) {
+  .mobile-only { display: flex; }
+  .place-row .pin-indicator { display: none; }
+}
+
 /* ---- 「また今度」セクション (旅ごとに隔離した場所) ---- */
 .postponed-box {
   margin: 12px 0; padding: 6px 10px;
@@ -399,6 +417,27 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .place-toolbar {
   margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--c-border);
 }
+
+/* ---- 場所詳細の管理メニュー (状態を目立たせ、破壊操作は折りたたみ) ---- */
+.place-menu {
+  margin-top: 12px; padding: 12px; border: 1px solid var(--c-border); border-radius: 14px;
+  background: #fbfbfa;
+}
+.place-menu-label { font-size: 12px; font-weight: 700; color: var(--c-muted); margin-bottom: 6px; }
+.status-btns { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.status-btn {
+  min-height: 46px; font-size: 14px; font-weight: 700;
+  background: var(--c-surface); color: var(--c-text); border: 1.5px solid var(--c-border); border-radius: 12px;
+}
+.status-btn.active { background: var(--c-accent); color: #fff; border-color: var(--c-accent); }
+.status-btn.postpone.active { background: #e8b339; border-color: #e8b339; color: #2a2200; }
+.base-toggle-btn {
+  width: 100%; min-height: 46px; font-weight: 700;
+  background: var(--c-surface); color: var(--c-accent); border: 1.5px solid var(--c-border); border-radius: 12px;
+}
+.base-toggle-btn.active { background: #fff3e8; color: #b5530a; border-color: #f0a070; }
+.place-menu-danger { margin-top: 12px; }
+.place-menu-danger > summary { cursor: pointer; font-size: 13px; color: var(--c-muted); }
 
 /* ---- 場所ステータス バッジ ---- */
 .chip.status-interested { background: #fff3cd; color: #8a6d3b; }
@@ -527,9 +566,9 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   .app-shell { padding-bottom: 0; }
   .navmenu-pc { display: block; position: fixed; z-index: 80; }
   .navmenu-bubble {
-    width: 48px; height: 48px; border-radius: 50%;
-    background: var(--c-accent); color: #fff; border: none; font-size: 20px;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.28); cursor: grab; touch-action: none;
+    height: 48px; padding: 0 18px; border-radius: 24px;
+    background: var(--c-accent); color: #fff; border: none; font-size: 15px; font-weight: 700;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.28); cursor: grab; touch-action: none; white-space: nowrap;
   }
   .navmenu-bubble:active { cursor: grabbing; }
   .navmenu-panel {

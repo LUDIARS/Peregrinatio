@@ -44,12 +44,36 @@ export function Settings() {
   const saveHome = async () => {
     setHomeBusy(true); setHomeErr(''); setHomeMsg('');
     try {
-      const h = await api.setHome(homeAddr.trim());
+      const h = await api.setHome({ address: homeAddr.trim() });
       setHome(h); setHomeAddr(h.address);
-      setHomeMsg('自宅を保存しました。');
+      setHomeMsg(h.station ? `自宅を保存しました（最寄り駅: ${h.station}）。` : '自宅を保存しました。');
     } catch (e) {
       setHomeErr(e instanceof Error ? e.message : '自宅の保存に失敗しました');
     } finally { setHomeBusy(false); }
+  };
+
+  /** 現在地 (Geolocation) から自宅を設定する。最寄り駅はサーバが自動取得する。 */
+  const useCurrentLocation = () => {
+    if (!('geolocation' in navigator)) { setHomeErr('この端末では現在地を取得できません'); return; }
+    setHomeBusy(true); setHomeErr(''); setHomeMsg('');
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const h = await api.setHome({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setHome(h); setHomeAddr(h.address);
+          setHomeMsg(h.station ? `現在地から自宅を設定しました（最寄り駅: ${h.station}）。` : '現在地から自宅を設定しました。');
+        } catch (e) {
+          setHomeErr(e instanceof Error ? e.message : '現在地からの設定に失敗しました');
+        } finally { setHomeBusy(false); }
+      },
+      (err) => {
+        setHomeBusy(false);
+        setHomeErr(err.code === err.PERMISSION_DENIED
+          ? '位置情報の利用が許可されていません（ブラウザ/OS の設定を確認してください）'
+          : '現在地を取得できませんでした');
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
   };
 
   const removeHome = async () => {
@@ -127,19 +151,22 @@ export function Settings() {
         {homeErr && <div className="error">⚠ {homeErr}</div>}
         {homeMsg && <p className="muted">{homeMsg}</p>}
         {home
-          ? <p>登録済み: <strong>{home.address}</strong></p>
+          ? <p>登録済み: <strong>{home.address}</strong>{home.station ? <span className="muted">（最寄り駅: {home.station}）</span> : null}</p>
           : <p className="muted">未登録</p>}
-        <input type="text" placeholder="自宅の住所" value={homeAddr}
+        <button type="button" onClick={useCurrentLocation} disabled={homeBusy}>
+          {homeBusy ? '取得中…' : '📍 現在地から設定'}
+        </button>
+        <input type="text" placeholder="または住所を入力" value={homeAddr}
           onChange={(e) => setHomeAddr(e.target.value)} />
         <div className="row" style={{ gap: 6 }}>
-          <button type="button" onClick={() => void saveHome()} disabled={homeBusy || !homeAddr.trim()}>
-            {homeBusy ? '保存中…' : '自宅を保存'}
+          <button type="button" className="ghost" onClick={() => void saveHome()} disabled={homeBusy || !homeAddr.trim()}>
+            {homeBusy ? '保存中…' : '住所で保存'}
           </button>
           {home && (
             <button type="button" className="ghost" onClick={() => void removeHome()} disabled={homeBusy}>削除</button>
           )}
         </div>
-        <p className="muted" style={{ margin: 0 }}>住所はサーバでジオコーディング (Google) して座標化します。</p>
+        <p className="muted" style={{ margin: 0 }}>現在地または住所から座標化し、最寄り駅を自動取得します。</p>
       </div>
 
       {/* 旅の管理 */}

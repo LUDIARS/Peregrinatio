@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, pdfUrl } from '../api.js';
 import type { Trip } from '../types.js';
 
@@ -12,6 +12,7 @@ function isPast(t: Trip): boolean {
 }
 
 export function TripList() {
+  const navigate = useNavigate();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState('');
@@ -50,12 +51,13 @@ export function TripList() {
     if (!title.trim() || saving) return;
     setSaving(true); setError('');
     try {
-      await api.createTrip({
+      const t = await api.createTrip({
         title: title.trim(), start_date: start || undefined,
         end_date: end || undefined, notes: notes.trim() || undefined,
       });
       setTitle(''); setStart(''); setEnd(''); setNotes(''); setShowForm(false);
-      await load();
+      // 作成後すぐ旅へ遷移 → 拠点 (宿泊地など) の設定を促す (旅は拠点ありきで設計)。
+      navigate(`/trips/${t.id}`);
     } catch (e) { setError(e instanceof Error ? e.message : '作成に失敗しました'); }
     finally { setSaving(false); }
   };

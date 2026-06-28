@@ -64,6 +64,15 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     } catch (e) { setError(e instanceof Error ? e.message : '拠点の更新に失敗しました'); }
   };
 
+  /** 「また今度」(旅ごと) のトグル。場所リストから隔離 / 復帰。 */
+  const togglePostpone = async () => {
+    if (!place) return;
+    try {
+      const p = await api.setPostponed(tripId, placeId, place.postponed !== 1);
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); onChanged?.();
+    } catch (e) { setError(e instanceof Error ? e.message : '「また今度」の更新に失敗しました'); }
+  };
+
   /** 拠点ホテルの IN/OUT 時刻を手動保存 (後から調整可)。 */
   const saveHotelTime = async (field: 'checkin_time' | 'checkout_time', value: string) => {
     try {
@@ -204,23 +213,35 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
             🗓 ここに行く（日程に追加）
           </button>
 
-          {/* 管理ツールバー (状態 / 拠点 / 外す / 削除) */}
-          <div className="place-toolbar">
-            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-              <span className="muted" style={{ alignSelf: 'center' }}>状態:</span>
+          {/* 管理メニュー (状態 / 拠点)。状態は大きめボタンで目立たせ、破壊的操作は折りたたみで誤爆防止。 */}
+          <div className="place-menu">
+            <div className="place-menu-label">状態</div>
+            <div className="status-btns">
               {STATUS_OPTIONS.map((o) => (
                 <button key={o.key} type="button"
-                  className={place.status === o.key ? 'chip-btn active' : 'chip-btn'}
+                  className={`status-btn${place.status === o.key ? ' active' : ''}`}
                   onClick={() => void setStatus(o.key)}>{o.label}</button>
               ))}
+              {/* また今度 (旅ごとの隔離トグル)。状態とは独立だが同じメニューに並べる。 */}
+              <button type="button"
+                className={`status-btn postpone${place.postponed === 1 ? ' active' : ''}`}
+                onClick={() => void togglePostpone()}>🕓 また今度</button>
             </div>
-            <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-              <button type="button" className="sm ghost" onClick={() => void toggleBase()}>
-                {place.is_base === 1 ? '拠点解除' : '拠点にする'}
-              </button>
-              <button type="button" className="sm ghost" onClick={() => void removeFromTrip()}>この旅から外す</button>
-              <button type="button" className="sm danger" onClick={() => void remove()}>削除</button>
-            </div>
+
+            <div className="place-menu-label" style={{ marginTop: 12 }}>拠点</div>
+            <button type="button" className={`base-toggle-btn${place.is_base === 1 ? ' active' : ''}`}
+              onClick={() => void toggleBase()}>
+              {place.is_base === 1 ? '🏨 拠点を解除する' : '🏨 この場所を拠点にする'}
+            </button>
+
+            {/* 破壊的操作は折りたたみの中に入れて誤爆を防ぐ。 */}
+            <details className="place-menu-danger">
+              <summary>その他の操作</summary>
+              <div className="row" style={{ gap: 8, marginTop: 8 }}>
+                <button type="button" className="sm ghost" onClick={() => void removeFromTrip()}>この旅から外す</button>
+                <button type="button" className="sm danger" onClick={() => void remove()}>ライブラリから削除</button>
+              </div>
+            </details>
           </div>
 
           {error && <div className="card error">⚠ {error}</div>}
