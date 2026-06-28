@@ -295,6 +295,16 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   .place-row .pin-indicator { display: none; }
 }
 
+/* ピン上の情報窓 (スマホ選択時)。Google InfoWindow の中身。 */
+.pin-info { min-width: 140px; max-width: 220px; padding: 2px 2px 4px; }
+.pin-info-name { font-weight: 700; font-size: 14px; line-height: 1.3; color: var(--c-text); }
+.pin-info-cat { font-size: 12px; color: var(--c-muted); margin-top: 2px; }
+.pin-info-btn {
+  margin-top: 8px; width: 100%; min-height: 36px; padding: 6px 10px;
+  font-size: 13px; font-weight: 700; color: #fff; background: var(--c-accent);
+  border: none; border-radius: 8px; cursor: pointer;
+}
+
 /* ---- 「また今度」セクション (旅ごとに隔離した場所) ---- */
 .postponed-box {
   margin: 12px 0; padding: 6px 10px;
