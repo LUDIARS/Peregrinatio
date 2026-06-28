@@ -8,6 +8,9 @@ export interface HomeLocation {
   address: string;
   lat: number;
   lng: number;
+  station?: string | null;      // 最寄り駅名 (自動取得)
+  station_lat?: number | null;
+  station_lng?: number | null;
 }
 
 export interface Trip {

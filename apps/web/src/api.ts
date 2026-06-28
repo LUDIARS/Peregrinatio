@@ -111,8 +111,9 @@ export const api = {
 
   // --- 自宅 (旅をまたいで使い回す出発地点) ---
   getHome: () => req<HomeLocation | null>('/api/settings/home'),
-  setHome: (address: string) =>
-    req<HomeLocation>('/api/settings/home', { method: 'PUT', body: json({ address }) }),
+  /** 自宅を設定。住所 or 現在地座標 (lat/lng) のどちらかを渡す。最寄り駅はサーバが自動取得。 */
+  setHome: (input: { address?: string; lat?: number; lng?: number }) =>
+    req<HomeLocation>('/api/settings/home', { method: 'PUT', body: json(input) }),
   deleteHome: () => req<{ ok: true }>('/api/settings/home', { method: 'DELETE' }),
 
   // --- days (日程は旅の開始日〜終了日から自動生成。手動追加 API は廃止) ---
