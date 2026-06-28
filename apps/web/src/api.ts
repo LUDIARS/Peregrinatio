@@ -15,6 +15,7 @@ import type {
   PlaceJobView,
   PlaceLink,
   PlaceSearchResult,
+  ReservationSuggestionsResult,
   PlaceStatus,
   RouteLeg,
   RouteMode,
@@ -264,6 +265,10 @@ export const api = {
   listJobs: (tripId: string) => req<PlaceJobView[]>(`/api/trips/${tripId}/jobs`),
   retryJob: (id: string) => req<PlaceJob>(`/api/jobs/${id}/retry`, { method: 'POST', body: json({}) }),
   deleteJob: (id: string) => req<{ ok: true }>(`/api/jobs/${id}`, { method: 'DELETE' }),
+
+  // --- 予約サジェスト (新幹線/飛行機) ---
+  reservationSuggestions: (tripId: string) =>
+    req<ReservationSuggestionsResult>(`/api/trips/${tripId}/reservation-suggestions`),
 
   // --- 運行情報 ---
   listServiceAlerts: (tripId: string) => req<ServiceAlert[]>(`/api/trips/${tripId}/service-alerts`),
