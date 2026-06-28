@@ -258,10 +258,12 @@ export function TripDetail() {
     if (rowPress.current?.timer) clearTimeout(rowPress.current.timer);
     rowPress.current = null;
   };
-  /** 行タップ: スマホ=ピンへ移動 / PC=詳細。長押し直後の click は無視。 */
+  /** 行タップ: スマホ=ピンへ移動 (位置なしは詳細) / PC=詳細。長押し直後の click は無視。 */
   const onRowTap = (p: TripPlace) => {
     if (suppressRowClick.current) { suppressRowClick.current = false; return; }
-    if (isMobile()) focusPlace(p); else selectPlace(p);
+    // 位置なし (ピンが無い) 場所はスマホでも情報窓を出せないので、行タップで直接詳細を開く。
+    const hasPin = p.lat != null && p.lng != null;
+    if (isMobile() && hasPin) focusPlace(p); else selectPlace(p);
   };
 
   // ピン描画
