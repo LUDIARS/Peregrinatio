@@ -309,6 +309,24 @@ export function Itinerary() {
     return times.at(-1) ?? '';
   };
 
+  /** その日の算出済み経路区間から移動カードを自動サジェストして作る (時刻表が無くても使える)。 */
+  const addMoveFromLeg = async (dayId: string, leg: RouteLeg) => {
+    const from = endpointName(leg.from_place_id, leg.from_label);
+    const to = endpointName(leg.to_place_id, leg.to_label);
+    const modeLabel = MODES.find((m) => m.value === leg.mode)?.label ?? leg.mode;
+    const meta = [fmtDuration(leg.duration_sec), fmtDistance(leg.distance_m), leg.fare_text]
+      .filter(Boolean).join(' / ');
+    const note = `${from} → ${to}（${modeLabel}${meta ? ` ${meta}` : ''}）`;
+    setBusy(true); setError('');
+    try {
+      const it = await api.createItem(dayId, { kind: 'move', note });
+      setItemsByDay((m) => ({ ...m, [dayId]: [...(m[dayId] ?? []), it] }));
+      setMovePickerDay(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '移動の追加に失敗しました');
+    } finally { setBusy(false); }
+  };
+
   /** 時刻表の便から移動カードを作る (時間帯が合う一覧から選択)。 */
   const addMoveFromDeparture = async (dayId: string, opt: DepartureOption) => {
     const t = opt.timetable;
@@ -593,9 +611,10 @@ export function Itinerary() {
         </div>
       )}
 
-      {/* 移動ピッカー: 登録済み時刻表から「時間帯が合う便」を選んで移動カードにする。 */}
+      {/* 移動ピッカー: 経路からの自動サジェスト + 登録済み時刻表の便。 */}
       {movePickerDay && (() => {
         const ref = lastTimeOfDay(movePickerDay);
+        const suggestLegs = legsByDay[movePickerDay] ?? [];
         const cands = departureOpts
           .filter((o) => o.dep.depart_time && (!ref || (o.dep.depart_time as string) >= ref))
           .sort((a, b) => (a.dep.depart_time ?? '').localeCompare(b.dep.depart_time ?? ''));
@@ -603,9 +622,30 @@ export function Itinerary() {
           <div className="modal-backdrop" onClick={() => setMovePickerDay(null)}>
             <div className="modal" onClick={(e) => e.stopPropagation()}>
               <div className="spread">
-                <strong>🚃 移動を追加 — 時間帯が合う便</strong>
+                <strong>🚃 移動を追加</strong>
                 <button type="button" className="sm ghost" onClick={() => setMovePickerDay(null)}>閉じる</button>
               </div>
+
+              {/* 経路から自動サジェスト (その日の算出済みルート区間)。時刻表が無くても使える。 */}
+              <p className="muted" style={{ margin: '8px 0 4px' }}>経路から自動サジェスト</p>
+              {suggestLegs.length === 0 && (
+                <p className="muted">この日の経路がまだありません（場所を2つ以上入れて移動手段を選ぶと算出されます）。</p>
+              )}
+              <div className="stack">
+                {suggestLegs.map((leg) => (
+                  <button key={`leg-${leg.id}`} type="button" className="card card-link"
+                    onClick={() => void addMoveFromLeg(movePickerDay, leg)} disabled={busy}>
+                    <strong>{endpointName(leg.from_place_id, leg.from_label)} → {endpointName(leg.to_place_id, leg.to_label)}</strong>
+                    <div className="muted">
+                      {MODES.find((m) => m.value === leg.mode)?.label ?? leg.mode}
+                      {` ・ ${fmtDuration(leg.duration_sec)} / ${fmtDistance(leg.distance_m)}`}
+                      {leg.fare_text ? ` ・ ${leg.fare_text}` : ''}
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <p className="muted" style={{ margin: '12px 0 4px' }}>時刻表の便から選ぶ</p>
               {ref && <p className="muted" style={{ margin: '4px 0' }}>{ref} 以降の便を表示しています。</p>}
               {departureOpts.length === 0 && (
                 <p className="muted">時刻表が未登録です。下部メニューの「時刻表/運行情報」で便を登録してください。</p>
