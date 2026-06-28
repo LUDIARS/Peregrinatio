@@ -435,7 +435,7 @@ export function TripDetail() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="spread">
                       <strong>{p.is_base === 1 ? '🏨 ' : ''}{p.name}</strong>
-                      {/* 位置インジケータ。PC のみ表示 (スマホは右の「詳細」ボタンに置き換え)。 */}
+                      {/* 位置インジケータ (ピンの有無)。 */}
                       {p.lat != null && p.lng != null
                         ? <span className="chip pin-indicator">📍</span>
                         : <span className="chip" style={{ background: '#f3f3f1', color: 'var(--c-muted)' }}>位置なし</span>}
@@ -451,11 +451,6 @@ export function TripDetail() {
                   </div>
                 </div>
               </button>
-              {/* スマホのみ: 通常タップはピン移動なので、詳細は明示ボタンで開く。 */}
-              <div className="place-row-actions mobile-only">
-                <button type="button" className="place-row-detail-btn"
-                  onClick={() => selectPlace(p)}>詳細を開く</button>
-              </div>
             </div>
           ))}
         </div>

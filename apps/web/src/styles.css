@@ -283,17 +283,6 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   margin: 4px 0 8px; padding: 8px 10px; font-size: 13px;
   background: #fff8f3; border: 1px solid #f0a070; border-radius: 10px; color: #8a4b16;
 }
-/* スマホで場所行に出す「詳細」ボタン (通常タップはピン移動に使う) */
-.place-row-detail-btn {
-  flex: 0 0 auto; min-height: 30px; padding: 4px 10px; font-size: 12px;
-  background: var(--c-surface); color: var(--c-accent); border: 1px solid var(--c-border); border-radius: 999px;
-}
-/* PC は従来どおり (行タップで詳細)。スマホのみ「詳細」ボタンを出し、📍 は隠す。 */
-.mobile-only { display: none; }
-@media (max-width: 899px) {
-  .mobile-only { display: flex; }
-  .place-row .pin-indicator { display: none; }
-}
 
 /* ピン上の情報窓 (スマホ選択時)。Google InfoWindow の中身。 */
 .pin-info { min-width: 140px; max-width: 220px; padding: 2px 2px 4px; }
