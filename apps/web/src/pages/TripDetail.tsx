@@ -14,6 +14,8 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'visited', label: '訪問済み' },
 ];
 import { loadMaps, PIN_PATH } from '../lib/maps.js';
+import { acquireMap, releaseMap, needsCentering, markCentered, clearMarkers, addMarker } from '../lib/mapInstance.js';
+import { getCachedTrip, fetchTrip } from '../lib/dataCache.js';
 import { getPrefs } from '../lib/prefs.js';
 import { PlaceDetailPane } from './PlaceDetail.js';
 import { Itinerary } from './Itinerary.js';
@@ -63,11 +65,10 @@ export function TripDetail() {
   };
   const onWinBarPointerUp = () => { winDrag.current = null; };
 
-  const mapRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<HTMLDivElement | null>(null); // 地図をぶら下げるホスト要素
   const mapObj = useRef<any>(null);
   const infoObj = useRef<any>(null);
-  const markers = useRef<any[]>([]);
-  const didCenter = useRef(false);
+  const mapDivRef = useRef<HTMLDivElement | null>(null); // 保持している地図 DOM (付け替え用)
   const [mapStatus, setMapStatus] = useState<MapStatus>('loading');
   const [mapError, setMapError] = useState('');
   const [activeBaseId, setActiveBaseId] = useState<string | null>(null);
@@ -89,10 +90,15 @@ export function TripDetail() {
 
   const reload = async () => {
     if (!tripId) return;
-    try { setData(await api.getTrip(tripId)); }
+    try { setData(await fetchTrip(tripId)); }
     catch (e) { setError(e instanceof Error ? e.message : '読み込みに失敗しました'); }
   };
-  useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [tripId]);
+  useEffect(() => {
+    // キャッシュがあれば即表示 (タブ切替のちらつき防止) → 裏で最新取得して差し替え。
+    if (tripId) setData(getCachedTrip(tripId) ?? null);
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId]);
 
   // 取り込みキューのポーリング。ジョブが完了 (active が減った) ら場所リストを再読込して
   // 成立した場所を一覧に反映する。
@@ -123,11 +129,17 @@ export function TripDetail() {
         if (!cfg.enabled || !cfg.apiKey) { setMapStatus('disabled'); return; }
         await loadMaps(cfg.apiKey);
         if (cancelled || !mapRef.current) return;
-        mapObj.current = new window.google.maps.Map(mapRef.current, {
+        // 保持している地図インスタンスを取得 (初回のみ生成)、ホストへ付け替える。
+        const { map, info, div } = acquireMap({
           center: { lat: 35.681, lng: 139.767 }, zoom: 11,
           mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
         });
-        infoObj.current = new window.google.maps.InfoWindow();
+        mapObj.current = map;
+        infoObj.current = info;
+        mapDivRef.current = div;
+        mapRef.current.appendChild(div);
+        // ホスト付け替え後はサイズ再計算を促す (タイルは再取得されない)。
+        window.google.maps.event.trigger(map, 'resize');
         setMapStatus('ready');
       } catch (e) {
         if (!cancelled) {
@@ -136,7 +148,10 @@ export function TripDetail() {
         }
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      releaseMap(); // 地図 DOM をホストから外して保持 (再生成・タイル再取得しない)。
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -221,8 +236,7 @@ export function TripDetail() {
   useEffect(() => {
     if (mapStatus !== 'ready' || !mapObj.current || !data) return;
     const g = window.google;
-    for (const m of markers.current) m.setMap(null);
-    markers.current = [];
+    clearMarkers();
     const pinned = data.places.filter((p) => p.lat != null && p.lng != null && p.postponed !== 1);
     const bases = pinned.filter((p) => p.is_base === 1);
 
@@ -249,11 +263,12 @@ export function TripDetail() {
         if (isBase) { focusBase(p); }
         else { selectPlace(p); }
       });
-      markers.current.push(marker);
+      addMarker(marker);
     }
 
-    if (!didCenter.current && pinned.length > 0) {
-      didCenter.current = true;
+    // 自動センタリングはこの旅で 1 回だけ (同じ旅に戻った時はユーザの操作位置を保つ)。
+    if (tripId && needsCentering(tripId) && pinned.length > 0) {
+      markCentered(tripId);
       if (bases.length > 0) {
         const b0 = bases[0]!;
         setActiveBaseId(b0.id);
