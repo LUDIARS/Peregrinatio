@@ -13,7 +13,7 @@ const trip: Trip = {
 };
 const place = (id: string, name: string): Place => ({
   id, name, address: '住所', lat: 36, lng: 136, category: 'カテゴリ', source_url: null,
-  summary: '概要', notes: null, image_url: null, status: 'interested', status_by: null, created_at: '', updated_at: '',
+  summary: '概要', notes: null, image_url: null, status: 'interested', status_by: null, google_place_id: null, created_at: '', updated_at: '',
 });
 
 function baseInput(over: Partial<BrochureInput> = {}): BrochureInput {

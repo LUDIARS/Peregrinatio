@@ -217,6 +217,20 @@ export const api = {
   recommendTrip: (tripId: string, body: { radius?: number } = {}) =>
     req<{ added: TripPlace[] }>(`/api/trips/${tripId}/recommend`, { method: 'POST', body: json(body) }),
 
+  // --- 自動検索 (情報の無い場所を Google で補完し、公式サイトを取り込みキューに積む) ---
+  /** 既存場所の自動検索。位置/住所/カテゴリ/画像/公式リンクを補完し、公式サイトの要約をキュー投入。 */
+  autoSearchPlace: (tripId: string, placeId: string) =>
+    req<{ place: TripPlace; matched: boolean; queuedCrawl: boolean }>(
+      `/api/trips/${tripId}/places/${placeId}/auto-search`,
+      { method: 'POST', body: json({}) },
+    ),
+  /** 地図 POI (Google place id) を旅に追加し、公式情報を自動取得する。 */
+  addPlaceFromGoogle: (tripId: string, googlePlaceId: string) =>
+    req<{ place: TripPlace; queuedCrawl: boolean }>(
+      `/api/trips/${tripId}/places/from-google`,
+      { method: 'POST', body: json({ place_id: googlePlaceId }) },
+    ),
+
   // --- Web から代表画像を取得 (place.image_url を埋める) ---
   imageFromWeb: (placeId: string) =>
     req<Place>(`/api/places/${placeId}/image-from-web`, { method: 'POST', body: json({}) }),

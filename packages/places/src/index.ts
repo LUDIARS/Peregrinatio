@@ -97,6 +97,72 @@ export async function searchPlaces(
   }));
 }
 
+/** Place Details (New) で得られる 1 施設の詳細。searchPlaces の結果と同形 (place_id は必須)。 */
+export type PlaceDetails = {
+  place_id: string;
+  name: string;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  category: string | null;
+  websiteUri: string | null;
+  photoName: string | null;
+};
+
+// Place Details (New) レスポンスの必要部分。
+interface PlaceDetailsResponse {
+  id?: string;
+  displayName?: { text?: string; languageCode?: string };
+  formattedAddress?: string;
+  location?: { latitude?: number; longitude?: number };
+  primaryType?: string;
+  websiteUri?: string;
+  photos?: Array<{ name?: string }>;
+}
+
+/**
+ * Google Places API (New) の Place Details で 1 施設の詳細を取得する。
+ * placeId は地図 POI クリックで得られる Google の place id (例 "ChIJ...")。
+ * 見つからない (404) ときは null。
+ * @throws apiKey が空のとき / それ以外の HTTP エラー
+ */
+export async function getPlaceDetails(
+  placeId: string,
+  apiKey: string,
+): Promise<PlaceDetails | null> {
+  if (!apiKey) {
+    throw new Error('getPlaceDetails: Google Maps API キーが未設定です (apiKey が空)');
+  }
+  if (!placeId) return null;
+
+  const url = `${PLACES_BASE_URL}/places/${encodeURIComponent(placeId)}`;
+  const res = await fetch(url, {
+    headers: {
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask':
+        'id,displayName,formattedAddress,location,primaryType,websiteUri,photos',
+      'Accept-Language': 'ja',
+    },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`getPlaceDetails: Place Details API がエラーを返しました (${res.status}): ${text}`);
+  }
+
+  const p = (await res.json()) as PlaceDetailsResponse;
+  return {
+    place_id: p.id ?? placeId,
+    name: p.displayName?.text ?? '',
+    address: p.formattedAddress ?? null,
+    lat: p.location?.latitude ?? null,
+    lng: p.location?.longitude ?? null,
+    category: p.primaryType ?? null,
+    websiteUri: p.websiteUri ?? null,
+    photoName: p.photos?.[0]?.name ?? null,
+  };
+}
+
 // Places Photo media レスポンス (skipHttpRedirect=true 時)。
 interface PhotoMediaResponse {
   name?: string;

@@ -70,6 +70,8 @@ export function TripDetail() {
   const infoObj = useRef<any>(null);
   const mapDivRef = useRef<HTMLDivElement | null>(null); // 保持している地図 DOM (付け替え用)
   const markerById = useRef<Map<string, any>>(new Map()); // placeId → marker (情報窓のアンカー用)
+  const poiInfoRef = useRef<any>(null);                   // 地図 POI タップ用の専用 InfoWindow
+  const onPoiClickRef = useRef<(e: any) => void>(() => {}); // 最新の tripId/handler を参照するための間接
   const [mapStatus, setMapStatus] = useState<MapStatus>('loading');
   const [mapError, setMapError] = useState('');
   const [activeBaseId, setActiveBaseId] = useState<string | null>(null);
@@ -135,7 +137,7 @@ export function TripDetail() {
         await loadMaps(cfg.apiKey);
         if (cancelled || !mapRef.current) return;
         // 保持している地図インスタンスを取得 (初回のみ生成)、ホストへ付け替える。
-        const { map, info, div } = acquireMap({
+        const { map, info, div, created } = acquireMap({
           center: { lat: 35.681, lng: 139.767 }, zoom: 11,
           mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
         });
@@ -143,6 +145,11 @@ export function TripDetail() {
         infoObj.current = info;
         mapDivRef.current = div;
         mapRef.current.appendChild(div);
+        // 地図 POI (施設名) のタップを捕捉する (生成時に 1 度だけ。地図は常駐するので付けっぱなしでよい)。
+        // 既定の情報窓を抑止し、独自の「この場所を追加」UI を出す。最新の handler は ref 経由で呼ぶ。
+        if (created) {
+          map.addListener('click', (e: any) => onPoiClickRef.current(e));
+        }
         // ホスト付け替え後はサイズ再計算を促す (タイルは再取得されない)。
         window.google.maps.event.trigger(map, 'resize');
         setMapStatus('ready');
@@ -231,6 +238,69 @@ export function TripDetail() {
     btn.addEventListener('click', () => selectPlace(p));
     root.appendChild(btn);
     return root;
+  };
+
+  /** 地図 POI タップ時の「この場所を追加」情報窓を開く。押すと追加 → 自動検索 → 詳細表示。 */
+  const openPoiAdd = async (gpid: string, lat: number, lng: number) => {
+    if (!mapObj.current || !window.google || !tripId) return;
+    const g = window.google;
+    if (!poiInfoRef.current) poiInfoRef.current = new g.maps.InfoWindow();
+
+    // 施設名を取得 (best-effort)。失敗してもプレースホルダ名で追加できる。
+    let name = '';
+    try {
+      const gp = new g.maps.places.Place({ id: gpid });
+      await gp.fetchFields({ fields: ['displayName'] });
+      name = gp.displayName ?? '';
+    } catch { /* 名前取得失敗は無視 (汎用ラベルで続行) */ }
+
+    // 情報窓の中身 (名前 + 「この場所を追加」)。
+    const root = document.createElement('div');
+    root.className = 'pin-info';
+    const title = document.createElement('div');
+    title.className = 'pin-info-name';
+    title.textContent = name || 'この地点';
+    root.appendChild(title);
+    const note = document.createElement('div');
+    note.className = 'pin-info-cat';
+    note.textContent = '公式情報を自動検索して取り込みます';
+    root.appendChild(note);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pin-info-btn';
+    btn.textContent = '＋ この場所を追加';
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      btn.textContent = '追加中…';
+      void (async () => {
+        try {
+          const { place } = await api.addPlaceFromGoogle(tripId, gpid);
+          poiInfoRef.current?.close();
+          await reload();
+          if (place) selectPlace(place);
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = '＋ この場所を追加';
+          note.textContent = e instanceof Error ? e.message : '追加に失敗しました';
+        }
+      })();
+    });
+    root.appendChild(btn);
+
+    poiInfoRef.current.setContent(root);
+    poiInfoRef.current.setPosition({ lat, lng });
+    poiInfoRef.current.open({ map: mapObj.current });
+  };
+
+  // 最新の tripId/handler を参照する POI クリックハンドラ (地図に付けたリスナーから呼ばれる)。
+  onPoiClickRef.current = (e: any) => {
+    // 施設 POI (placeId 付き) のみ対象。素の地図クリックは無視する。
+    if (!e || !e.placeId) return;
+    if (typeof e.stop === 'function') e.stop(); // Google 既定の情報窓を抑止
+    const lat = typeof e.latLng?.lat === 'function' ? e.latLng.lat() : null;
+    const lng = typeof e.latLng?.lng === 'function' ? e.latLng.lng() : null;
+    if (lat == null || lng == null) return;
+    void openPoiAdd(e.placeId, lat, lng);
   };
 
   // スマホ判定 (PC は従来どおりタップで詳細を開く / スマホはタップ=ピン移動・長押し/ボタン=詳細)。

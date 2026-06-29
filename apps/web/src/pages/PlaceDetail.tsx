@@ -30,6 +30,9 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const [error, setError] = useState('');
   const [hotelBusy, setHotelBusy] = useState(false);
   const [hotelMsg, setHotelMsg] = useState('');
+  // 自動検索 (情報の無い場所を Google で補完)。
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [autoMsg, setAutoMsg] = useState('');
   // 画像のライトボックス (ページ内オーバーレイ)。
   // 旧実装は <a target="_blank"> でナビゲートしていたが、PWA の SW navigation fallback が
   // index.html を返し ルータ * → / リダイレクトでトップへ飛ぶ不具合があったため、遷移せず
@@ -98,6 +101,26 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     } finally { setHotelBusy(false); }
   };
 
+  /** 自動検索: 情報の無い場所を Google で補完し、公式サイトの要約を取り込みキューに積む。 */
+  const autoSearch = async () => {
+    setAutoBusy(true); setAutoMsg(''); setError('');
+    try {
+      const r = await api.autoSearchPlace(tripId, placeId);
+      setPlace((prev) => (prev ? { ...prev, ...r.place } : r.place));
+      await Promise.all([loadLinks(), loadImages()]);
+      if (!r.matched) {
+        setAutoMsg('公式情報が見つかりませんでした。URL や画像から追加してください。');
+      } else if (r.queuedCrawl) {
+        setAutoMsg('公式情報を取り込みました。説明（要約）は取り込みキューで順次反映されます。');
+      } else {
+        setAutoMsg('公式情報を取り込みました。');
+      }
+      onChanged?.();
+    } catch (e) {
+      setAutoMsg(e instanceof Error ? e.message : '自動検索に失敗しました');
+    } finally { setAutoBusy(false); }
+  };
+
   const removeFromTrip = async () => {
     if (!place) return;
     if (!window.confirm(`「${place.name}」をこの旅から外しますか? (場所ライブラリには残ります)`)) return;
@@ -142,7 +165,16 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
             <h3 className="place-section-title">説明</h3>
             {place.summary
               ? <p className="place-hero-summary">{place.summary}</p>
-              : <p className="muted">まだ説明がありません。中央のインテリジェント検索に URL や画像を貼り付けると生成できます。</p>}
+              : <p className="muted">まだ説明がありません。下の「自動検索」で公式情報を取り込むか、URL/画像から追加できます。</p>}
+
+            {/* 自動検索: 情報が無いときに Google で公式情報を取り込む。 */}
+            {(!place.summary || !place.source_url) && (
+              <button type="button" className="sm" style={{ marginTop: 8 }}
+                onClick={() => void autoSearch()} disabled={autoBusy}>
+                {autoBusy ? '🔍 自動検索中…' : '🔍 自動検索で公式情報を取り込む'}
+              </button>
+            )}
+            {autoMsg && <div className="muted" style={{ marginTop: 4 }}>{autoMsg}</div>}
           </div>
 
           {/* 情報元 (出典 URL / 資料リンク) */}

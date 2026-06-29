@@ -46,6 +46,7 @@ export interface Place {
   image_url: string | null; // Web/Places から取得した代表画像
   status: PlaceStatus;       // 'interested'(気になる) | 'visited'(訪問済み) | 'none'
   status_by: string | null;  // 状態を最後に変更した人の表示名 (複数人編集用)
+  google_place_id: string | null; // 地図 POI 由来の Google place id (重複防止)
   created_at: string;
   updated_at: string;
 }
