@@ -88,14 +88,19 @@ export function Itinerary() {
   // 経路端点名: place なら place 名、place でない端点 (出発/帰着地点) は leg のラベル。
   const endpointName = (placeId: string | null, label: string | null) => (placeId ? placeName(placeId) : label ?? '(地点)');
 
-  /** 区間 (移動) コネクタ: 場所カードと場所カードの間に手段+所要を表示する。 */
-  const renderConnector = (leg: RouteLeg | undefined, key: string) => {
+  /** 区間 (移動) コネクタ: 場所カードと場所カードの間に手段セレクタ+所要を表示する。
+   *  手段セレクタは区間ごとに独立 (この区間だけ再計算し、他区間に連動しない)。 */
+  const renderConnector = (dayId: string, leg: RouteLeg | undefined, key: string) => {
     if (!leg) return null;
     const meta = MODE_META[leg.mode];
     const detail = [fmtDuration(leg.duration_sec), fmtDistance(leg.distance_m), leg.fare_text].filter(Boolean).join(' / ');
     return (
       <div key={key} className="kanban-connector" aria-label={`移動 ${meta.label}`}>
-        <span className="kanban-connector-mode">{meta.icon} {meta.label}</span>
+        <span className="kanban-connector-ico" aria-hidden="true">{meta.icon}</span>
+        <select className="kanban-connector-mode" value={leg.mode}
+          onChange={(e) => void setLegMode(dayId, leg, e.target.value as RouteMode)} aria-label="この区間の移動手段">
+          {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+        </select>
         <span className="muted">{detail || '—'}</span>
       </div>
     );
@@ -123,7 +128,8 @@ export function Itinerary() {
       map[d.id] = [...(lists[i] ?? [])].sort((a, b) => a.order_index - b.order_index);
       const lg = routes[i] ?? [];
       legMap[d.id] = lg;
-      modeMap[d.id] = lg[0]?.mode ?? defaultMode;
+      // 区間ごとに独立管理するため、日の値は「新規区間の既定手段」(prefs) のシードのみ。
+      modeMap[d.id] = defaultMode;
     });
     setItemsByDay(map);
     setLegsByDay(legMap);
@@ -248,9 +254,18 @@ export function Itinerary() {
     void commit({ ...itemsByDay, [dayId]: arr }, [dayId]);
   };
 
-  const changeMode = (dayId: string, mode: RouteMode) => {
-    setModeByDay((s) => ({ ...s, [dayId]: mode }));
-    void recomputeRoute(dayId, itemsByDay[dayId] ?? [], mode);
+  /** 1 区間 (leg) の移動手段だけを変更する。他区間に連動しない (完全独立)。 */
+  const setLegMode = async (dayId: string, leg: RouteLeg, mode: RouteMode) => {
+    if (mode === leg.mode) return;
+    // 楽観更新: まずその区間だけ手段を差し替える。
+    setLegsByDay((s) => ({ ...s, [dayId]: (s[dayId] ?? []).map((l) => (l.id === leg.id ? { ...l, mode } : l)) }));
+    try {
+      const updated = await api.patchLegMode(leg.id, mode);
+      setLegsByDay((s) => ({ ...s, [dayId]: (s[dayId] ?? []).map((l) => (l.id === leg.id ? updated : l)) }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '区間の移動手段の変更に失敗しました');
+      void recomputeRoute(dayId, itemsByDay[dayId] ?? []); // 失敗時は再計算で実体に戻す
+    }
   };
 
   const setTime = async (item: ItineraryItem, dayId: string, time: string) => {
@@ -568,7 +583,7 @@ export function Itinerary() {
                     return (
                       <Fragment key={it.id}>
                       {/* 往路 (出発地点 → 最初の場所) は最初の場所カードの前に置く。 */}
-                      {idx === firstPlaceIdx && renderConnector(inboundLeg, `in-${it.id}`)}
+                      {idx === firstPlaceIdx && renderConnector(d.id, inboundLeg, `in-${it.id}`)}
                       <article
                         data-item-id={it.id}
                         className={`kanban-card${touchDragId === it.id ? ' lifting' : ''}`}
@@ -619,41 +634,23 @@ export function Itinerary() {
                         </div>
                       </article>
                       {/* 場所 → 次の場所 の移動コネクタ。 */}
-                      {renderConnector(toNextLeg, `mv-${it.id}`)}
+                      {renderConnector(d.id, toNextLeg, `mv-${it.id}`)}
                       {/* 復路 (最後の場所 → 帰着地点) は最後の場所カードの後に置く。 */}
-                      {idx === lastPlaceIdx && renderConnector(outboundLeg, `out-${it.id}`)}
+                      {idx === lastPlaceIdx && renderConnector(d.id, outboundLeg, `out-${it.id}`)}
                       </Fragment>
                     );
                   })}
                 </div>
 
-                {/* 経路フッタ: 移動手段の切替 + 区間の所要時間/距離。予定変更で自動再計算。 */}
+                {/* 経路フッタ: 合計のみ。各区間の手段は場所カード間のコネクタで個別に変更する。 */}
                 <div className="kanban-route">
-                  <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-                    <span className="muted" style={{ fontSize: 12 }}>最初の移動手段</span>
-                    <select className="kanban-route-mode" value={modeByDay[d.id] ?? 'driving'}
-                      onChange={(e) => changeMode(d.id, e.target.value as RouteMode)} aria-label="最初の移動手段">
-                      {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                    </select>
-                    {routeBusy[d.id] && <span className="muted" style={{ fontSize: 12 }}>計算中…</span>}
-                  </div>
+                  {routeBusy[d.id] && <span className="muted" style={{ fontSize: 12 }}>計算中…</span>}
                   <div className="kanban-route-hint muted" style={{ fontSize: 11 }}>
-                    区間ごとに自動でサジェスト（500m以内は徒歩 / 車・自転車はそのまま / それ以外は公共交通）。
+                    区間ごとに移動手段を選べます（初回は 500m以内=徒歩 などで自動サジェスト。変更は区間ごとに独立）。
                   </div>
                   {routeWarn[d.id] && <div className="kanban-route-warn">⚠ {routeWarn[d.id]}</div>}
                   {legs.length > 0 && (
-                    <>
-                      <div className="kanban-route-total">合計 {fmtDuration(totalSec)} / {fmtDistance(totalM)}</div>
-                      {legs.map((leg) => (
-                        <div key={leg.id} className="kanban-leg">
-                          <span>{endpointName(leg.from_place_id, leg.from_label)} → {endpointName(leg.to_place_id, leg.to_label)}</span>
-                          <span className="muted">
-                            {MODE_META[leg.mode].icon} {MODE_META[leg.mode].label} ・ {fmtDuration(leg.duration_sec)} / {fmtDistance(leg.distance_m)}
-                            {leg.fare_text ? ` / ${leg.fare_text}` : ''}
-                          </span>
-                        </div>
-                      ))}
-                    </>
+                    <div className="kanban-route-total">合計 {fmtDuration(totalSec)} / {fmtDistance(totalM)}</div>
                   )}
                 </div>
               </section>

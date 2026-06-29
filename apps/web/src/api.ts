@@ -209,10 +209,14 @@ export const api = {
   deleteItem: (id: string) => req<{ ok: true }>(`/api/items/${id}`, { method: 'DELETE' }),
 
   // --- routing ---
-  /** mode は autoPerSegment=true のとき「最初の移動手段」、各区間は距離+先頭手段でサジェストされる。 */
+  /** 新規区間の既定手段を mode で渡す。autoPerSegment=true で区間ごと (距離+既定) にサジェスト。
+   *  ユーザが個別に選んだ区間 (patchLegMode) は保存済みの手段が優先される。 */
   computeRoute: (dayId: string, mode: RouteMode, autoPerSegment = false) =>
     req<RouteLeg[]>(`/api/days/${dayId}/route`, { method: 'POST', body: json({ mode, autoPerSegment }) }),
   getRoute: (dayId: string) => req<RouteLeg[]>(`/api/days/${dayId}/route`),
+  /** 1 区間 (leg) の移動手段だけを変更し、その区間のみ再計算する (他区間に連動しない)。 */
+  patchLegMode: (legId: string, mode: RouteMode) =>
+    req<RouteLeg>(`/api/legs/${legId}`, { method: 'PATCH', body: json({ mode }) }),
 
   // --- 近くのおすすめ収集 (拠点周辺の候補を旅に一括追加) ---
   recommendTrip: (tripId: string, body: { radius?: number } = {}) =>

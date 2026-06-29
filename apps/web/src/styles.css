@@ -539,16 +539,18 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   border: 1px solid var(--c-border); border-radius: 8px; width: 100%;
 }
 
-/* 場所カードの間に挟む「移動」コネクタ (区間ごとの手段+所要)。 */
+/* 場所カードの間に挟む「移動」コネクタ (区間ごとの手段セレクタ+所要)。 */
 .kanban-connector {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   margin: 2px 0 2px 14px; padding: 3px 8px;
   font-size: 11px; color: var(--c-muted);
   border-left: 2px dashed var(--c-border);
 }
+.kanban-connector-ico { font-size: 13px; }
 .kanban-connector-mode {
-  font-weight: 700; color: var(--c-accent-d);
-  background: var(--c-surface, #f3f6f6); border-radius: 999px; padding: 1px 8px;
+  font-size: 11px; font-weight: 700; color: var(--c-accent-d);
+  padding: 2px 6px; min-height: 0; border-radius: 8px;
+  border: 1px solid var(--c-border); background: #fff;
 }
 
 /* ============ グローバルナビ (NavMenu) ============ */

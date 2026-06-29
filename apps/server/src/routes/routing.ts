@@ -58,6 +58,13 @@ app.post('/api/days/:id/route', async (c) => {
     isLastDay: origin?.isLastDay ?? false,
   });
 
+  // 区間ごとのユーザ選択 (override) を読み込む。並べ替えで route_legs を作り直しても保持される。
+  const overrides = (await sql`
+    SELECT from_key, to_key, mode FROM route_segment_modes WHERE day_id = ${day_id}`) as {
+    from_key: string; to_key: string; mode: RouteMode;
+  }[];
+  const ovMap = new Map(overrides.map((o) => [`${o.from_key}|${o.to_key}`, o.mode]));
+
   // 既存 leg を入れ替える。
   await sql`DELETE FROM route_legs WHERE day_id = ${day_id}`;
 
@@ -65,11 +72,12 @@ app.post('/api/days/:id/route', async (c) => {
   for (let i = 0; i + 1 < waypoints.length; i++) {
     const from = waypoints[i]!;
     const to = waypoints[i + 1]!;
-    // autoPerSegment: 区間ごとに距離 (直線) と primary から手段をサジェストする
-    // (500m 以内は徒歩 / それ以上は 車→車・自転車→自転車・それ以外→公共交通)。
-    const legMode: RouteMode = autoPerSegment
-      ? suggestSegmentMode(haversineMeters(from, to), mode)
-      : mode;
+    // 区間の手段の決め方 (各区間は独立):
+    //  1. ユーザがその区間で選んだ手段 (override) があれば最優先で使う。
+    //  2. 無ければ autoPerSegment 時に距離+primary からサジェスト (500m以内=徒歩 ほか)。
+    const segKey = `${segmentKey(from)}|${segmentKey(to)}`;
+    const legMode: RouteMode =
+      ovMap.get(segKey) ?? (autoPerSegment ? suggestSegmentMode(haversineMeters(from, to), mode) : mode);
     const r = await computeRoute(
       { from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng }, mode: legMode },
       config.googleMaps.apiKey,
@@ -122,6 +130,74 @@ async function resolveOrigin(
     isLastDay: meta.day_index === range.maxIdx,
   };
 }
+
+/** 区間 (waypoint) のキー。place は place_id、出発/帰着地点 (origin) は '@origin'。 */
+function segmentKey(w: { place_id: string | null }): string {
+  return w.place_id ?? '@origin';
+}
+
+/** leg の端点 (place or origin) の座標を解決する。place は places、origin は trips から。 */
+async function endpointCoords(
+  dayId: string,
+  placeId: string | null,
+): Promise<{ lat: number; lng: number } | null> {
+  if (placeId) {
+    const [p] = (await sql`SELECT lat, lng FROM places WHERE id=${placeId}`) as {
+      lat: number | null; lng: number | null;
+    }[];
+    if (!p || p.lat == null || p.lng == null) return null;
+    return { lat: p.lat, lng: p.lng };
+  }
+  // origin 端点: この日が属する旅の出発地点座標。
+  const [meta] = (await sql`SELECT trip_id FROM trip_days WHERE id=${dayId}`) as { trip_id: string }[];
+  if (!meta) return null;
+  const [trip] = (await sql`SELECT origin_lat, origin_lng FROM trips WHERE id=${meta.trip_id}`) as {
+    origin_lat: number | null; origin_lng: number | null;
+  }[];
+  if (!trip || trip.origin_lat == null || trip.origin_lng == null) return null;
+  return { lat: trip.origin_lat, lng: trip.origin_lng };
+}
+
+/**
+ * PATCH /api/legs/:id — 1 つの区間 (leg) の移動手段だけを変更し、その区間のみ再計算する。
+ * 他の区間には連動しない (完全独立)。選択は route_segment_modes に保存し、並べ替えで作り直しても保持する。
+ */
+app.patch('/api/legs/:id', async (c) => {
+  const id = c.req.param('id');
+  if (!config.googleMaps.apiKey) {
+    return c.json({ error: 'googleMaps.apiKey 未設定: 経路探索を実行できません' }, 400);
+  }
+  const b = (await c.req.json().catch(() => ({}))) as { mode?: RouteMode };
+  if (!VALID_MODES.includes(b.mode as RouteMode)) {
+    return c.json({ error: 'mode は driving|walking|transit|bicycling のいずれかです' }, 400);
+  }
+  const mode = b.mode as RouteMode;
+
+  const [leg] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
+  if (!leg) return c.json({ error: 'leg not found' }, 404);
+
+  const from = await endpointCoords(leg.day_id, leg.from_place_id);
+  const to = await endpointCoords(leg.day_id, leg.to_place_id);
+  if (!from || !to) return c.json({ error: '区間の座標を特定できませんでした' }, 422);
+
+  const r = await computeRoute({ from, to, mode }, config.googleMaps.apiKey);
+  const now = nowIso();
+  // computed_at は据え置く (GET の並び順キーなので、1 区間更新で順序が崩れないように)。
+  await sql`UPDATE route_legs SET mode=${mode}, duration_sec=${r.duration_sec}, distance_m=${r.distance_m},
+    fare_text=${r.fare_text}, polyline=${r.polyline}, raw_json=${JSON.stringify(r.raw)}
+    WHERE id=${id}`;
+
+  // この区間の選択を保存 (場所ペアをキーに)。並べ替えで route_legs を作り直しても復元される。
+  const fromKey = leg.from_place_id ?? '@origin';
+  const toKey = leg.to_place_id ?? '@origin';
+  await sql`
+    INSERT INTO route_segment_modes (id, day_id, from_key, to_key, mode, updated_at)
+    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${mode}, ${now})
+    ON CONFLICT(day_id, from_key, to_key) DO UPDATE SET mode = excluded.mode, updated_at = excluded.updated_at`;
+
+  const [updated] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
+  return c.json(updated);
+});
 
 app.get('/api/days/:id/route', async (c) => {
   const rows = (await sql`
