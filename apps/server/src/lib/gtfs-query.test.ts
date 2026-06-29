@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setupTestDb, teardownTestDb } from '../test/db.js';
 import { sql } from '../db/index.js';
-import { nearbyStops, stopDepartures } from './gtfs-query.js';
+import { nearbyStops, stopDepartures, listRoutes, routeTimetable } from './gtfs-query.js';
 
 beforeAll(async () => { await setupTestDb(); });
 afterAll(async () => { await teardownTestDb(); });
@@ -14,16 +14,22 @@ beforeEach(async () => {
   }
   await sql`INSERT INTO gtfs_feeds (id, name, source_url, imported_at, stop_count, trip_count) VALUES ('F1','テストバス',NULL,'2026-06-29',2,3)`;
   await sql`INSERT INTO gtfs_stops (feed_id, stop_id, stop_name, lat, lng) VALUES
-    ('F1','S_NEAR','駅前',35.681,139.767), ('F1','S_FAR','遠い',35.0,139.0)`;
+    ('F1','S_NEAR','駅前',35.681,139.767), ('F1','S_FAR','遠い',35.0,139.0),
+    ('F1','S2','二番',35.60,139.60), ('F1','S3','三番',35.50,139.50)`;
   await sql`INSERT INTO gtfs_routes (feed_id, route_id, short_name, long_name, route_type) VALUES ('F1','R1','0001','循環線',3)`;
   await sql`INSERT INTO gtfs_trips (feed_id, trip_id, route_id, service_id, headsign, direction_id) VALUES
     ('F1','T1','R1','S_ALL','東京駅',0),
     ('F1','T2','R1','S_NONE','東京駅',0),
     ('F1','T3','R1','S_ALL','東京駅',0)`;
+  // T1/T3 は S_NEAR→S2→S3 の 3 停留所パターン、T2 は S_NEAR のみの別パターン。
   await sql`INSERT INTO gtfs_stop_times (feed_id, trip_id, stop_id, stop_sequence, departure_time, arrive_time) VALUES
     ('F1','T1','S_NEAR',1,'08:00:00','08:00:00'),
+    ('F1','T1','S2',2,'08:10:00','08:10:00'),
+    ('F1','T1','S3',3,'08:20:00','08:20:00'),
     ('F1','T2','S_NEAR',1,'08:05:00','08:05:00'),
-    ('F1','T3','S_NEAR',1,'07:00:00','07:00:00')`;
+    ('F1','T3','S_NEAR',1,'07:00:00','07:00:00'),
+    ('F1','T3','S2',2,'07:10:00','07:10:00'),
+    ('F1','T3','S3',3,'07:20:00','07:20:00')`;
   await sql`INSERT INTO gtfs_calendar (feed_id, service_id, mon, tue, wed, thu, fri, sat, sun, start_date, end_date) VALUES
     ('F1','S_ALL',1,1,1,1,1,1,1,'20260101','20261231'),
     ('F1','S_NONE',0,0,0,0,0,0,0,'20260101','20261231')`;
@@ -50,5 +56,26 @@ describe('stopDepartures', () => {
   it('calendar_dates の運休日は空', async () => {
     const deps = await stopDepartures('F1', 'S_NEAR', '20260630', '00:00:00', 12);
     expect(deps).toEqual([]);
+  });
+});
+
+describe('listRoutes / routeTimetable', () => {
+  it('路線一覧は便数つき', async () => {
+    const rs = await listRoutes('F1');
+    expect(rs).toHaveLength(1);
+    expect(rs[0]!.route_id).toBe('R1');
+    expect(rs[0]!.trip_count).toBe(3);
+  });
+
+  it('停車順が同じ便を 1 パターンに、停留所=列・便=時刻順', async () => {
+    const pats = await routeTimetable('F1', 'R1');
+    // 便数の多い 3 停留所パターン (T3,T1) が先頭、次に S_NEAR のみ (T2)。
+    expect(pats).toHaveLength(2);
+    const main = pats[0]!;
+    expect(main.stops.map((s) => s.stop_id)).toEqual(['S_NEAR', 'S2', 'S3']);
+    // 便は出発が早い順 (T3=07:00 → T1=08:00)。times は停留所順に整列。
+    expect(main.trips.map((t) => t.times[0])).toEqual(['07:00:00', '08:00:00']);
+    expect(main.trips[0]!.times).toEqual(['07:00:00', '07:10:00', '07:20:00']);
+    expect(pats[1]!.stops.map((s) => s.stop_id)).toEqual(['S_NEAR']);
   });
 });

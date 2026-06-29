@@ -549,6 +549,20 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .kanban-connector-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .kanban-connector-note { font-size: 11px; color: var(--c-text); line-height: 1.4; }
 .kanban-connector-err { font-size: 11px; color: #a15c00; line-height: 1.4; }
+
+/* ---- GTFS 路線時刻表 (横軸=停留所 / 縦軸=便) ---- */
+.gtfs-tt-map { width: 100%; height: 240px; border-radius: 12px; border: 1px solid var(--c-border); margin: 8px 0; }
+.gtfs-tt-scroll { overflow: auto; max-height: 60vh; border: 1px solid var(--c-border); border-radius: 10px; }
+.gtfs-tt-table { border-collapse: separate; border-spacing: 0; font-size: 12px; white-space: nowrap; }
+.gtfs-tt-table th, .gtfs-tt-table td { border-bottom: 1px solid var(--c-border); border-right: 1px solid var(--c-border); padding: 4px 8px; text-align: center; background: #fff; }
+/* 上端の停留所見出しは縦書き気味に省スペース。 */
+.gtfs-tt-stophead { position: sticky; top: 0; z-index: 2; background: #f0f6f6; max-width: 92px; }
+.gtfs-tt-stophead span { display: inline-block; max-width: 88px; overflow: hidden; text-overflow: ellipsis; }
+/* 左端の便番号列は固定。 */
+.gtfs-tt-trip { position: sticky; left: 0; z-index: 1; background: #f0f6f6; font-weight: 700; }
+.gtfs-tt-corner { position: sticky; top: 0; left: 0; z-index: 3; background: #e7f0f0; font-weight: 700; }
+.gtfs-tt-table tbody td { color: var(--c-text); }
+.gtfs-tt-table tbody td:empty::after { content: '·'; color: var(--c-border); }
 .kanban-connector-ico { font-size: 13px; }
 .kanban-connector-mode {
   font-size: 11px; font-weight: 700; color: var(--c-accent-d);

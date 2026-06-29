@@ -28,6 +28,8 @@ import type {
   GtfsFeed,
   GtfsStopHit,
   GtfsDeparture,
+  GtfsRoute,
+  GtfsTimetablePattern,
   Trip,
   TripDay,
   TripDetail,
@@ -309,6 +311,11 @@ export const api = {
     req<GtfsFeed>('/api/gtfs/import', { method: 'POST', body: json(input) }),
   gtfsFeeds: () => req<GtfsFeed[]>('/api/gtfs/feeds'),
   gtfsDeleteFeed: (id: string) => req<{ ok: true }>(`/api/gtfs/feeds/${id}`, { method: 'DELETE' }),
+  /** フィードの路線一覧 (便数つき)。 */
+  gtfsRoutes: (feedId: string) => req<GtfsRoute[]>(`/api/gtfs/feeds/${feedId}/routes`),
+  /** 路線の時刻表 (停車パターン別。停留所=横軸、便=縦軸)。 */
+  gtfsRouteTimetable: (feedId: string, routeId: string) =>
+    req<GtfsTimetablePattern[]>(`/api/gtfs/feeds/${feedId}/routes/${encodeURIComponent(routeId)}/timetable`),
   /** lat/lng 近傍の停留所 (距離順)。 */
   gtfsNearbyStops: (params: { lat: number; lng: number; radius?: number; limit?: number }) => {
     const qs = new URLSearchParams({ lat: String(params.lat), lng: String(params.lng) });

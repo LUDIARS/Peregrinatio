@@ -278,3 +278,22 @@ export interface GtfsDeparture {
   headsign: string | null;
   route_type: number | null;
 }
+
+/** GTFS 路線 (選択用、便数つき)。 */
+export interface GtfsRoute {
+  route_id: string;
+  short_name: string | null;
+  long_name: string | null;
+  route_type: number | null;
+  trip_count: number;
+}
+
+export interface GtfsTimetableStop { stop_id: string; stop_name: string | null; lat: number | null; lng: number | null; }
+export interface GtfsTimetableTrip { trip_id: string; headsign: string | null; service_id: string | null; times: (string | null)[]; }
+/** 同じ停車順序でまとめた時刻表 (stops=横軸、trips=縦軸を時刻順)。 */
+export interface GtfsTimetablePattern {
+  direction_id: number | null;
+  headsign: string | null;
+  stops: GtfsTimetableStop[];
+  trips: GtfsTimetableTrip[];
+}

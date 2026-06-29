@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
-import type { GtfsDeparture, GtfsFeed, GtfsStopHit } from '../types.js';
+import { GtfsTimetable } from './GtfsTimetable.js';
+import type { GtfsDeparture, GtfsFeed, GtfsRoute, GtfsStopHit } from '../types.js';
 
 /**
  * GTFS 時刻表パネル (バス/一部鉄道の一括取込)。
@@ -15,6 +16,12 @@ export function GtfsPanel({ tripId }: { tripId: string }) {
   const [importBusy, setImportBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
+
+  // 路線→時刻表(表+地図)。
+  const [routesFeed, setRoutesFeed] = useState<GtfsFeed | null>(null);
+  const [routes, setRoutes] = useState<GtfsRoute[]>([]);
+  const [routesBusy, setRoutesBusy] = useState(false);
+  const [ttRoute, setTtRoute] = useState<{ feedId: string; routeId: string; label: string } | null>(null);
 
   const [center, setCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [stops, setStops] = useState<GtfsStopHit[]>([]);
@@ -52,9 +59,21 @@ export function GtfsPanel({ tripId }: { tripId: string }) {
     } finally { setImportBusy(false); }
   };
 
+  const openRoutes = async (f: GtfsFeed) => {
+    setRoutesFeed(f); setRoutes([]); setTtRoute(null); setRoutesBusy(true); setError('');
+    try { setRoutes(await api.gtfsRoutes(f.id)); }
+    catch (e) { setError(e instanceof Error ? e.message : '路線一覧の取得に失敗しました'); }
+    finally { setRoutesBusy(false); }
+  };
+  const routeLabel = (r: GtfsRoute) => [r.short_name, r.long_name].filter(Boolean).join(' ') || r.route_id;
+
   const removeFeed = async (id: string) => {
     if (!window.confirm('このフィードを削除しますか？（取り込んだ停留所・時刻も消えます）')) return;
-    try { await api.gtfsDeleteFeed(id); await loadFeeds(); setStops([]); setSelected(null); setDepartures([]); }
+    try {
+      await api.gtfsDeleteFeed(id); await loadFeeds();
+      setStops([]); setSelected(null); setDepartures([]);
+      if (routesFeed?.id === id) { setRoutesFeed(null); setRoutes([]); setTtRoute(null); }
+    }
     catch (e) { setError(e instanceof Error ? e.message : '削除に失敗しました'); }
   };
 
@@ -109,11 +128,40 @@ export function GtfsPanel({ tripId }: { tripId: string }) {
       {feeds.length > 0 && (
         <div className="stack" style={{ marginTop: 10 }}>
           {feeds.map((f) => (
-            <div key={f.id} className="spread" style={{ alignItems: 'center' }}>
-              <span><strong>{f.name}</strong> <span className="muted">停留所 {f.stop_count} / 便 {f.trip_count}</span></span>
-              <button type="button" className="sm ghost" onClick={() => void removeFeed(f.id)}>削除</button>
+            <div key={f.id} className="spread" style={{ alignItems: 'center', gap: 6 }}>
+              <span style={{ minWidth: 0 }}><strong>{f.name}</strong> <span className="muted">停留所 {f.stop_count} / 便 {f.trip_count}</span></span>
+              <span className="row" style={{ gap: 6 }}>
+                <button type="button" className="sm" onClick={() => void openRoutes(f)}>🕒 路線・時刻表</button>
+                <button type="button" className="sm ghost" onClick={() => void removeFeed(f.id)}>削除</button>
+              </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 路線選択 → 時刻表(表+地図) */}
+      {routesFeed && (
+        <div className="card" style={{ marginTop: 10 }}>
+          <div className="spread">
+            <strong>🚌 {routesFeed.name} の路線</strong>
+            <button type="button" className="sm ghost" onClick={() => { setRoutesFeed(null); setRoutes([]); setTtRoute(null); }}>閉じる</button>
+          </div>
+          {routesBusy && <p className="muted">路線を読み込み中…</p>}
+          {!routesBusy && routes.length === 0 && <p className="muted">路線データがありません。</p>}
+          <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+            {routes.map((r) => (
+              <button key={r.route_id} type="button"
+                className={ttRoute?.routeId === r.route_id && ttRoute?.feedId === routesFeed.id ? 'chip-btn active' : 'chip-btn'}
+                onClick={() => setTtRoute({ feedId: routesFeed.id, routeId: r.route_id, label: routeLabel(r) })}>
+                {r.route_type != null && r.route_type !== 3 ? '🚆 ' : '🚌 '}{routeLabel(r)}（{r.trip_count}便）
+              </button>
+            ))}
+          </div>
+          {ttRoute && (
+            <div style={{ marginTop: 10 }}>
+              <GtfsTimetable feedId={ttRoute.feedId} routeId={ttRoute.routeId} routeLabel={ttRoute.label} />
+            </div>
+          )}
         </div>
       )}
 
