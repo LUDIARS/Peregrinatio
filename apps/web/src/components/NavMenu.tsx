@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { getLastTripId, setLastTripId } from '../lib/currentTrip.js';
 
 /**
  * グローバルナビ (5 セクション切替)。全画面で常時表示。
@@ -75,22 +76,18 @@ function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
-const LAST_TRIP_KEY = 'pe.lastTrip';
-
 export function NavMenu() {
   const { pathname } = useLocation();
   const pathTripId = tripIdOf(pathname);
   const active = activeKey(pathname);
 
   // 旅を選択済みなら、旅に紐づかない画面 (設定など) でも旅依存ボタンを活性に保つため、
-  // 直近に開いていた tripId を覚えてフォールバックに使う。
-  const [lastTripId, setLastTripId] = useState<string | null>(() => {
-    try { return localStorage.getItem(LAST_TRIP_KEY); } catch { return null; }
-  });
+  // 直近に開いていた tripId を覚えてフォールバックに使う (lib/currentTrip と共有)。
+  const [lastTripId, setLastTrip] = useState<string | null>(() => getLastTripId());
   useEffect(() => {
     if (!pathTripId) return;
+    setLastTrip(pathTripId);
     setLastTripId(pathTripId);
-    try { localStorage.setItem(LAST_TRIP_KEY, pathTripId); } catch { /* ignore */ }
   }, [pathTripId]);
   const tripId = pathTripId ?? lastTripId;
 

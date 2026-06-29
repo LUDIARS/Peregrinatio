@@ -17,7 +17,8 @@ export function loadMaps(apiKey: string): Promise<void> {
   if (window.__peMapsLoading) return window.__peMapsLoading;
   window.__peMapsLoading = new Promise<void>((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&language=ja&region=JP`;
+    // libraries=places: 地図 POI タップ時に施設名 (Place.fetchFields) を引くため。
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&language=ja&region=JP&libraries=places`;
     s.async = true;
     s.onload = () => resolve();
     s.onerror = () => reject(new Error('Google Maps の読み込みに失敗しました (APIキー/参照元制限を確認)'));
