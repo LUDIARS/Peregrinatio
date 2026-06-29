@@ -1,18 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { loadMaps, PIN_PATH } from '../lib/maps.js';
-import type { GtfsServiceCalendar, GtfsTimetablePattern } from '../types.js';
+import type { GtfsTimetablePattern } from '../types.js';
 
-type DayType = 'weekday' | 'sat' | 'sun';
-const DAY_OPTS: { v: DayType; label: string }[] = [
-  { v: 'weekday', label: '平日' },
-  { v: 'sat', label: '土曜' },
-  { v: 'sun', label: '日祝' },
-];
-/** 今日の曜日から既定の運行日タイプを決める (0=日,6=土)。 */
-function todayDayType(): DayType {
-  const d = new Date().getDay();
-  return d === 0 ? 'sun' : d === 6 ? 'sat' : 'weekday';
+/** ローカル今日を input[type=date] 用 'YYYY-MM-DD' で返す。 */
+function todayInput(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -23,20 +18,10 @@ function todayDayType(): DayType {
  */
 export function GtfsTimetable({ feedId, routeId, routeLabel }: { feedId: string; routeId: string; routeLabel: string }) {
   const [patterns, setPatterns] = useState<GtfsTimetablePattern[]>([]);
-  const [services, setServices] = useState<GtfsServiceCalendar[]>([]);
-  const [dayType, setDayType] = useState<DayType>(todayDayType());
+  const [date, setDate] = useState<string>(todayInput()); // 'YYYY-MM-DD'
   const [pIdx, setPIdx] = useState(0);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
-
-  // 選択中の運行日タイプで走る service_id 集合 (平日=水曜代表 / 土 / 日祝=日曜代表)。
-  const dayServiceIds = useMemo(() => {
-    const col: keyof GtfsServiceCalendar = dayType === 'sat' ? 'sat' : dayType === 'sun' ? 'sun' : 'wed';
-    return new Set(services.filter((s) => Number(s[col]) === 1).map((s) => s.service_id));
-  }, [services, dayType]);
-  // service が無い (null) 便は曜日不明として常に表示する。
-  const tripsForDay = (p: GtfsTimetablePattern) =>
-    p.trips.filter((t) => !t.service_id || dayServiceIds.has(t.service_id));
 
   const mapHost = useRef<HTMLDivElement | null>(null);
   const mapObj = useRef<any>(null);
@@ -46,14 +31,13 @@ export function GtfsTimetable({ feedId, routeId, routeLabel }: { feedId: string;
     setLoading(true); setErr(''); setPIdx(0);
     (async () => {
       try {
-        const res = await api.gtfsRouteTimetable(feedId, routeId);
+        const res = await api.gtfsRouteTimetable(feedId, routeId, date.replace(/-/g, ''));
         setPatterns(res.patterns);
-        setServices(res.services);
       }
       catch (e) { setErr(e instanceof Error ? e.message : '時刻表の取得に失敗しました'); }
       finally { setLoading(false); }
     })();
-  }, [feedId, routeId]);
+  }, [feedId, routeId, date]);
 
   // 地図に現在パターンの停留所を順番に描く (番号付きマーカー + 経路線)。
   useEffect(() => {
@@ -99,77 +83,79 @@ export function GtfsTimetable({ feedId, routeId, routeLabel }: { feedId: string;
     return () => { cancelled = true; };
   }, [patterns, pIdx]);
 
-  if (loading) return <p className="muted">時刻表を読み込み中…</p>;
-  if (err) return <div className="error">⚠ {err}</div>;
-  if (patterns.length === 0) return <p className="muted">この路線の便データがありません。</p>;
-
-  const pat = patterns[pIdx]!;
-  const trips = tripsForDay(pat);
+  const idx = Math.min(pIdx, Math.max(0, patterns.length - 1));
+  const pat = patterns[idx] ?? null;
   const hhmm = (t: string | null) => (t ? t.slice(0, 5) : '');
 
   return (
     <div className="gtfs-tt">
       <div className="spread" style={{ alignItems: 'baseline' }}>
         <strong>🕒 {routeLabel}</strong>
-        <span className="muted" style={{ fontSize: 12 }}>{trips.length} 便 / {pat.stops.length} 停留所</span>
+        {pat && <span className="muted" style={{ fontSize: 12 }}>{pat.trips.length} 便 / {pat.stops.length} 停留所</span>}
       </div>
 
-      {/* 運行日タイプの絞り込み (平日/土曜/日祝)。同時刻の別ダイヤを混ぜないため。 */}
-      {services.length > 0 && (
-        <div className="base-bar" style={{ marginTop: 6 }}>
-          {DAY_OPTS.map((o) => (
-            <button key={o.v} type="button" className={dayType === o.v ? 'chip-btn active' : 'chip-btn'} onClick={() => setDayType(o.v)}>
-              {o.label}
-            </button>
-          ))}
-        </div>
+      {/* 運行日で絞る (平日/土日祝/特別ダイヤを混ぜない)。既定は今日。 */}
+      <div className="foundation-form" style={{ margin: '6px 0' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+          📅 運行日
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value || todayInput())} style={{ width: 150 }} />
+          <button type="button" className="sm ghost" onClick={() => setDate(todayInput())}>今日</button>
+        </label>
+        <p className="muted" style={{ margin: '2px 0 0', fontSize: 11 }}>その日に運行する便だけを表示します。</p>
+      </div>
+
+      {loading && <p className="muted">時刻表を読み込み中…</p>}
+      {err && <div className="error">⚠ {err}</div>}
+      {!loading && !err && patterns.length === 0 && (
+        <p className="muted">この日に運行する便はありません（日付を変えてみてください）。</p>
       )}
 
-      {/* 停車パターンが複数あれば切替 (方向・経路違い)。便数は運行日で絞った数。 */}
-      {patterns.length > 1 && (
-        <div className="base-bar" style={{ marginTop: 6 }}>
-          {patterns.map((p, i) => (
-            <button key={i} type="button" className={i === pIdx ? 'chip-btn active' : 'chip-btn'} onClick={() => setPIdx(i)}>
-              {p.headsign || `パターン${i + 1}`}（{tripsForDay(p).length}便）
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* 地図: 停留所の位置と順序。 */}
-      <div ref={mapHost} className="gtfs-tt-map" />
-
-      {/* 時刻表: 横軸=停留所 / 縦軸=便(時刻順、上ほど早い)。横スクロール、左端の便列は固定。 */}
-      <div className="gtfs-tt-scroll">
-        <table className="gtfs-tt-table">
-          <thead>
-            <tr>
-              <th className="gtfs-tt-corner">便＼停留所</th>
-              {pat.stops.map((s, si) => (
-                <th key={`${s.stop_id}-${si}`} className="gtfs-tt-stophead" title={s.stop_name ?? s.stop_id}>
-                  <span>{si + 1}. {s.stop_name ?? s.stop_id}</span>
-                </th>
+      {!loading && !err && pat && (
+        <>
+          {/* 停車パターンが複数あれば切替 (方向・経路違い)。 */}
+          {patterns.length > 1 && (
+            <div className="base-bar" style={{ marginTop: 6 }}>
+              {patterns.map((p, i) => (
+                <button key={i} type="button" className={i === idx ? 'chip-btn active' : 'chip-btn'} onClick={() => setPIdx(i)}>
+                  {p.headsign || `パターン${i + 1}`}（{p.trips.length}便）
+                </button>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {trips.length === 0 && (
-              <tr><td className="gtfs-tt-trip">—</td><td colSpan={pat.stops.length} className="muted">この運行日（{DAY_OPTS.find((o) => o.v === dayType)?.label}）の便はありません。</td></tr>
-            )}
-            {trips.map((t, ti) => (
-              <tr key={t.trip_id}>
-                <th className="gtfs-tt-trip" scope="row" title={t.headsign ?? ''}>{ti + 1}</th>
-                {pat.stops.map((s, si) => (
-                  <td key={`${s.stop_id}-${si}`}>{hhmm(t.times[si] ?? null)}</td>
+            </div>
+          )}
+
+          {/* 地図: 停留所の位置と順序。 */}
+          <div ref={mapHost} className="gtfs-tt-map" />
+
+          {/* 時刻表: 横軸=停留所 / 縦軸=便(時刻順、上ほど早い)。横スクロール、左端の便列は固定。 */}
+          <div className="gtfs-tt-scroll">
+            <table className="gtfs-tt-table">
+              <thead>
+                <tr>
+                  <th className="gtfs-tt-corner">便＼停留所</th>
+                  {pat.stops.map((s, si) => (
+                    <th key={`${s.stop_id}-${si}`} className="gtfs-tt-stophead" title={s.stop_name ?? s.stop_id}>
+                      <span>{si + 1}. {s.stop_name ?? s.stop_id}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {pat.trips.map((t, ti) => (
+                  <tr key={t.trip_id}>
+                    <th className="gtfs-tt-trip" scope="row" title={t.headsign ?? ''}>{ti + 1}</th>
+                    {pat.stops.map((s, si) => (
+                      <td key={`${s.stop_id}-${si}`}>{hhmm(t.times[si] ?? null)}</td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-        横＝停留所（左から順に停車）、縦＝便（上ほど早い発）。空欄はその便が通らない停留所です。
-      </p>
+              </tbody>
+            </table>
+          </div>
+          <p className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+            横＝停留所（左から順に停車）、縦＝便（上ほど早い発）。空欄はその便が通らない停留所です。
+          </p>
+        </>
+      )}
     </div>
   );
 }
