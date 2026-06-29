@@ -1,7 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { loadMaps, PIN_PATH } from '../lib/maps.js';
-import type { GtfsTimetablePattern } from '../types.js';
+import type { GtfsServiceCalendar, GtfsTimetablePattern } from '../types.js';
+
+type DayType = 'weekday' | 'sat' | 'sun';
+const DAY_OPTS: { v: DayType; label: string }[] = [
+  { v: 'weekday', label: '平日' },
+  { v: 'sat', label: '土曜' },
+  { v: 'sun', label: '日祝' },
+];
+/** 今日の曜日から既定の運行日タイプを決める (0=日,6=土)。 */
+function todayDayType(): DayType {
+  const d = new Date().getDay();
+  return d === 0 ? 'sun' : d === 6 ? 'sat' : 'weekday';
+}
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -11,9 +23,20 @@ import type { GtfsTimetablePattern } from '../types.js';
  */
 export function GtfsTimetable({ feedId, routeId, routeLabel }: { feedId: string; routeId: string; routeLabel: string }) {
   const [patterns, setPatterns] = useState<GtfsTimetablePattern[]>([]);
+  const [services, setServices] = useState<GtfsServiceCalendar[]>([]);
+  const [dayType, setDayType] = useState<DayType>(todayDayType());
   const [pIdx, setPIdx] = useState(0);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+
+  // 選択中の運行日タイプで走る service_id 集合 (平日=水曜代表 / 土 / 日祝=日曜代表)。
+  const dayServiceIds = useMemo(() => {
+    const col: keyof GtfsServiceCalendar = dayType === 'sat' ? 'sat' : dayType === 'sun' ? 'sun' : 'wed';
+    return new Set(services.filter((s) => Number(s[col]) === 1).map((s) => s.service_id));
+  }, [services, dayType]);
+  // service が無い (null) 便は曜日不明として常に表示する。
+  const tripsForDay = (p: GtfsTimetablePattern) =>
+    p.trips.filter((t) => !t.service_id || dayServiceIds.has(t.service_id));
 
   const mapHost = useRef<HTMLDivElement | null>(null);
   const mapObj = useRef<any>(null);
@@ -22,7 +45,11 @@ export function GtfsTimetable({ feedId, routeId, routeLabel }: { feedId: string;
   useEffect(() => {
     setLoading(true); setErr(''); setPIdx(0);
     (async () => {
-      try { setPatterns(await api.gtfsRouteTimetable(feedId, routeId)); }
+      try {
+        const res = await api.gtfsRouteTimetable(feedId, routeId);
+        setPatterns(res.patterns);
+        setServices(res.services);
+      }
       catch (e) { setErr(e instanceof Error ? e.message : '時刻表の取得に失敗しました'); }
       finally { setLoading(false); }
     })();
@@ -77,21 +104,33 @@ export function GtfsTimetable({ feedId, routeId, routeLabel }: { feedId: string;
   if (patterns.length === 0) return <p className="muted">この路線の便データがありません。</p>;
 
   const pat = patterns[pIdx]!;
+  const trips = tripsForDay(pat);
   const hhmm = (t: string | null) => (t ? t.slice(0, 5) : '');
 
   return (
     <div className="gtfs-tt">
       <div className="spread" style={{ alignItems: 'baseline' }}>
         <strong>🕒 {routeLabel}</strong>
-        <span className="muted" style={{ fontSize: 12 }}>{pat.trips.length} 便 / {pat.stops.length} 停留所</span>
+        <span className="muted" style={{ fontSize: 12 }}>{trips.length} 便 / {pat.stops.length} 停留所</span>
       </div>
 
-      {/* 停車パターンが複数あれば切替 (方向・経路違い)。 */}
+      {/* 運行日タイプの絞り込み (平日/土曜/日祝)。同時刻の別ダイヤを混ぜないため。 */}
+      {services.length > 0 && (
+        <div className="base-bar" style={{ marginTop: 6 }}>
+          {DAY_OPTS.map((o) => (
+            <button key={o.v} type="button" className={dayType === o.v ? 'chip-btn active' : 'chip-btn'} onClick={() => setDayType(o.v)}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 停車パターンが複数あれば切替 (方向・経路違い)。便数は運行日で絞った数。 */}
       {patterns.length > 1 && (
         <div className="base-bar" style={{ marginTop: 6 }}>
           {patterns.map((p, i) => (
             <button key={i} type="button" className={i === pIdx ? 'chip-btn active' : 'chip-btn'} onClick={() => setPIdx(i)}>
-              {p.headsign || `パターン${i + 1}`}（{p.trips.length}便）
+              {p.headsign || `パターン${i + 1}`}（{tripsForDay(p).length}便）
             </button>
           ))}
         </div>
@@ -114,7 +153,10 @@ export function GtfsTimetable({ feedId, routeId, routeLabel }: { feedId: string;
             </tr>
           </thead>
           <tbody>
-            {pat.trips.map((t, ti) => (
+            {trips.length === 0 && (
+              <tr><td className="gtfs-tt-trip">—</td><td colSpan={pat.stops.length} className="muted">この運行日（{DAY_OPTS.find((o) => o.v === dayType)?.label}）の便はありません。</td></tr>
+            )}
+            {trips.map((t, ti) => (
               <tr key={t.trip_id}>
                 <th className="gtfs-tt-trip" scope="row" title={t.headsign ?? ''}>{ti + 1}</th>
                 {pat.stops.map((s, si) => (
