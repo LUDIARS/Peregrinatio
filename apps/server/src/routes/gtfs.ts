@@ -8,7 +8,7 @@
 import { Hono } from 'hono';
 import { sql } from '../db/index.js';
 import { importGtfsFromUrl } from '../lib/gtfs-import.js';
-import { nearbyStops, stopDepartures } from '../lib/gtfs-query.js';
+import { nearbyStops, stopDepartures, listRoutes, routeTimetable } from '../lib/gtfs-query.js';
 import type { GtfsFeed } from '../types.js';
 
 const app = new Hono();
@@ -62,6 +62,14 @@ app.get('/api/gtfs/stops/nearby', async (c) => {
     Number.isFinite(limit) ? limit : 8,
   );
   return c.json(hits);
+});
+
+app.get('/api/gtfs/feeds/:id/routes', async (c) => {
+  return c.json(await listRoutes(c.req.param('id')));
+});
+
+app.get('/api/gtfs/feeds/:id/routes/:rid/timetable', async (c) => {
+  return c.json(await routeTimetable(c.req.param('id'), c.req.param('rid')));
 });
 
 app.get('/api/gtfs/feeds/:id/stops/:sid/departures', async (c) => {

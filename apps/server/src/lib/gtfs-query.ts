@@ -23,6 +23,98 @@ export interface GtfsDeparture {
 
 const WEEKDAY_COL = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
+export interface GtfsRouteRow {
+  route_id: string;
+  short_name: string | null;
+  long_name: string | null;
+  route_type: number | null;
+  trip_count: number;
+}
+
+/** フィードの路線一覧 (便数つき、便の多い順)。 */
+export async function listRoutes(feedId: string): Promise<GtfsRouteRow[]> {
+  return (await sql`
+    SELECT r.route_id, r.short_name, r.long_name, r.route_type,
+           (SELECT COUNT(*) FROM gtfs_trips t WHERE t.feed_id = r.feed_id AND t.route_id = r.route_id) AS trip_count
+    FROM gtfs_routes r WHERE r.feed_id = ${feedId}
+    ORDER BY trip_count DESC, r.short_name`) as GtfsRouteRow[];
+}
+
+export interface TimetableStop { stop_id: string; stop_name: string | null; lat: number | null; lng: number | null; }
+export interface TimetableTrip { trip_id: string; headsign: string | null; service_id: string | null; times: (string | null)[]; }
+/** 同じ停車順序 (パターン) でまとめた時刻表。stops=横軸、trips=縦軸 (時刻順)。 */
+export interface TimetablePattern {
+  direction_id: number | null;
+  headsign: string | null;
+  stops: TimetableStop[];
+  trips: TimetableTrip[];
+}
+
+/**
+ * 路線の時刻表を停車パターン別に組む。停車順序が同じ便を 1 つの表にまとめる
+ * (停車順=横軸の駅/停留所、便=縦軸を時刻順)。
+ */
+export async function routeTimetable(feedId: string, routeId: string): Promise<TimetablePattern[]> {
+  const rows = (await sql`
+    SELECT st.trip_id AS trip_id, st.stop_id AS stop_id, st.departure_time AS departure_time,
+           t.headsign AS headsign, t.direction_id AS direction_id, t.service_id AS service_id
+    FROM gtfs_stop_times st
+    JOIN gtfs_trips t ON t.feed_id = st.feed_id AND t.trip_id = st.trip_id
+    WHERE st.feed_id = ${feedId} AND t.route_id = ${routeId}
+    ORDER BY st.trip_id, st.stop_sequence`) as Array<{
+    trip_id: string; stop_id: string; departure_time: string | null;
+    headsign: string | null; direction_id: number | null; service_id: string | null;
+  }>;
+  if (rows.length === 0) return [];
+
+  // trip ごとに停車順 (stop_id 列) と時刻列を作る。
+  interface TripAgg { headsign: string | null; direction_id: number | null; service_id: string | null; stops: string[]; times: (string | null)[]; }
+  const trips = new Map<string, TripAgg>();
+  for (const r of rows) {
+    let a = trips.get(r.trip_id);
+    if (!a) { a = { headsign: r.headsign, direction_id: r.direction_id, service_id: r.service_id, stops: [], times: [] }; trips.set(r.trip_id, a); }
+    a.stops.push(r.stop_id);
+    a.times.push(r.departure_time);
+  }
+
+  // 停車順が同じ便を 1 パターンにまとめる。
+  interface PatAgg { direction_id: number | null; headsign: string | null; stopSeq: string[]; trips: TimetableTrip[]; }
+  const pats = new Map<string, PatAgg>();
+  for (const [tripId, a] of trips) {
+    const sig = a.stops.join('>');
+    let p = pats.get(sig);
+    if (!p) { p = { direction_id: a.direction_id, headsign: a.headsign, stopSeq: a.stops, trips: [] }; pats.set(sig, p); }
+    p.trips.push({ trip_id: tripId, headsign: a.headsign, service_id: a.service_id, times: a.times });
+  }
+
+  // 停留所名/座標をまとめて解決。
+  const allStopIds = new Set<string>();
+  for (const p of pats.values()) for (const s of p.stopSeq) allStopIds.add(s);
+  const stopRows = (await sql`
+    SELECT stop_id, stop_name, lat, lng FROM gtfs_stops WHERE feed_id = ${feedId}`) as Array<{
+    stop_id: string; stop_name: string | null; lat: number | null; lng: number | null;
+  }>;
+  const stopMap = new Map(stopRows.map((s) => [s.stop_id, s]));
+
+  const firstTime = (t: TimetableTrip) => t.times.find((x) => x) ?? '99:99:99';
+  const out: TimetablePattern[] = [];
+  for (const p of pats.values()) {
+    p.trips.sort((a, b) => firstTime(a).localeCompare(firstTime(b)));
+    out.push({
+      direction_id: p.direction_id,
+      headsign: p.headsign,
+      stops: p.stopSeq.map((id) => {
+        const s = stopMap.get(id);
+        return { stop_id: id, stop_name: s?.stop_name ?? id, lat: s?.lat ?? null, lng: s?.lng ?? null };
+      }),
+      trips: p.trips,
+    });
+  }
+  // 便数の多いパターンを先頭に。
+  out.sort((a, b) => b.trips.length - a.trips.length);
+  return out;
+}
+
 /** lat/lng 近傍の停留所を距離順に返す (全フィード横断、bbox 前絞り→ハバーサイン)。 */
 export async function nearbyStops(
   lat: number, lng: number, radiusM: number, limit: number,
