@@ -25,6 +25,9 @@ import type {
   TimetableKind,
   TransitOption,
   TransitProviderKind,
+  GtfsFeed,
+  GtfsStopHit,
+  GtfsDeparture,
   Trip,
   TripDay,
   TripDetail,
@@ -299,6 +302,29 @@ export const api = {
   // --- 予約サジェスト (新幹線/飛行機) ---
   reservationSuggestions: (tripId: string) =>
     req<ReservationSuggestionsResult>(`/api/trips/${tripId}/reservation-suggestions`),
+
+  // --- GTFS 時刻表 (バス/一部鉄道の一括取込) ---
+  /** GTFS zip URL を取り込む (フィード作成。重い)。 */
+  gtfsImport: (input: { url: string; name?: string }) =>
+    req<GtfsFeed>('/api/gtfs/import', { method: 'POST', body: json(input) }),
+  gtfsFeeds: () => req<GtfsFeed[]>('/api/gtfs/feeds'),
+  gtfsDeleteFeed: (id: string) => req<{ ok: true }>(`/api/gtfs/feeds/${id}`, { method: 'DELETE' }),
+  /** lat/lng 近傍の停留所 (距離順)。 */
+  gtfsNearbyStops: (params: { lat: number; lng: number; radius?: number; limit?: number }) => {
+    const qs = new URLSearchParams({ lat: String(params.lat), lng: String(params.lng) });
+    if (params.radius != null) qs.set('radius', String(params.radius));
+    if (params.limit != null) qs.set('limit', String(params.limit));
+    return req<GtfsStopHit[]>(`/api/gtfs/stops/nearby?${qs.toString()}`);
+  },
+  /** 停留所の発車時刻ボード (date=YYYYMMDD / after=HH:MM:SS は省略時サーバが今=JST)。 */
+  gtfsDepartures: (feedId: string, stopId: string, params: { date?: string; after?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.date) qs.set('date', params.date);
+    if (params.after) qs.set('after', params.after);
+    if (params.limit != null) qs.set('limit', String(params.limit));
+    const s = qs.toString();
+    return req<GtfsDeparture[]>(`/api/gtfs/feeds/${feedId}/stops/${encodeURIComponent(stopId)}/departures${s ? `?${s}` : ''}`);
+  },
 
   // --- 運行情報 ---
   listServiceAlerts: (tripId: string) => req<ServiceAlert[]>(`/api/trips/${tripId}/service-alerts`),

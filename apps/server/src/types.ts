@@ -204,3 +204,13 @@ export interface PlaceJob {
 export interface PlaceJobView extends PlaceJob {
   place_name: string | null;
 }
+
+/** 取り込んだ GTFS フィード (バス/一部鉄道の時刻表)。 */
+export interface GtfsFeed {
+  id: string;
+  name: string;
+  source_url: string | null;
+  imported_at: string;
+  stop_count: number;
+  trip_count: number;
+}

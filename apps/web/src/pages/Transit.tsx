@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api.js';
+import { GtfsPanel } from '../components/GtfsPanel.js';
 import type {
   ReservationSuggestion, ServiceAlert, Timetable, TimetableDeparture, TimetableKind, TransitProviderKind,
 } from '../types.js';
@@ -98,6 +99,9 @@ export function Transit() {
       <h2>🚃 時刻表 / 運行情報</h2>
       {error && <div className="card error">⚠ {error}</div>}
       {info && <div className="card">{info}</div>}
+
+      {/* GTFS 時刻表 (バス/一部鉄道の一括取込) */}
+      <GtfsPanel tripId={tripId} />
 
       {/* ── 予約サジェスト (新幹線/飛行機) ───────── */}
       {suggests.length > 0 && (
