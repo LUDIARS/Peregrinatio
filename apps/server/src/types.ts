@@ -122,7 +122,9 @@ export interface RouteLeg {
   fare_text: string | null;
   polyline: string | null;
   raw_json: string | null;
-  note: string | null; // 乗換要約 (Google マップ結果の貼り付け解析 / 暫定)
+  note: string | null; // 乗換要約 (Google マップの選択経路 / 暫定)
+  depart_time: string | null; // 公共交通の出発時刻 'HH:MM' (選択経路)
+  arrive_time: string | null; // 公共交通の到着時刻 'HH:MM' (選択経路)
   computed_at: string;
 }
 

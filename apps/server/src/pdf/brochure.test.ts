@@ -25,7 +25,7 @@ function baseInput(over: Partial<BrochureInput> = {}): BrochureInput {
     { id: 'i2', day_id: 'd1', place_id: 'p2', order_index: 1, planned_time: '11:30', kind: 'visit', note: null, edited_by: null },
   ];
   const legs: RouteLeg[] = [
-    { id: 'l1', day_id: 'd1', from_place_id: 'p1', to_place_id: 'p2', from_label: null, to_label: null, mode: 'walking', duration_sec: 720, distance_m: 850, fare_text: null, polyline: null, raw_json: null, note: null, computed_at: '' },
+    { id: 'l1', day_id: 'd1', from_place_id: 'p1', to_place_id: 'p2', from_label: null, to_label: null, mode: 'walking', duration_sec: 720, distance_m: 850, fare_text: null, polyline: null, raw_json: null, note: null, depart_time: null, arrive_time: null, computed_at: '' },
   ];
   return {
     trip,
@@ -67,7 +67,7 @@ describe('buildBrochureHtml', () => {
     const input = baseInput();
     input.legsByDay = new Map([[
       'd1',
-      [{ id: 'lx', day_id: 'd1', from_place_id: 'p2', to_place_id: 'p1', from_label: null, to_label: null, mode: 'driving', duration_sec: 300, distance_m: 1200, fare_text: null, polyline: null, raw_json: null, note: null, computed_at: '' }],
+      [{ id: 'lx', day_id: 'd1', from_place_id: 'p2', to_place_id: 'p1', from_label: null, to_label: null, mode: 'driving', duration_sec: 300, distance_m: 1200, fare_text: null, polyline: null, raw_json: null, note: null, depart_time: null, arrive_time: null, computed_at: '' }],
     ]]);
     const html = buildBrochureHtml(input);
     expect(html).toContain('そのほかの移動');

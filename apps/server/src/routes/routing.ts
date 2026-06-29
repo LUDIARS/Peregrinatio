@@ -8,7 +8,9 @@ import { config } from '../config.js';
 import { newId, nowIso } from '../lib/ids.js';
 import { buildRouteWaypoints, type OriginNode } from '../lib/route-waypoints.js';
 import { suggestSegmentMode, haversineMeters } from '../lib/segment-mode.js';
-import { parseGmapsTransit, type ParsedTransit } from '../lib/transit-parse.js';
+import {
+  parseGmapsTransitOptions, optionToParsed, type ParsedTransit, type TransitOption,
+} from '../lib/transit-parse.js';
 import { fetchGmapsTransitText } from '../lib/transit-fetch.js';
 import { computeRoute } from '@peregrinatio/routing';
 import type { RouteLeg, RouteMode, Trip } from '../types.js';
@@ -23,13 +25,15 @@ interface ItemPlaceRow {
   lng: number | null;
 }
 
-/** route_segment_modes の 1 行 (区間ごとのユーザ選択 + Google マップ貼り付け解析の保持値)。 */
+/** route_segment_modes の 1 行 (区間ごとのユーザ選択 + Google マップ経路の保持値)。 */
 interface SegmentOverride {
   from_key: string;
   to_key: string;
   mode: RouteMode;
   duration_sec: number | null;
   fare_text: string | null;
+  depart_time: string | null;
+  arrive_time: string | null;
   note: string | null;
 }
 
@@ -73,7 +77,7 @@ app.post('/api/days/:id/route', async (c) => {
   // 区間ごとのユーザ選択 (override) を読み込む。並べ替えで route_legs を作り直しても保持される。
   // duration_sec/fare_text/note は Google マップ結果の貼り付け解析 (transit) 由来 (暫定)。
   const overrides = (await sql`
-    SELECT from_key, to_key, mode, duration_sec, fare_text, note
+    SELECT from_key, to_key, mode, duration_sec, fare_text, depart_time, arrive_time, note
     FROM route_segment_modes WHERE day_id = ${day_id}`) as SegmentOverride[];
   const ovMap = new Map(overrides.map((o) => [`${o.from_key}|${o.to_key}`, o]));
 
@@ -92,13 +96,17 @@ app.post('/api/days/:id/route', async (c) => {
     const legMode: RouteMode =
       ov?.mode ?? (autoPerSegment ? suggestSegmentMode(haversineMeters(from, to), mode) : mode);
 
-    // Google マップ結果を貼り付け解析した値があれば、それを使う (Google を呼ばない。日本の transit 対策)。
-    const hasPasted = !!ov && (ov.duration_sec != null || ov.fare_text != null || ov.note != null);
+    // Google マップで選んだ経路の保持値があれば、それを使う (Google を呼ばない。日本の transit 対策)。
+    const hasPicked = !!ov && (ov.duration_sec != null || ov.fare_text != null || ov.note != null || ov.depart_time != null);
     let r: { duration_sec: number | null; distance_m: number | null; fare_text: string | null; polyline: string | null; raw: unknown };
     let note: string | null = null;
-    if (hasPasted) {
-      r = { duration_sec: ov!.duration_sec ?? null, distance_m: null, fare_text: ov!.fare_text ?? null, polyline: null, raw: { source: 'gmaps-paste' } };
+    let depart_time: string | null = null;
+    let arrive_time: string | null = null;
+    if (hasPicked) {
+      r = { duration_sec: ov!.duration_sec ?? null, distance_m: null, fare_text: ov!.fare_text ?? null, polyline: null, raw: { source: 'gmaps' } };
       note = ov!.note ?? null;
+      depart_time = ov!.depart_time ?? null;
+      arrive_time = ov!.arrive_time ?? null;
     } else {
       r = await computeRoute(
         { from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng }, mode: legMode },
@@ -121,12 +129,14 @@ app.post('/api/days/:id/route', async (c) => {
       polyline: r.polyline,
       raw_json,
       note,
+      depart_time,
+      arrive_time,
       computed_at,
     };
     await sql`INSERT INTO route_legs
-      (id, day_id, from_place_id, to_place_id, from_label, to_label, mode, duration_sec, distance_m, fare_text, polyline, raw_json, note, computed_at)
+      (id, day_id, from_place_id, to_place_id, from_label, to_label, mode, duration_sec, distance_m, fare_text, polyline, raw_json, note, depart_time, arrive_time, computed_at)
       VALUES (${leg.id}, ${leg.day_id}, ${leg.from_place_id}, ${leg.to_place_id}, ${leg.from_label}, ${leg.to_label},
-              ${leg.mode}, ${leg.duration_sec}, ${leg.distance_m}, ${leg.fare_text}, ${leg.polyline}, ${leg.raw_json}, ${leg.note}, ${leg.computed_at})`;
+              ${leg.mode}, ${leg.duration_sec}, ${leg.distance_m}, ${leg.fare_text}, ${leg.polyline}, ${leg.raw_json}, ${leg.note}, ${leg.depart_time}, ${leg.arrive_time}, ${leg.computed_at})`;
     legs.push(leg);
   }
 
@@ -207,50 +217,62 @@ app.patch('/api/legs/:id', async (c) => {
   const r = await computeRoute({ from, to, mode }, config.googleMaps.apiKey);
   const now = nowIso();
   // computed_at は据え置く (GET の並び順キーなので、1 区間更新で順序が崩れないように)。
-  // 手段を選び直した = Google で計算し直すので、貼り付け解析の note はクリアする。
+  // 手段を選び直した = Google で計算し直すので、選んだ経路の保持値 (note/時刻) はクリアする。
   await sql`UPDATE route_legs SET mode=${mode}, duration_sec=${r.duration_sec}, distance_m=${r.distance_m},
-    fare_text=${r.fare_text}, polyline=${r.polyline}, raw_json=${JSON.stringify(r.raw)}, note=${null}
-    WHERE id=${id}`;
+    fare_text=${r.fare_text}, polyline=${r.polyline}, raw_json=${JSON.stringify(r.raw)},
+    note=${null}, depart_time=${null}, arrive_time=${null} WHERE id=${id}`;
 
   // この区間の選択を保存 (場所ペアをキーに)。並べ替えで route_legs を作り直しても復元される。
-  // 貼り付け解析の保持値 (duration/fare/note) も一緒にクリアする。
   const fromKey = leg.from_place_id ?? '@origin';
   const toKey = leg.to_place_id ?? '@origin';
   await sql`
-    INSERT INTO route_segment_modes (id, day_id, from_key, to_key, mode, duration_sec, fare_text, note, updated_at)
-    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${mode}, ${null}, ${null}, ${null}, ${now})
+    INSERT INTO route_segment_modes (id, day_id, from_key, to_key, mode, duration_sec, fare_text, depart_time, arrive_time, note, updated_at)
+    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${mode}, ${null}, ${null}, ${null}, ${null}, ${null}, ${now})
     ON CONFLICT(day_id, from_key, to_key) DO UPDATE SET
-      mode = excluded.mode, duration_sec = NULL, fare_text = NULL, note = NULL, updated_at = excluded.updated_at`;
+      mode = excluded.mode, duration_sec = NULL, fare_text = NULL, depart_time = NULL, arrive_time = NULL,
+      note = NULL, updated_at = excluded.updated_at`;
 
   const [updated] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
   return c.json(updated);
 });
 
-/** 解析した transit 情報をこの区間に保存する (route_legs + route_segment_modes、source 注記)。 */
+/** 選んだ transit 経路をこの区間に保存する (route_legs + route_segment_modes、source 注記)。 */
 async function storeTransitOnLeg(leg: RouteLeg, parsed: ParsedTransit, source: string): Promise<RouteLeg> {
   const now = nowIso();
   // computed_at は据え置き (並び順維持)。distance/polyline は持たない。
   await sql`UPDATE route_legs SET mode=${'transit'}, duration_sec=${parsed.duration_sec},
     distance_m=${null}, fare_text=${parsed.fare_text}, polyline=${null},
-    raw_json=${JSON.stringify({ source })}, note=${parsed.note} WHERE id=${leg.id}`;
+    raw_json=${JSON.stringify({ source })}, note=${parsed.note},
+    depart_time=${parsed.depart_time}, arrive_time=${parsed.arrive_time} WHERE id=${leg.id}`;
 
   const fromKey = leg.from_place_id ?? '@origin';
   const toKey = leg.to_place_id ?? '@origin';
   await sql`
-    INSERT INTO route_segment_modes (id, day_id, from_key, to_key, mode, duration_sec, fare_text, note, updated_at)
-    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${'transit'}, ${parsed.duration_sec}, ${parsed.fare_text}, ${parsed.note}, ${now})
+    INSERT INTO route_segment_modes (id, day_id, from_key, to_key, mode, duration_sec, fare_text, depart_time, arrive_time, note, updated_at)
+    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${'transit'}, ${parsed.duration_sec}, ${parsed.fare_text}, ${parsed.depart_time}, ${parsed.arrive_time}, ${parsed.note}, ${now})
     ON CONFLICT(day_id, from_key, to_key) DO UPDATE SET
       mode = 'transit', duration_sec = excluded.duration_sec, fare_text = excluded.fare_text,
+      depart_time = excluded.depart_time, arrive_time = excluded.arrive_time,
       note = excluded.note, updated_at = excluded.updated_at`;
 
   const [updated] = (await sql`SELECT * FROM route_legs WHERE id=${leg.id}`) as RouteLeg[];
   return updated ?? leg;
 }
 
+/** 候補配列を到着時刻が早い順に並べる (到着時刻優先。時刻不明は末尾)。 */
+function sortByArrival(options: TransitOption[]): TransitOption[] {
+  return [...options].sort((a, b) => {
+    if (a.arrive_time && b.arrive_time) return a.arrive_time.localeCompare(b.arrive_time);
+    if (a.arrive_time) return -1;
+    if (b.arrive_time) return 1;
+    return 0;
+  });
+}
+
 /**
  * POST /api/legs/:id/transit-fetch — サーバ側でヘッドレスブラウザ(Puppeteer)が Google マップの
- * 乗換経路ページを開いて描画し、結果テキストを抽出→LLM 解析してこの区間に取り込む (暫定)。
- * スマホでコピペできないユーザ向けの自動取得。失敗時は明示エラー (手動貼り付けにフォールバック可)。
+ * 乗換経路ページを開いて描画し、結果テキストを抽出→LLM 解析して**経路候補の配列**を返す (暫定)。
+ * スマホでコピペできないユーザ向けの自動取得。ここでは保存せず、選択は transit-select で行う。
  */
 app.post('/api/legs/:id/transit-fetch', async (c) => {
   const id = c.req.param('id');
@@ -261,20 +283,19 @@ app.post('/api/legs/:id/transit-fetch', async (c) => {
   const to = await endpointCoords(leg.day_id, leg.to_place_id);
   if (!from || !to) return c.json({ error: '区間の座標を特定できませんでした' }, 422);
 
-  let parsed: ParsedTransit;
+  let options: TransitOption[];
   try {
     const text = await fetchGmapsTransitText(from, to);
-    parsed = await parseGmapsTransit(text);
+    options = await parseGmapsTransitOptions(text);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : 'Google マップからの経路取得に失敗しました' }, 502);
   }
-  const updated = await storeTransitOnLeg(leg, parsed, 'gmaps-fetch');
-  return c.json(updated);
+  return c.json({ options: sortByArrival(options) });
 });
 
 /**
  * POST /api/legs/:id/transit-from-gmaps — Google マップの乗換結果テキストを LLM 解析し、
- * この区間に 所要/運賃/乗換要約 を取り込む (手動貼り付け版。自動取得が失敗した時のフォールバック)。
+ * 経路候補の配列を返す (手動貼り付け版。自動取得が失敗した時のフォールバック)。
  */
 app.post('/api/legs/:id/transit-from-gmaps', async (c) => {
   const id = c.req.param('id');
@@ -285,13 +306,30 @@ app.post('/api/legs/:id/transit-from-gmaps', async (c) => {
   const [leg] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
   if (!leg) return c.json({ error: 'leg not found' }, 404);
 
-  let parsed: ParsedTransit;
+  let options: TransitOption[];
   try {
-    parsed = await parseGmapsTransit(text);
+    options = await parseGmapsTransitOptions(text);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : '結果の解析に失敗しました' }, 502);
   }
-  const updated = await storeTransitOnLeg(leg, parsed, 'gmaps-paste');
+  return c.json({ options: sortByArrival(options) });
+});
+
+/**
+ * POST /api/legs/:id/transit-select — ユーザが選んだ経路候補をこの区間に確定保存する。
+ * mode は transit に固定。並べ替えで route_legs を作り直しても保持する。
+ */
+app.post('/api/legs/:id/transit-select', async (c) => {
+  const id = c.req.param('id');
+  const b = (await c.req.json().catch(() => ({}))) as { option?: TransitOption };
+  if (!b.option || typeof b.option !== 'object') {
+    return c.json({ error: '選択した経路 (option) が必要です' }, 400);
+  }
+  const [leg] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
+  if (!leg) return c.json({ error: 'leg not found' }, 404);
+
+  const parsed = optionToParsed(b.option);
+  const updated = await storeTransitOnLeg(leg, parsed, 'gmaps-select');
   return c.json(updated);
 });
 
