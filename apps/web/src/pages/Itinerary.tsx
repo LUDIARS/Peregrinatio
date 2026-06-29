@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
 import { getPrefs } from '../lib/prefs.js';
+import { gmapsDirUrl } from '../lib/gmaps.js';
 import type {
   ItineraryItem, OriginKind, RouteLeg, RouteMode, Timetable, TimetableDeparture, Trip, TripDay, TripPlace,
 } from '../types.js';
@@ -88,12 +89,26 @@ export function Itinerary() {
   // 経路端点名: place なら place 名、place でない端点 (出発/帰着地点) は leg のラベル。
   const endpointName = (placeId: string | null, label: string | null) => (placeId ? placeName(placeId) : label ?? '(地点)');
 
-  /** 区間 (移動) コネクタ: 場所カードと場所カードの間に手段セレクタ+所要を表示する。
-   *  手段セレクタは区間ごとに独立 (この区間だけ再計算し、他区間に連動しない)。 */
+  /** 区間端点 (place or 出発地点) の座標。Google マップ経路リンク用。 */
+  const legEndpointCoord = (placeId: string | null): { lat: number; lng: number } | null => {
+    if (placeId) {
+      const p = placeMap.get(placeId);
+      return p && p.lat != null && p.lng != null ? { lat: p.lat, lng: p.lng } : null;
+    }
+    return trip && trip.origin_lat != null && trip.origin_lng != null
+      ? { lat: trip.origin_lat, lng: trip.origin_lng } : null;
+  };
+
+  /** 区間 (移動) コネクタ: 場所カードと場所カードの間に手段セレクタ+所要+Googleマップ経路を表示する。
+   *  手段セレクタは区間ごとに独立 (この区間だけ再計算し、他区間に連動しない)。
+   *  公共交通(乗換)は API で取れないため、Google マップで経路を開けるリンクを併設する。 */
   const renderConnector = (dayId: string, leg: RouteLeg | undefined, key: string) => {
     if (!leg) return null;
     const meta = MODE_META[leg.mode];
     const detail = [fmtDuration(leg.duration_sec), fmtDistance(leg.distance_m), leg.fare_text].filter(Boolean).join(' / ');
+    const from = legEndpointCoord(leg.from_place_id);
+    const to = legEndpointCoord(leg.to_place_id);
+    const mapUrl = from && to ? gmapsDirUrl(from, to, leg.mode) : null;
     return (
       <div key={key} className="kanban-connector" aria-label={`移動 ${meta.label}`}>
         <span className="kanban-connector-ico" aria-hidden="true">{meta.icon}</span>
@@ -102,6 +117,10 @@ export function Itinerary() {
           {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
         </select>
         <span className="muted">{detail || '—'}</span>
+        {mapUrl && (
+          <a className="kanban-connector-link" href={mapUrl} target="_blank" rel="noreferrer"
+            title="Google マップで経路を開く（公共交通の乗換もこちら）">🗺️ 経路</a>
+        )}
       </div>
     );
   };
