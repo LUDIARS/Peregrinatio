@@ -23,6 +23,7 @@ import type {
   Timetable,
   TimetableDeparture,
   TimetableKind,
+  TransitOption,
   TransitProviderKind,
   Trip,
   TripDay,
@@ -217,12 +218,15 @@ export const api = {
   /** 1 区間 (leg) の移動手段だけを変更し、その区間のみ再計算する (他区間に連動しない)。 */
   patchLegMode: (legId: string, mode: RouteMode) =>
     req<RouteLeg>(`/api/legs/${legId}`, { method: 'PATCH', body: json({ mode }) }),
-  /** サーバが Google マップの乗換経路を自動取得(ヘッドレス)→解析してこの区間に取り込む (暫定)。 */
+  /** サーバが Google マップの乗換経路を自動取得(ヘッドレス)→解析し、経路候補の配列を返す (暫定)。 */
   transitFetch: (legId: string) =>
-    req<RouteLeg>(`/api/legs/${legId}/transit-fetch`, { method: 'POST', body: json({}) }),
-  /** Google マップの乗換結果テキストを LLM 解析し、この区間に取り込む (自動取得失敗時の手動版)。 */
+    req<{ options: TransitOption[] }>(`/api/legs/${legId}/transit-fetch`, { method: 'POST', body: json({}) }),
+  /** Google マップの乗換結果テキストを LLM 解析し、経路候補の配列を返す (自動取得失敗時の手動版)。 */
   transitFromGmaps: (legId: string, text: string) =>
-    req<RouteLeg>(`/api/legs/${legId}/transit-from-gmaps`, { method: 'POST', body: json({ text }) }),
+    req<{ options: TransitOption[] }>(`/api/legs/${legId}/transit-from-gmaps`, { method: 'POST', body: json({ text }) }),
+  /** 選んだ経路候補をこの区間に確定保存する。 */
+  transitSelect: (legId: string, option: TransitOption) =>
+    req<RouteLeg>(`/api/legs/${legId}/transit-select`, { method: 'POST', body: json({ option }) }),
 
   // --- 近くのおすすめ収集 (拠点周辺の候補を旅に一括追加) ---
   recommendTrip: (tripId: string, body: { radius?: number } = {}) =>

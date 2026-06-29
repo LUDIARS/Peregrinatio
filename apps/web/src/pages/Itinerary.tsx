@@ -4,7 +4,8 @@ import { api, assetUrl } from '../api.js';
 import { getPrefs } from '../lib/prefs.js';
 import { gmapsDirUrl } from '../lib/gmaps.js';
 import type {
-  ItineraryItem, OriginKind, RouteLeg, RouteMode, Timetable, TimetableDeparture, Trip, TripDay, TripPlace,
+  ItineraryItem, OriginKind, RouteLeg, RouteMode, Timetable, TimetableDeparture,
+  TransitOption, Trip, TripDay, TripPlace,
 } from '../types.js';
 
 const KIND_LABEL: Record<string, string> = { shinkansen: '新幹線', bus: 'バス', train: '電車' };
@@ -86,6 +87,9 @@ export function Itinerary() {
   // 公共交通の取り込み (暫定)。自動取得(ヘッドレス)を主、貼り付けを手動フォールバックに。
   const [fetchingLegId, setFetchingLegId] = useState<string | null>(null);
   const [legMsg, setLegMsg] = useState<Record<string, string>>({}); // leg.id -> エラー文言
+  // 取得した経路候補から選ぶモーダル。
+  const [optionsModal, setOptionsModal] = useState<{ dayId: string; leg: RouteLeg; options: TransitOption[] } | null>(null);
+  const [optionBusy, setOptionBusy] = useState(false);
   const [pasteTarget, setPasteTarget] = useState<{ dayId: string; leg: RouteLeg } | null>(null);
   const [pasteText, setPasteText] = useState('');
   const [pasteBusy, setPasteBusy] = useState(false);
@@ -301,33 +305,48 @@ export function Itinerary() {
     void commit({ ...itemsByDay, [dayId]: arr }, [dayId]);
   };
 
-  /** サーバが Google マップの乗換経路を自動取得→解析して、この区間に取り込む (主経路)。 */
+  /** サーバが Google マップの乗換経路を自動取得→解析し、候補を選択モーダルに出す (主経路)。 */
   const fetchTransit = async (dayId: string, leg: RouteLeg) => {
     setFetchingLegId(leg.id);
     setLegMsg((m) => { const n = { ...m }; delete n[leg.id]; return n; });
     try {
-      const updated = await api.transitFetch(leg.id);
-      setLegsByDay((s) => ({ ...s, [dayId]: (s[dayId] ?? []).map((l) => (l.id === updated.id ? updated : l)) }));
+      const { options } = await api.transitFetch(leg.id);
+      if (options.length === 0) { setLegMsg((m) => ({ ...m, [leg.id]: '経路候補が見つかりませんでした' })); return; }
+      setOptionsModal({ dayId, leg, options });
     } catch (e) {
       // 自動取得失敗時は手動貼り付けへ誘導する。
       setLegMsg((m) => ({ ...m, [leg.id]: e instanceof Error ? e.message : '自動取得に失敗しました' }));
     } finally { setFetchingLegId(null); }
   };
 
-  /** 貼り付けた Google マップの乗換結果を LLM 解析し、この区間に取り込む。 */
+  /** 貼り付けた Google マップの乗換結果を LLM 解析し、候補を選択モーダルに出す。 */
   const submitPaste = async () => {
     if (!pasteTarget) return;
     const text = pasteText.trim();
     if (!text) { setPasteMsg('Google マップの経路結果を貼り付けてください'); return; }
     setPasteBusy(true); setPasteMsg('');
     try {
-      const updated = await api.transitFromGmaps(pasteTarget.leg.id, text);
-      const dayId = pasteTarget.dayId;
-      setLegsByDay((s) => ({ ...s, [dayId]: (s[dayId] ?? []).map((l) => (l.id === updated.id ? updated : l)) }));
+      const { options } = await api.transitFromGmaps(pasteTarget.leg.id, text);
+      if (options.length === 0) { setPasteMsg('経路候補が見つかりませんでした'); return; }
+      setOptionsModal({ dayId: pasteTarget.dayId, leg: pasteTarget.leg, options });
       setPasteTarget(null); setPasteText('');
     } catch (e) {
       setPasteMsg(e instanceof Error ? e.message : '解析に失敗しました');
     } finally { setPasteBusy(false); }
+  };
+
+  /** 候補を 1 つ選んでこの区間に確定する。 */
+  const selectOption = async (opt: TransitOption) => {
+    if (!optionsModal) return;
+    setOptionBusy(true);
+    try {
+      const updated = await api.transitSelect(optionsModal.leg.id, opt);
+      const dayId = optionsModal.dayId;
+      setLegsByDay((s) => ({ ...s, [dayId]: (s[dayId] ?? []).map((l) => (l.id === updated.id ? updated : l)) }));
+      setOptionsModal(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '経路の確定に失敗しました');
+    } finally { setOptionBusy(false); }
   };
 
   /** 1 区間 (leg) の移動手段だけを変更する。他区間に連動しない (完全独立)。 */
@@ -825,6 +844,50 @@ export function Itinerary() {
               {pasteMsg && <div className="error" style={{ marginTop: 6 }}>{pasteMsg}</div>}
               <p className="muted" style={{ margin: '8px 0 0', fontSize: 11 }}>
                 ※ 日本の公共交通は経路 API で取得できないための暫定機能です（将来 ODPT に移行予定）。
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 経路候補の選択 (到着時刻が早い順。どのパターンで行くかを選ぶ)。 */}
+      {optionsModal && (() => {
+        const { leg, options } = optionsModal;
+        return (
+          <div className="modal-backdrop" onClick={() => setOptionsModal(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="spread">
+                <strong>🚉 経路を選ぶ</strong>
+                <button type="button" className="sm ghost" onClick={() => setOptionsModal(null)}>閉じる</button>
+              </div>
+              <p className="muted" style={{ margin: '4px 0 8px' }}>
+                {endpointName(leg.from_place_id, leg.from_label)} → {endpointName(leg.to_place_id, leg.to_label)}（到着が早い順）。どのパターンで行くか選んでください。
+              </p>
+              <div className="stack">
+                {options.map((o, i) => (
+                  <button key={i} type="button" className="card card-link" disabled={optionBusy}
+                    onClick={() => void selectOption(o)}>
+                    <div className="spread">
+                      <strong>
+                        {o.depart_time && o.arrive_time ? `${o.depart_time} → ${o.arrive_time}` : (o.summary || '経路')}
+                      </strong>
+                      {i === 0 && <span className="chip status-visited">到着最速</span>}
+                    </div>
+                    <div className="muted" style={{ marginTop: 2 }}>
+                      {[
+                        o.duration_min != null ? `${o.duration_min}分` : null,
+                        o.fare_yen != null ? `¥${o.fare_yen.toLocaleString('ja-JP')}` : null,
+                        o.interval_min != null ? `約${o.interval_min}分間隔` : null,
+                      ].filter(Boolean).join(' ・ ')}
+                    </div>
+                    {(o.depart_time || o.arrive_time) && o.summary && (
+                      <div className="muted" style={{ marginTop: 2 }}>{o.summary}</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="muted" style={{ margin: '8px 0 0', fontSize: 11 }}>
+                ※ Google マップ取得→LLM 解析の暫定機能です（将来 ODPT に移行予定）。
               </p>
             </div>
           </div>

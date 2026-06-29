@@ -131,8 +131,20 @@ export interface RouteLeg {
   fare_text: string | null;
   polyline: string | null;
   raw_json: string | null;
-  note: string | null; // 乗換要約 (Google マップ結果の貼り付け解析 / 暫定)
+  note: string | null; // 乗換要約 (Google マップの選択経路 / 暫定)
+  depart_time: string | null; // 公共交通の出発時刻 'HH:MM' (選択経路)
+  arrive_time: string | null; // 公共交通の到着時刻 'HH:MM' (選択経路)
   computed_at: string;
+}
+
+/** 公共交通の経路候補 (Google マップ取得→LLM 解析、ユーザが選ぶ)。 */
+export interface TransitOption {
+  depart_time: string | null;
+  arrive_time: string | null;
+  duration_min: number | null;
+  fare_yen: number | null;
+  interval_min: number | null;
+  summary: string;
 }
 
 export interface PlaceSearchResult {
