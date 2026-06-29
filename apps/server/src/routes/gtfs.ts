@@ -8,7 +8,7 @@
 import { Hono } from 'hono';
 import { sql } from '../db/index.js';
 import { importGtfsFromUrl } from '../lib/gtfs-import.js';
-import { nearbyStops, stopDepartures, listRoutes, routeTimetable } from '../lib/gtfs-query.js';
+import { nearbyStops, stopDepartures, listRoutes, routeTimetable, feedStops } from '../lib/gtfs-query.js';
 import type { GtfsFeed } from '../types.js';
 
 const app = new Hono();
@@ -66,6 +66,10 @@ app.get('/api/gtfs/stops/nearby', async (c) => {
 
 app.get('/api/gtfs/feeds/:id/routes', async (c) => {
   return c.json(await listRoutes(c.req.param('id')));
+});
+
+app.get('/api/gtfs/feeds/:id/stops', async (c) => {
+  return c.json(await feedStops(c.req.param('id')));
 });
 
 app.get('/api/gtfs/feeds/:id/routes/:rid/timetable', async (c) => {

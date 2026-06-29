@@ -30,6 +30,7 @@ import type {
   GtfsDeparture,
   GtfsRoute,
   GtfsRouteTimetable,
+  GtfsTimetableStop,
   Trip,
   TripDay,
   TripDetail,
@@ -313,6 +314,8 @@ export const api = {
   gtfsDeleteFeed: (id: string) => req<{ ok: true }>(`/api/gtfs/feeds/${id}`, { method: 'DELETE' }),
   /** フィードの路線一覧 (便数つき)。 */
   gtfsRoutes: (feedId: string) => req<GtfsRoute[]>(`/api/gtfs/feeds/${feedId}/routes`),
+  /** フィードの全停留所 (1 マップに全部出す用)。 */
+  gtfsFeedStops: (feedId: string) => req<GtfsTimetableStop[]>(`/api/gtfs/feeds/${feedId}/stops`),
   /** 路線の時刻表 (指定日に運行する便のみ。停留所=横軸、便=縦軸)。date=YYYYMMDD 省略時=JST今日。 */
   gtfsRouteTimetable: (feedId: string, routeId: string, date?: string) =>
     req<GtfsRouteTimetable>(

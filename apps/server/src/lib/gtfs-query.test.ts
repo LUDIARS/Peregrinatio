@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setupTestDb, teardownTestDb } from '../test/db.js';
 import { sql } from '../db/index.js';
-import { nearbyStops, stopDepartures, listRoutes, routeTimetable } from './gtfs-query.js';
+import { nearbyStops, stopDepartures, listRoutes, routeTimetable, feedStops } from './gtfs-query.js';
 
 beforeAll(async () => { await setupTestDb(); });
 afterAll(async () => { await teardownTestDb(); });
@@ -80,5 +80,11 @@ describe('listRoutes / routeTimetable', () => {
   it('calendar_dates の運休日は便が無い', async () => {
     const { patterns } = await routeTimetable('F1', 'R1', '20260630'); // S_ALL 運休
     expect(patterns).toHaveLength(0);
+  });
+
+  it('feedStops は座標つき停留所を全部返す', async () => {
+    const stops = await feedStops('F1');
+    // S_NEAR/S_FAR/S2/S3 すべて座標あり。
+    expect(stops.map((s) => s.stop_id).sort()).toEqual(['S2', 'S3', 'S_FAR', 'S_NEAR']);
   });
 });
