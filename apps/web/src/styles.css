@@ -548,6 +548,7 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 }
 .kanban-connector-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .kanban-connector-note { font-size: 11px; color: var(--c-text); line-height: 1.4; }
+.kanban-connector-err { font-size: 11px; color: #a15c00; line-height: 1.4; }
 .kanban-connector-ico { font-size: 13px; }
 .kanban-connector-mode {
   font-size: 11px; font-weight: 700; color: var(--c-accent-d);
