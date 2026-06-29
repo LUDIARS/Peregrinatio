@@ -209,8 +209,9 @@ export const api = {
   deleteItem: (id: string) => req<{ ok: true }>(`/api/items/${id}`, { method: 'DELETE' }),
 
   // --- routing ---
-  computeRoute: (dayId: string, mode: RouteMode) =>
-    req<RouteLeg[]>(`/api/days/${dayId}/route`, { method: 'POST', body: json({ mode }) }),
+  /** mode は autoPerSegment=true のとき「最初の移動手段」、各区間は距離+先頭手段でサジェストされる。 */
+  computeRoute: (dayId: string, mode: RouteMode, autoPerSegment = false) =>
+    req<RouteLeg[]>(`/api/days/${dayId}/route`, { method: 'POST', body: json({ mode, autoPerSegment }) }),
   getRoute: (dayId: string) => req<RouteLeg[]>(`/api/days/${dayId}/route`),
 
   // --- 近くのおすすめ収集 (拠点周辺の候補を旅に一括追加) ---

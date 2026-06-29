@@ -7,6 +7,7 @@ import { sql } from '../db/index.js';
 import { config } from '../config.js';
 import { newId, nowIso } from '../lib/ids.js';
 import { buildRouteWaypoints, type OriginNode } from '../lib/route-waypoints.js';
+import { suggestSegmentMode, haversineMeters } from '../lib/segment-mode.js';
 import { computeRoute } from '@peregrinatio/routing';
 import type { RouteLeg, RouteMode, Trip } from '../types.js';
 
@@ -30,8 +31,10 @@ app.post('/api/days/:id/route', async (c) => {
     );
   }
 
-  const b = (await c.req.json().catch(() => ({}))) as { mode?: RouteMode };
+  const b = (await c.req.json().catch(() => ({}))) as { mode?: RouteMode; autoPerSegment?: boolean };
+  // mode は autoPerSegment=true のとき「最初の移動手段 (primary)」、false のとき全区間共通の手段。
   const mode: RouteMode = VALID_MODES.includes(b.mode as RouteMode) ? (b.mode as RouteMode) : 'transit';
+  const autoPerSegment = b.autoPerSegment === true;
 
   // place_id 非 null の予定を order_index 順に取り、places を join して座標を得る。
   const rows = (await sql`
@@ -62,8 +65,13 @@ app.post('/api/days/:id/route', async (c) => {
   for (let i = 0; i + 1 < waypoints.length; i++) {
     const from = waypoints[i]!;
     const to = waypoints[i + 1]!;
+    // autoPerSegment: 区間ごとに距離 (直線) と primary から手段をサジェストする
+    // (500m 以内は徒歩 / それ以上は 車→車・自転車→自転車・それ以外→公共交通)。
+    const legMode: RouteMode = autoPerSegment
+      ? suggestSegmentMode(haversineMeters(from, to), mode)
+      : mode;
     const r = await computeRoute(
-      { from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng }, mode },
+      { from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng }, mode: legMode },
       config.googleMaps.apiKey,
     );
     const raw_json = JSON.stringify(r.raw);
@@ -75,7 +83,7 @@ app.post('/api/days/:id/route', async (c) => {
       to_place_id: to.place_id,
       from_label: from.label,
       to_label: to.label,
-      mode,
+      mode: legMode,
       duration_sec: r.duration_sec,
       distance_m: r.distance_m,
       fare_text: r.fare_text,

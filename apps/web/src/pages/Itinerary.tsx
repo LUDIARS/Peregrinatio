@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
 import { getPrefs } from '../lib/prefs.js';
@@ -22,6 +22,12 @@ const MODES: { value: RouteMode; label: string }[] = [
   { value: 'transit', label: '公共交通' },
   { value: 'bicycling', label: '自転車' },
 ];
+const MODE_META: Record<RouteMode, { label: string; icon: string }> = {
+  driving: { label: '車', icon: '🚗' },
+  walking: { label: '徒歩', icon: '🚶' },
+  transit: { label: '公共交通', icon: '🚃' },
+  bicycling: { label: '自転車', icon: '🚲' },
+};
 
 function fmtDuration(sec: number | null): string {
   if (sec == null) return '—';
@@ -81,6 +87,19 @@ export function Itinerary() {
   const placeName = (id: string | null) => (id ? placeMap.get(id)?.name ?? '(不明)' : '(メモ)');
   // 経路端点名: place なら place 名、place でない端点 (出発/帰着地点) は leg のラベル。
   const endpointName = (placeId: string | null, label: string | null) => (placeId ? placeName(placeId) : label ?? '(地点)');
+
+  /** 区間 (移動) コネクタ: 場所カードと場所カードの間に手段+所要を表示する。 */
+  const renderConnector = (leg: RouteLeg | undefined, key: string) => {
+    if (!leg) return null;
+    const meta = MODE_META[leg.mode];
+    const detail = [fmtDuration(leg.duration_sec), fmtDistance(leg.distance_m), leg.fare_text].filter(Boolean).join(' / ');
+    return (
+      <div key={key} className="kanban-connector" aria-label={`移動 ${meta.label}`}>
+        <span className="kanban-connector-mode">{meta.icon} {meta.label}</span>
+        <span className="muted">{detail || '—'}</span>
+      </div>
+    );
+  };
 
   const load = async () => {
     if (!tripId) return;
@@ -152,7 +171,8 @@ export function Itinerary() {
     }
     setRouteBusy((s) => ({ ...s, [dayId]: true }));
     try {
-      const legs = await api.computeRoute(dayId, m);
+      // 区間ごとに距離+「最初の移動手段(m)」から手段を自動サジェスト (autoPerSegment)。
+      const legs = await api.computeRoute(dayId, m, true);
       setLegsByDay((s) => ({ ...s, [dayId]: legs }));
       const hasNull = legs.some((l) => l.duration_sec == null);
       const skipped = placed.length - coords.length;
@@ -491,6 +511,23 @@ export function Itinerary() {
             const legs = legsByDay[d.id] ?? [];
             const totalSec = legs.reduce((s, l) => s + (l.duration_sec ?? 0), 0);
             const totalM = legs.reduce((s, l) => s + (l.distance_m ?? 0), 0);
+            // 場所カードの間に移動コネクタを差し込むための索引。
+            const legByPair = new Map<string, RouteLeg>();
+            for (const lg of legs) if (lg.from_place_id && lg.to_place_id) legByPair.set(`${lg.from_place_id}|${lg.to_place_id}`, lg);
+            const inboundLeg = legs.find((l) => l.from_place_id == null && l.to_place_id != null);  // 往路 (出発地点→最初の場所)
+            const outboundLeg = legs.find((l) => l.to_place_id == null && l.from_place_id != null);  // 復路 (最後の場所→帰着地点)
+            // 座標のある場所 item のインデックス列 (移動コネクタの接続元/先判定用)。
+            const placeIdxs = items
+              .map((it, i) => ({ it, i }))
+              .filter(({ it }) => it.place_id && placeMap.get(it.place_id!)?.lat != null)
+              .map(({ i }) => i);
+            const firstPlaceIdx = placeIdxs[0] ?? -1;
+            const lastPlaceIdx = placeIdxs[placeIdxs.length - 1] ?? -1;
+            const nextPlaceIdOf = (idx: number): string | null => {
+              const pos = placeIdxs.indexOf(idx);
+              if (pos < 0 || pos + 1 >= placeIdxs.length) return null;
+              return items[placeIdxs[pos + 1]!]?.place_id ?? null;
+            };
             return (
               <section
                 key={d.id}
@@ -525,9 +562,14 @@ export function Itinerary() {
                   {items.length === 0 && <p className="muted kanban-empty">ここにカードをドロップ</p>}
                   {items.map((it, idx) => {
                     const p = it.place_id ? placeMap.get(it.place_id) : null;
+                    // この場所カードの後に続く「次の場所」への移動コネクタ。
+                    const nextId = p ? nextPlaceIdOf(idx) : null;
+                    const toNextLeg = it.place_id && nextId ? legByPair.get(`${it.place_id}|${nextId}`) : undefined;
                     return (
+                      <Fragment key={it.id}>
+                      {/* 往路 (出発地点 → 最初の場所) は最初の場所カードの前に置く。 */}
+                      {idx === firstPlaceIdx && renderConnector(inboundLeg, `in-${it.id}`)}
                       <article
-                        key={it.id}
                         data-item-id={it.id}
                         className={`kanban-card${touchDragId === it.id ? ' lifting' : ''}`}
                         draggable
@@ -576,6 +618,11 @@ export function Itinerary() {
                             onClick={() => void removeItem(it, d.id)}>🗑</button>
                         </div>
                       </article>
+                      {/* 場所 → 次の場所 の移動コネクタ。 */}
+                      {renderConnector(toNextLeg, `mv-${it.id}`)}
+                      {/* 復路 (最後の場所 → 帰着地点) は最後の場所カードの後に置く。 */}
+                      {idx === lastPlaceIdx && renderConnector(outboundLeg, `out-${it.id}`)}
+                      </Fragment>
                     );
                   })}
                 </div>
@@ -583,11 +630,15 @@ export function Itinerary() {
                 {/* 経路フッタ: 移動手段の切替 + 区間の所要時間/距離。予定変更で自動再計算。 */}
                 <div className="kanban-route">
                   <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                    <span className="muted" style={{ fontSize: 12 }}>最初の移動手段</span>
                     <select className="kanban-route-mode" value={modeByDay[d.id] ?? 'driving'}
-                      onChange={(e) => changeMode(d.id, e.target.value as RouteMode)} aria-label="移動手段">
+                      onChange={(e) => changeMode(d.id, e.target.value as RouteMode)} aria-label="最初の移動手段">
                       {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                     </select>
                     {routeBusy[d.id] && <span className="muted" style={{ fontSize: 12 }}>計算中…</span>}
+                  </div>
+                  <div className="kanban-route-hint muted" style={{ fontSize: 11 }}>
+                    区間ごとに自動でサジェスト（500m以内は徒歩 / 車・自転車はそのまま / それ以外は公共交通）。
                   </div>
                   {routeWarn[d.id] && <div className="kanban-route-warn">⚠ {routeWarn[d.id]}</div>}
                   {legs.length > 0 && (
@@ -597,7 +648,7 @@ export function Itinerary() {
                         <div key={leg.id} className="kanban-leg">
                           <span>{endpointName(leg.from_place_id, leg.from_label)} → {endpointName(leg.to_place_id, leg.to_label)}</span>
                           <span className="muted">
-                            {fmtDuration(leg.duration_sec)} / {fmtDistance(leg.distance_m)}
+                            {MODE_META[leg.mode].icon} {MODE_META[leg.mode].label} ・ {fmtDuration(leg.duration_sec)} / {fmtDistance(leg.distance_m)}
                             {leg.fare_text ? ` / ${leg.fare_text}` : ''}
                           </span>
                         </div>
