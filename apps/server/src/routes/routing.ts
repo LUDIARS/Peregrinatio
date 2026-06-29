@@ -8,6 +8,7 @@ import { config } from '../config.js';
 import { newId, nowIso } from '../lib/ids.js';
 import { buildRouteWaypoints, type OriginNode } from '../lib/route-waypoints.js';
 import { suggestSegmentMode, haversineMeters } from '../lib/segment-mode.js';
+import { parseGmapsTransit } from '../lib/transit-parse.js';
 import { computeRoute } from '@peregrinatio/routing';
 import type { RouteLeg, RouteMode, Trip } from '../types.js';
 
@@ -19,6 +20,16 @@ interface ItemPlaceRow {
   place_id: string;
   lat: number | null;
   lng: number | null;
+}
+
+/** route_segment_modes の 1 行 (区間ごとのユーザ選択 + Google マップ貼り付け解析の保持値)。 */
+interface SegmentOverride {
+  from_key: string;
+  to_key: string;
+  mode: RouteMode;
+  duration_sec: number | null;
+  fare_text: string | null;
+  note: string | null;
 }
 
 app.post('/api/days/:id/route', async (c) => {
@@ -59,11 +70,11 @@ app.post('/api/days/:id/route', async (c) => {
   });
 
   // 区間ごとのユーザ選択 (override) を読み込む。並べ替えで route_legs を作り直しても保持される。
+  // duration_sec/fare_text/note は Google マップ結果の貼り付け解析 (transit) 由来 (暫定)。
   const overrides = (await sql`
-    SELECT from_key, to_key, mode FROM route_segment_modes WHERE day_id = ${day_id}`) as {
-    from_key: string; to_key: string; mode: RouteMode;
-  }[];
-  const ovMap = new Map(overrides.map((o) => [`${o.from_key}|${o.to_key}`, o.mode]));
+    SELECT from_key, to_key, mode, duration_sec, fare_text, note
+    FROM route_segment_modes WHERE day_id = ${day_id}`) as SegmentOverride[];
+  const ovMap = new Map(overrides.map((o) => [`${o.from_key}|${o.to_key}`, o]));
 
   // 既存 leg を入れ替える。
   await sql`DELETE FROM route_legs WHERE day_id = ${day_id}`;
@@ -76,12 +87,23 @@ app.post('/api/days/:id/route', async (c) => {
     //  1. ユーザがその区間で選んだ手段 (override) があれば最優先で使う。
     //  2. 無ければ autoPerSegment 時に距離+primary からサジェスト (500m以内=徒歩 ほか)。
     const segKey = `${segmentKey(from)}|${segmentKey(to)}`;
+    const ov = ovMap.get(segKey);
     const legMode: RouteMode =
-      ovMap.get(segKey) ?? (autoPerSegment ? suggestSegmentMode(haversineMeters(from, to), mode) : mode);
-    const r = await computeRoute(
-      { from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng }, mode: legMode },
-      config.googleMaps.apiKey,
-    );
+      ov?.mode ?? (autoPerSegment ? suggestSegmentMode(haversineMeters(from, to), mode) : mode);
+
+    // Google マップ結果を貼り付け解析した値があれば、それを使う (Google を呼ばない。日本の transit 対策)。
+    const hasPasted = !!ov && (ov.duration_sec != null || ov.fare_text != null || ov.note != null);
+    let r: { duration_sec: number | null; distance_m: number | null; fare_text: string | null; polyline: string | null; raw: unknown };
+    let note: string | null = null;
+    if (hasPasted) {
+      r = { duration_sec: ov!.duration_sec ?? null, distance_m: null, fare_text: ov!.fare_text ?? null, polyline: null, raw: { source: 'gmaps-paste' } };
+      note = ov!.note ?? null;
+    } else {
+      r = await computeRoute(
+        { from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng }, mode: legMode },
+        config.googleMaps.apiKey,
+      );
+    }
     const raw_json = JSON.stringify(r.raw);
     const computed_at = nowIso();
     const leg: RouteLeg = {
@@ -97,12 +119,13 @@ app.post('/api/days/:id/route', async (c) => {
       fare_text: r.fare_text,
       polyline: r.polyline,
       raw_json,
+      note,
       computed_at,
     };
     await sql`INSERT INTO route_legs
-      (id, day_id, from_place_id, to_place_id, from_label, to_label, mode, duration_sec, distance_m, fare_text, polyline, raw_json, computed_at)
+      (id, day_id, from_place_id, to_place_id, from_label, to_label, mode, duration_sec, distance_m, fare_text, polyline, raw_json, note, computed_at)
       VALUES (${leg.id}, ${leg.day_id}, ${leg.from_place_id}, ${leg.to_place_id}, ${leg.from_label}, ${leg.to_label},
-              ${leg.mode}, ${leg.duration_sec}, ${leg.distance_m}, ${leg.fare_text}, ${leg.polyline}, ${leg.raw_json}, ${leg.computed_at})`;
+              ${leg.mode}, ${leg.duration_sec}, ${leg.distance_m}, ${leg.fare_text}, ${leg.polyline}, ${leg.raw_json}, ${leg.note}, ${leg.computed_at})`;
     legs.push(leg);
   }
 
@@ -183,17 +206,60 @@ app.patch('/api/legs/:id', async (c) => {
   const r = await computeRoute({ from, to, mode }, config.googleMaps.apiKey);
   const now = nowIso();
   // computed_at は据え置く (GET の並び順キーなので、1 区間更新で順序が崩れないように)。
+  // 手段を選び直した = Google で計算し直すので、貼り付け解析の note はクリアする。
   await sql`UPDATE route_legs SET mode=${mode}, duration_sec=${r.duration_sec}, distance_m=${r.distance_m},
-    fare_text=${r.fare_text}, polyline=${r.polyline}, raw_json=${JSON.stringify(r.raw)}
+    fare_text=${r.fare_text}, polyline=${r.polyline}, raw_json=${JSON.stringify(r.raw)}, note=${null}
     WHERE id=${id}`;
 
   // この区間の選択を保存 (場所ペアをキーに)。並べ替えで route_legs を作り直しても復元される。
+  // 貼り付け解析の保持値 (duration/fare/note) も一緒にクリアする。
   const fromKey = leg.from_place_id ?? '@origin';
   const toKey = leg.to_place_id ?? '@origin';
   await sql`
-    INSERT INTO route_segment_modes (id, day_id, from_key, to_key, mode, updated_at)
-    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${mode}, ${now})
-    ON CONFLICT(day_id, from_key, to_key) DO UPDATE SET mode = excluded.mode, updated_at = excluded.updated_at`;
+    INSERT INTO route_segment_modes (id, day_id, from_key, to_key, mode, duration_sec, fare_text, note, updated_at)
+    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${mode}, ${null}, ${null}, ${null}, ${now})
+    ON CONFLICT(day_id, from_key, to_key) DO UPDATE SET
+      mode = excluded.mode, duration_sec = NULL, fare_text = NULL, note = NULL, updated_at = excluded.updated_at`;
+
+  const [updated] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
+  return c.json(updated);
+});
+
+/**
+ * POST /api/legs/:id/transit-from-gmaps — Google マップの乗換結果テキストを LLM 解析し、
+ * この区間に 所要/運賃/乗換要約 を取り込む (暫定。将来 ODPT に置換)。区間ごとに保存し、
+ * 並べ替えで route_legs を作り直しても保持する。mode は transit に固定する。
+ */
+app.post('/api/legs/:id/transit-from-gmaps', async (c) => {
+  const id = c.req.param('id');
+  const b = (await c.req.json().catch(() => ({}))) as { text?: string };
+  const text = (b.text ?? '').trim();
+  if (!text) return c.json({ error: 'Google マップの経路結果テキストを貼り付けてください' }, 400);
+
+  const [leg] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
+  if (!leg) return c.json({ error: 'leg not found' }, 404);
+
+  let parsed;
+  try {
+    parsed = await parseGmapsTransit(text);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : '結果の解析に失敗しました' }, 502);
+  }
+
+  const now = nowIso();
+  // computed_at は据え置き (並び順維持)。distance/polyline は持たない。
+  await sql`UPDATE route_legs SET mode=${'transit'}, duration_sec=${parsed.duration_sec},
+    distance_m=${null}, fare_text=${parsed.fare_text}, polyline=${null},
+    raw_json=${JSON.stringify({ source: 'gmaps-paste' })}, note=${parsed.note} WHERE id=${id}`;
+
+  const fromKey = leg.from_place_id ?? '@origin';
+  const toKey = leg.to_place_id ?? '@origin';
+  await sql`
+    INSERT INTO route_segment_modes (id, day_id, from_key, to_key, mode, duration_sec, fare_text, note, updated_at)
+    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${'transit'}, ${parsed.duration_sec}, ${parsed.fare_text}, ${parsed.note}, ${now})
+    ON CONFLICT(day_id, from_key, to_key) DO UPDATE SET
+      mode = 'transit', duration_sec = excluded.duration_sec, fare_text = excluded.fare_text,
+      note = excluded.note, updated_at = excluded.updated_at`;
 
   const [updated] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
   return c.json(updated);
