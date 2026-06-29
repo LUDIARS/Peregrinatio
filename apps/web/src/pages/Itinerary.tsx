@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
 import { getPrefs } from '../lib/prefs.js';
 import { gmapsDirUrl } from '../lib/gmaps.js';
+import { adjustOptionToTarget, hhmmToMin } from '../lib/transit-adjust.js';
 import type {
   ItineraryItem, OriginKind, RouteLeg, RouteMode, Timetable, TimetableDeparture,
   TransitOption, Trip, TripDay, TripPlace,
@@ -90,6 +91,7 @@ export function Itinerary() {
   // 取得した経路候補から選ぶモーダル。
   const [optionsModal, setOptionsModal] = useState<{ dayId: string; leg: RouteLeg; options: TransitOption[] } | null>(null);
   const [optionBusy, setOptionBusy] = useState(false);
+  const [targetArrive, setTargetArrive] = useState(''); // 目標到着時刻 'HH:MM' (逆算用)
   const [pasteTarget, setPasteTarget] = useState<{ dayId: string; leg: RouteLeg } | null>(null);
   const [pasteText, setPasteText] = useState('');
   const [pasteBusy, setPasteBusy] = useState(false);
@@ -312,7 +314,7 @@ export function Itinerary() {
     try {
       const { options } = await api.transitFetch(leg.id);
       if (options.length === 0) { setLegMsg((m) => ({ ...m, [leg.id]: '経路候補が見つかりませんでした' })); return; }
-      setOptionsModal({ dayId, leg, options });
+      setTargetArrive(''); setOptionsModal({ dayId, leg, options });
     } catch (e) {
       // 自動取得失敗時は手動貼り付けへ誘導する。
       setLegMsg((m) => ({ ...m, [leg.id]: e instanceof Error ? e.message : '自動取得に失敗しました' }));
@@ -328,7 +330,7 @@ export function Itinerary() {
     try {
       const { options } = await api.transitFromGmaps(pasteTarget.leg.id, text);
       if (options.length === 0) { setPasteMsg('経路候補が見つかりませんでした'); return; }
-      setOptionsModal({ dayId: pasteTarget.dayId, leg: pasteTarget.leg, options });
+      setTargetArrive(''); setOptionsModal({ dayId: pasteTarget.dayId, leg: pasteTarget.leg, options });
       setPasteTarget(null); setPasteText('');
     } catch (e) {
       setPasteMsg(e instanceof Error ? e.message : '解析に失敗しました');
@@ -850,9 +852,19 @@ export function Itinerary() {
         );
       })()}
 
-      {/* 経路候補の選択 (到着時刻が早い順。どのパターンで行くかを選ぶ)。 */}
+      {/* 経路候補の選択。目標到着時刻を入れると、運行間隔から「間に合う最も遅い便」に逆算する。 */}
       {optionsModal && (() => {
         const { leg, options } = optionsModal;
+        const targetMin = hhmmToMin(targetArrive);
+        // 表示候補: 目標があれば各候補を逆算し、出発が遅い順 (=なるべく遅く出る)。無ければ到着が早い順 (元の順)。
+        const rows = options.map((o) => ({ base: o, adj: targetMin != null ? adjustOptionToTarget(o, targetMin) : null }));
+        const display = targetMin != null
+          ? [...rows].sort((a, b) => {
+              const da = hhmmToMin((a.adj ?? a.base).depart_time) ?? -1;
+              const db = hhmmToMin((b.adj ?? b.base).depart_time) ?? -1;
+              return db - da;
+            })
+          : rows;
         return (
           <div className="modal-backdrop" onClick={() => setOptionsModal(null)}>
             <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -860,31 +872,52 @@ export function Itinerary() {
                 <strong>🚉 経路を選ぶ</strong>
                 <button type="button" className="sm ghost" onClick={() => setOptionsModal(null)}>閉じる</button>
               </div>
-              <p className="muted" style={{ margin: '4px 0 8px' }}>
-                {endpointName(leg.from_place_id, leg.from_label)} → {endpointName(leg.to_place_id, leg.to_label)}（到着が早い順）。どのパターンで行くか選んでください。
+              <p className="muted" style={{ margin: '4px 0 6px' }}>
+                {endpointName(leg.from_place_id, leg.from_label)} → {endpointName(leg.to_place_id, leg.to_label)}。どのパターンで行くか選んでください。
               </p>
+              {/* 目標到着時刻からの逆算 (運行間隔ベース)。 */}
+              <div className="foundation-form" style={{ margin: '0 0 8px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  🎯 目標到着時刻
+                  <input type="time" value={targetArrive} onChange={(e) => setTargetArrive(e.target.value)} style={{ width: 120 }} />
+                  {targetArrive && (
+                    <button type="button" className="sm ghost" onClick={() => setTargetArrive('')}>クリア</button>
+                  )}
+                </label>
+                <p className="muted" style={{ margin: '2px 0 0', fontSize: 11 }}>
+                  {targetMin != null
+                    ? '運行間隔から、目標までに着く最も遅い便に逆算しています（概算）。'
+                    : '入れると到着時刻から逆算して出発便を提案します。空なら到着が早い順。'}
+                </p>
+              </div>
               <div className="stack">
-                {options.map((o, i) => (
-                  <button key={i} type="button" className="card card-link" disabled={optionBusy}
-                    onClick={() => void selectOption(o)}>
-                    <div className="spread">
-                      <strong>
-                        {o.depart_time && o.arrive_time ? `${o.depart_time} → ${o.arrive_time}` : (o.summary || '経路')}
-                      </strong>
-                      {i === 0 && <span className="chip status-visited">到着最速</span>}
-                    </div>
-                    <div className="muted" style={{ marginTop: 2 }}>
-                      {[
-                        o.duration_min != null ? `${o.duration_min}分` : null,
-                        o.fare_yen != null ? `¥${o.fare_yen.toLocaleString('ja-JP')}` : null,
-                        o.interval_min != null ? `約${o.interval_min}分間隔` : null,
-                      ].filter(Boolean).join(' ・ ')}
-                    </div>
-                    {(o.depart_time || o.arrive_time) && o.summary && (
-                      <div className="muted" style={{ marginTop: 2 }}>{o.summary}</div>
-                    )}
-                  </button>
-                ))}
+                {display.map(({ base, adj }, i) => {
+                  const shown = adj ?? base;
+                  const adjusted = !!adj;
+                  return (
+                    <button key={i} type="button" className="card card-link" disabled={optionBusy}
+                      onClick={() => void selectOption(shown)}>
+                      <div className="spread">
+                        <strong>
+                          {shown.depart_time && shown.arrive_time ? `${shown.depart_time} → ${shown.arrive_time}` : (shown.summary || '経路')}
+                        </strong>
+                        {targetMin == null && i === 0 && <span className="chip status-visited">到着最速</span>}
+                        {targetMin != null && i === 0 && <span className="chip status-visited">おすすめ</span>}
+                      </div>
+                      <div className="muted" style={{ marginTop: 2 }}>
+                        {[
+                          base.duration_min != null ? `${base.duration_min}分` : null,
+                          base.fare_yen != null ? `¥${base.fare_yen.toLocaleString('ja-JP')}` : null,
+                          base.interval_min != null ? `約${base.interval_min}分間隔` : null,
+                        ].filter(Boolean).join(' ・ ')}
+                      </div>
+                      {targetMin != null && !adjusted && (
+                        <div className="muted" style={{ marginTop: 2 }}>※ 運行間隔不明のため逆算できません（取得時刻の便）</div>
+                      )}
+                      {base.summary && <div className="muted" style={{ marginTop: 2 }}>{base.summary}</div>}
+                    </button>
+                  );
+                })}
               </div>
               <p className="muted" style={{ margin: '8px 0 0', fontSize: 11 }}>
                 ※ Google マップ取得→LLM 解析の暫定機能です（将来 ODPT に移行予定）。
