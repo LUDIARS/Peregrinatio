@@ -249,3 +249,32 @@ export interface TripDetail {
   days: TripDay[];
   places: TripPlace[];
 }
+
+/** 取り込んだ GTFS フィード (バス/一部鉄道の時刻表)。 */
+export interface GtfsFeed {
+  id: string;
+  name: string;
+  source_url: string | null;
+  imported_at: string;
+  stop_count: number;
+  trip_count: number;
+}
+
+/** 近くの GTFS 停留所 (距離付き)。 */
+export interface GtfsStopHit {
+  feed_id: string;
+  feed_name: string;
+  stop_id: string;
+  stop_name: string | null;
+  lat: number | null;
+  lng: number | null;
+  distance_m: number;
+}
+
+/** GTFS 停留所の発車便。 */
+export interface GtfsDeparture {
+  departure_time: string | null;
+  route_name: string | null;
+  headsign: string | null;
+  route_type: number | null;
+}
