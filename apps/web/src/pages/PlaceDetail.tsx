@@ -268,11 +268,16 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
                 onClick={() => void togglePostpone()}>🕓 また今度</button>
             </div>
 
-            <div className="place-menu-label" style={{ marginTop: 12 }}>拠点</div>
-            <button type="button" className={`base-toggle-btn${place.is_base === 1 ? ' active' : ''}`}
-              onClick={() => void toggleBase()}>
-              {place.is_base === 1 ? '🏨 拠点を解除する' : '🏨 この場所を拠点にする'}
-            </button>
+            {/* 拠点の設定は地図側の「拠点を追加」ピッカーで行う。詳細では解除のみ可能にする。 */}
+            {place.is_base === 1 && (
+              <>
+                <div className="place-menu-label" style={{ marginTop: 12 }}>拠点</div>
+                <button type="button" className="base-toggle-btn active"
+                  onClick={() => void toggleBase()}>
+                  🏨 拠点を解除する
+                </button>
+              </>
+            )}
 
             {/* 破壊的操作は折りたたみの中に入れて誤爆を防ぐ。 */}
             <details className="place-menu-danger">
