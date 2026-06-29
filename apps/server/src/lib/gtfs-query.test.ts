@@ -67,15 +67,19 @@ describe('listRoutes / routeTimetable', () => {
     expect(rs[0]!.trip_count).toBe(3);
   });
 
-  it('停車順が同じ便を 1 パターンに、停留所=列・便=時刻順', async () => {
-    const pats = await routeTimetable('F1', 'R1');
+  it('停車順が同じ便を 1 パターンに、停留所=列・便=時刻順 + 運行曜日', async () => {
+    const { patterns, services } = await routeTimetable('F1', 'R1');
     // 便数の多い 3 停留所パターン (T3,T1) が先頭、次に S_NEAR のみ (T2)。
-    expect(pats).toHaveLength(2);
-    const main = pats[0]!;
+    expect(patterns).toHaveLength(2);
+    const main = patterns[0]!;
     expect(main.stops.map((s) => s.stop_id)).toEqual(['S_NEAR', 'S2', 'S3']);
     // 便は出発が早い順 (T3=07:00 → T1=08:00)。times は停留所順に整列。
     expect(main.trips.map((t) => t.times[0])).toEqual(['07:00:00', '08:00:00']);
     expect(main.trips[0]!.times).toEqual(['07:00:00', '07:10:00', '07:20:00']);
-    expect(pats[1]!.stops.map((s) => s.stop_id)).toEqual(['S_NEAR']);
+    expect(patterns[1]!.stops.map((s) => s.stop_id)).toEqual(['S_NEAR']);
+    // 運行曜日: 路線で使う S_ALL(毎日) と S_NONE(無し) が返る。
+    const ids = services.map((s) => s.service_id).sort();
+    expect(ids).toEqual(['S_ALL', 'S_NONE']);
+    expect(services.find((s) => s.service_id === 'S_ALL')!.wed).toBe(1);
   });
 });

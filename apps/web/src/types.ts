@@ -297,3 +297,14 @@ export interface GtfsTimetablePattern {
   stops: GtfsTimetableStop[];
   trips: GtfsTimetableTrip[];
 }
+
+/** 路線で使う service_id の運行曜日 (平日/土曜/日祝の絞り込み用)。 */
+export interface GtfsServiceCalendar {
+  service_id: string;
+  mon: number; tue: number; wed: number; thu: number; fri: number; sat: number; sun: number;
+}
+
+export interface GtfsRouteTimetable {
+  patterns: GtfsTimetablePattern[];
+  services: GtfsServiceCalendar[];
+}
