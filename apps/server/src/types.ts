@@ -122,6 +122,7 @@ export interface RouteLeg {
   fare_text: string | null;
   polyline: string | null;
   raw_json: string | null;
+  note: string | null; // 乗換要約 (Google マップ結果の貼り付け解析 / 暫定)
   computed_at: string;
 }
 

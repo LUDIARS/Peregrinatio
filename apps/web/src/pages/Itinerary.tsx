@@ -83,6 +83,12 @@ export function Itinerary() {
   const [departureOpts, setDepartureOpts] = useState<DepartureOption[]>([]);
   const [movePickerDay, setMovePickerDay] = useState<string | null>(null);
 
+  // Google マップ結果の貼り付け解析 (公共交通の暫定取り込み)。
+  const [pasteTarget, setPasteTarget] = useState<{ dayId: string; leg: RouteLeg } | null>(null);
+  const [pasteText, setPasteText] = useState('');
+  const [pasteBusy, setPasteBusy] = useState(false);
+  const [pasteMsg, setPasteMsg] = useState('');
+
   const placeMap = useMemo(() => new Map(places.map((p) => [p.id, p])), [places]);
   const pendingPlace = pendingPlaceId ? placeMap.get(pendingPlaceId) ?? null : null;
   const placeName = (id: string | null) => (id ? placeMap.get(id)?.name ?? '(不明)' : '(メモ)');
@@ -111,16 +117,25 @@ export function Itinerary() {
     const mapUrl = from && to ? gmapsDirUrl(from, to, leg.mode) : null;
     return (
       <div key={key} className="kanban-connector" aria-label={`移動 ${meta.label}`}>
-        <span className="kanban-connector-ico" aria-hidden="true">{meta.icon}</span>
-        <select className="kanban-connector-mode" value={leg.mode}
-          onChange={(e) => void setLegMode(dayId, leg, e.target.value as RouteMode)} aria-label="この区間の移動手段">
-          {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-        </select>
-        <span className="muted">{detail || '—'}</span>
-        {mapUrl && (
-          <a className="kanban-connector-link" href={mapUrl} target="_blank" rel="noreferrer"
-            title="Google マップで経路を開く（公共交通の乗換もこちら）">🗺️ 経路</a>
-        )}
+        <div className="kanban-connector-row">
+          <span className="kanban-connector-ico" aria-hidden="true">{meta.icon}</span>
+          <select className="kanban-connector-mode" value={leg.mode}
+            onChange={(e) => void setLegMode(dayId, leg, e.target.value as RouteMode)} aria-label="この区間の移動手段">
+            {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+          <span className="muted">{detail || '—'}</span>
+          {mapUrl && (
+            <a className="kanban-connector-link" href={mapUrl} target="_blank" rel="noreferrer"
+              title="Google マップで経路を開く（公共交通の乗換もこちら）">🗺️ 経路</a>
+          )}
+          {/* 公共交通は API で取れないので、Google マップの結果を貼り付けて取り込む (暫定)。 */}
+          {leg.mode === 'transit' && (
+            <button type="button" className="kanban-connector-link"
+              onClick={() => { setPasteTarget({ dayId, leg }); setPasteText(''); setPasteMsg(''); }}
+              title="Google マップの乗換結果を貼り付けて取り込む">📋 結果を解析</button>
+          )}
+        </div>
+        {leg.note && <div className="kanban-connector-note">🚉 {leg.note}</div>}
       </div>
     );
   };
@@ -271,6 +286,22 @@ export function Itinerary() {
     if (j < 0 || j >= arr.length) return;
     const tmp = arr[index]!; arr[index] = arr[j]!; arr[j] = tmp;
     void commit({ ...itemsByDay, [dayId]: arr }, [dayId]);
+  };
+
+  /** 貼り付けた Google マップの乗換結果を LLM 解析し、この区間に取り込む。 */
+  const submitPaste = async () => {
+    if (!pasteTarget) return;
+    const text = pasteText.trim();
+    if (!text) { setPasteMsg('Google マップの経路結果を貼り付けてください'); return; }
+    setPasteBusy(true); setPasteMsg('');
+    try {
+      const updated = await api.transitFromGmaps(pasteTarget.leg.id, text);
+      const dayId = pasteTarget.dayId;
+      setLegsByDay((s) => ({ ...s, [dayId]: (s[dayId] ?? []).map((l) => (l.id === updated.id ? updated : l)) }));
+      setPasteTarget(null); setPasteText('');
+    } catch (e) {
+      setPasteMsg(e instanceof Error ? e.message : '解析に失敗しました');
+    } finally { setPasteBusy(false); }
   };
 
   /** 1 区間 (leg) の移動手段だけを変更する。他区間に連動しない (完全独立)。 */
@@ -735,6 +766,40 @@ export function Itinerary() {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Google マップ結果の貼り付け解析 (公共交通の暫定取り込み)。 */}
+      {pasteTarget && (() => {
+        const leg = pasteTarget.leg;
+        const from = legEndpointCoord(leg.from_place_id);
+        const to = legEndpointCoord(leg.to_place_id);
+        const mapUrl = from && to ? gmapsDirUrl(from, to, 'transit') : null;
+        return (
+          <div className="modal-backdrop" onClick={() => setPasteTarget(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="spread">
+                <strong>📋 Google マップの乗換結果を取り込む</strong>
+                <button type="button" className="sm ghost" onClick={() => setPasteTarget(null)}>閉じる</button>
+              </div>
+              <p className="muted" style={{ margin: '6px 0' }}>
+                {endpointName(leg.from_place_id, leg.from_label)} → {endpointName(leg.to_place_id, leg.to_label)} の区間です。
+                {mapUrl && <> まず <a href={mapUrl} target="_blank" rel="noreferrer">Google マップで経路を開く</a> → 結果(所要/運賃/路線・乗換)をコピーして下に貼り付けてください。</>}
+              </p>
+              <textarea className="foundation-form" rows={6} value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                placeholder="例: 32分 ¥320 / JR山手線(新宿→東京) → 東京メトロ丸ノ内線… 乗換1回" />
+              <div className="row" style={{ gap: 6, marginTop: 8 }}>
+                <button type="button" onClick={() => void submitPaste()} disabled={pasteBusy || !pasteText.trim()}>
+                  {pasteBusy ? '解析中…' : '解析して取り込む'}
+                </button>
+              </div>
+              {pasteMsg && <div className="error" style={{ marginTop: 6 }}>{pasteMsg}</div>}
+              <p className="muted" style={{ margin: '8px 0 0', fontSize: 11 }}>
+                ※ 日本の公共交通は経路 API で取得できないための暫定機能です（将来 ODPT に移行予定）。
+              </p>
             </div>
           </div>
         );
