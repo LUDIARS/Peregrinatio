@@ -459,19 +459,19 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 }
 .kanban-place-banner span { flex: 1; min-width: 0; }
 
-/* 横スクロールのボード。列は固定幅でカードを縦積み。 */
+/* Trello 風: 列を横に並べるだけ。ボード自体はスクロールコンテナにしない
+   (overflow を付けると CSS 仕様で縦 overflow も auto 化し、列内にスクロールが生まれてカードが
+   埋もれるため)。列が多くて/長くて画面外に出る時はページ全体がスクロールする。 */
 .kanban-board {
   display: flex; gap: 12px; align-items: flex-start;
-  overflow-x: auto; padding-bottom: 12px;
-  scroll-snap-type: x proximity;
+  padding-bottom: 12px;
+  width: max-content; min-width: 100%;
 }
 .kanban-col {
   flex: 0 0 280px; max-width: 280px;
   background: #f0f0ec; border: 1px solid var(--c-border); border-radius: 14px;
   padding: 10px; display: flex; flex-direction: column; gap: 8px;
-  scroll-snap-align: start;
-  /* Trello 風: 列の中で縦スクロールさせず、内容ぶん縦に伸ばす (画面外に出てもよい)。
-     縦に長い時はページ全体がスクロールし、ボードは横スクロールする。 */
+  /* 列の中で縦スクロールさせず、内容ぶん縦に伸ばす (画面外に出てもよい)。 */
 }
 .kanban-col.over { border-color: var(--c-accent); background: #e7f4f5; box-shadow: 0 0 0 2px rgba(14,124,134,0.2); }
 .kanban-col-head { display: flex; flex-direction: column; gap: 2px; }
