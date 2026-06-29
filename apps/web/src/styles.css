@@ -470,13 +470,14 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   background: #f0f0ec; border: 1px solid var(--c-border); border-radius: 14px;
   padding: 10px; display: flex; flex-direction: column; gap: 8px;
   scroll-snap-align: start;
-  max-height: calc(100vh - 220px);
+  /* Trello 風: 列の中で縦スクロールさせず、内容ぶん縦に伸ばす (画面外に出てもよい)。
+     縦に長い時はページ全体がスクロールし、ボードは横スクロールする。 */
 }
 .kanban-col.over { border-color: var(--c-accent); background: #e7f4f5; box-shadow: 0 0 0 2px rgba(14,124,134,0.2); }
 .kanban-col-head { display: flex; flex-direction: column; gap: 2px; }
 .kanban-addcol { flex: 0 0 180px; align-items: stretch; justify-content: flex-start; background: transparent; border-style: dashed; }
 
-.kanban-cards { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 40px; }
+.kanban-cards { display: flex; flex-direction: column; gap: 8px; min-height: 40px; }
 .kanban-empty {
   border: 2px dashed var(--c-border); border-radius: 10px;
   padding: 16px 8px; text-align: center; margin: 0;
