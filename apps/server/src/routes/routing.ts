@@ -8,7 +8,8 @@ import { config } from '../config.js';
 import { newId, nowIso } from '../lib/ids.js';
 import { buildRouteWaypoints, type OriginNode } from '../lib/route-waypoints.js';
 import { suggestSegmentMode, haversineMeters } from '../lib/segment-mode.js';
-import { parseGmapsTransit } from '../lib/transit-parse.js';
+import { parseGmapsTransit, type ParsedTransit } from '../lib/transit-parse.js';
+import { fetchGmapsTransitText } from '../lib/transit-fetch.js';
 import { computeRoute } from '@peregrinatio/routing';
 import type { RouteLeg, RouteMode, Trip } from '../types.js';
 
@@ -225,32 +226,13 @@ app.patch('/api/legs/:id', async (c) => {
   return c.json(updated);
 });
 
-/**
- * POST /api/legs/:id/transit-from-gmaps — Google マップの乗換結果テキストを LLM 解析し、
- * この区間に 所要/運賃/乗換要約 を取り込む (暫定。将来 ODPT に置換)。区間ごとに保存し、
- * 並べ替えで route_legs を作り直しても保持する。mode は transit に固定する。
- */
-app.post('/api/legs/:id/transit-from-gmaps', async (c) => {
-  const id = c.req.param('id');
-  const b = (await c.req.json().catch(() => ({}))) as { text?: string };
-  const text = (b.text ?? '').trim();
-  if (!text) return c.json({ error: 'Google マップの経路結果テキストを貼り付けてください' }, 400);
-
-  const [leg] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
-  if (!leg) return c.json({ error: 'leg not found' }, 404);
-
-  let parsed;
-  try {
-    parsed = await parseGmapsTransit(text);
-  } catch (e) {
-    return c.json({ error: e instanceof Error ? e.message : '結果の解析に失敗しました' }, 502);
-  }
-
+/** 解析した transit 情報をこの区間に保存する (route_legs + route_segment_modes、source 注記)。 */
+async function storeTransitOnLeg(leg: RouteLeg, parsed: ParsedTransit, source: string): Promise<RouteLeg> {
   const now = nowIso();
   // computed_at は据え置き (並び順維持)。distance/polyline は持たない。
   await sql`UPDATE route_legs SET mode=${'transit'}, duration_sec=${parsed.duration_sec},
     distance_m=${null}, fare_text=${parsed.fare_text}, polyline=${null},
-    raw_json=${JSON.stringify({ source: 'gmaps-paste' })}, note=${parsed.note} WHERE id=${id}`;
+    raw_json=${JSON.stringify({ source })}, note=${parsed.note} WHERE id=${leg.id}`;
 
   const fromKey = leg.from_place_id ?? '@origin';
   const toKey = leg.to_place_id ?? '@origin';
@@ -261,7 +243,55 @@ app.post('/api/legs/:id/transit-from-gmaps', async (c) => {
       mode = 'transit', duration_sec = excluded.duration_sec, fare_text = excluded.fare_text,
       note = excluded.note, updated_at = excluded.updated_at`;
 
-  const [updated] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
+  const [updated] = (await sql`SELECT * FROM route_legs WHERE id=${leg.id}`) as RouteLeg[];
+  return updated ?? leg;
+}
+
+/**
+ * POST /api/legs/:id/transit-fetch — サーバ側でヘッドレスブラウザ(Puppeteer)が Google マップの
+ * 乗換経路ページを開いて描画し、結果テキストを抽出→LLM 解析してこの区間に取り込む (暫定)。
+ * スマホでコピペできないユーザ向けの自動取得。失敗時は明示エラー (手動貼り付けにフォールバック可)。
+ */
+app.post('/api/legs/:id/transit-fetch', async (c) => {
+  const id = c.req.param('id');
+  const [leg] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
+  if (!leg) return c.json({ error: 'leg not found' }, 404);
+
+  const from = await endpointCoords(leg.day_id, leg.from_place_id);
+  const to = await endpointCoords(leg.day_id, leg.to_place_id);
+  if (!from || !to) return c.json({ error: '区間の座標を特定できませんでした' }, 422);
+
+  let parsed: ParsedTransit;
+  try {
+    const text = await fetchGmapsTransitText(from, to);
+    parsed = await parseGmapsTransit(text);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'Google マップからの経路取得に失敗しました' }, 502);
+  }
+  const updated = await storeTransitOnLeg(leg, parsed, 'gmaps-fetch');
+  return c.json(updated);
+});
+
+/**
+ * POST /api/legs/:id/transit-from-gmaps — Google マップの乗換結果テキストを LLM 解析し、
+ * この区間に 所要/運賃/乗換要約 を取り込む (手動貼り付け版。自動取得が失敗した時のフォールバック)。
+ */
+app.post('/api/legs/:id/transit-from-gmaps', async (c) => {
+  const id = c.req.param('id');
+  const b = (await c.req.json().catch(() => ({}))) as { text?: string };
+  const text = (b.text ?? '').trim();
+  if (!text) return c.json({ error: 'Google マップの経路結果テキストを貼り付けてください' }, 400);
+
+  const [leg] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
+  if (!leg) return c.json({ error: 'leg not found' }, 404);
+
+  let parsed: ParsedTransit;
+  try {
+    parsed = await parseGmapsTransit(text);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : '結果の解析に失敗しました' }, 502);
+  }
+  const updated = await storeTransitOnLeg(leg, parsed, 'gmaps-paste');
   return c.json(updated);
 });
 

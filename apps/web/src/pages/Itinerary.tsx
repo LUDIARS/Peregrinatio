@@ -83,7 +83,9 @@ export function Itinerary() {
   const [departureOpts, setDepartureOpts] = useState<DepartureOption[]>([]);
   const [movePickerDay, setMovePickerDay] = useState<string | null>(null);
 
-  // Google マップ結果の貼り付け解析 (公共交通の暫定取り込み)。
+  // 公共交通の取り込み (暫定)。自動取得(ヘッドレス)を主、貼り付けを手動フォールバックに。
+  const [fetchingLegId, setFetchingLegId] = useState<string | null>(null);
+  const [legMsg, setLegMsg] = useState<Record<string, string>>({}); // leg.id -> エラー文言
   const [pasteTarget, setPasteTarget] = useState<{ dayId: string; leg: RouteLeg } | null>(null);
   const [pasteText, setPasteText] = useState('');
   const [pasteBusy, setPasteBusy] = useState(false);
@@ -128,14 +130,25 @@ export function Itinerary() {
             <a className="kanban-connector-link" href={mapUrl} target="_blank" rel="noreferrer"
               title="Google マップで経路を開く（公共交通の乗換もこちら）">🗺️ 経路</a>
           )}
-          {/* 公共交通は API で取れないので、Google マップの結果を貼り付けて取り込む (暫定)。 */}
+          {/* 公共交通は API で取れないので、サーバが Google マップを開いて経路を自動取得する (暫定)。 */}
           {leg.mode === 'transit' && (
             <button type="button" className="kanban-connector-link"
-              onClick={() => { setPasteTarget({ dayId, leg }); setPasteText(''); setPasteMsg(''); }}
-              title="Google マップの乗換結果を貼り付けて取り込む">📋 結果を解析</button>
+              onClick={() => void fetchTransit(dayId, leg)} disabled={fetchingLegId === leg.id}
+              title="Google マップの乗換経路を自動取得して取り込む">
+              {fetchingLegId === leg.id ? '取得中…' : '🚉 経路を取得'}
+            </button>
           )}
         </div>
         {leg.note && <div className="kanban-connector-note">🚉 {leg.note}</div>}
+        {leg.mode === 'transit' && legMsg[leg.id] && (
+          <div className="kanban-connector-err">
+            ⚠ {legMsg[leg.id]}{' '}
+            <button type="button" className="kanban-connector-link"
+              onClick={() => { setPasteTarget({ dayId, leg }); setPasteText(''); setPasteMsg(''); }}>
+              📋 手動で貼り付け
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -286,6 +299,19 @@ export function Itinerary() {
     if (j < 0 || j >= arr.length) return;
     const tmp = arr[index]!; arr[index] = arr[j]!; arr[j] = tmp;
     void commit({ ...itemsByDay, [dayId]: arr }, [dayId]);
+  };
+
+  /** サーバが Google マップの乗換経路を自動取得→解析して、この区間に取り込む (主経路)。 */
+  const fetchTransit = async (dayId: string, leg: RouteLeg) => {
+    setFetchingLegId(leg.id);
+    setLegMsg((m) => { const n = { ...m }; delete n[leg.id]; return n; });
+    try {
+      const updated = await api.transitFetch(leg.id);
+      setLegsByDay((s) => ({ ...s, [dayId]: (s[dayId] ?? []).map((l) => (l.id === updated.id ? updated : l)) }));
+    } catch (e) {
+      // 自動取得失敗時は手動貼り付けへ誘導する。
+      setLegMsg((m) => ({ ...m, [leg.id]: e instanceof Error ? e.message : '自動取得に失敗しました' }));
+    } finally { setFetchingLegId(null); }
   };
 
   /** 貼り付けた Google マップの乗換結果を LLM 解析し、この区間に取り込む。 */

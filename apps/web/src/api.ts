@@ -217,7 +217,10 @@ export const api = {
   /** 1 区間 (leg) の移動手段だけを変更し、その区間のみ再計算する (他区間に連動しない)。 */
   patchLegMode: (legId: string, mode: RouteMode) =>
     req<RouteLeg>(`/api/legs/${legId}`, { method: 'PATCH', body: json({ mode }) }),
-  /** Google マップの乗換結果テキストを LLM 解析し、この区間に所要/運賃/乗換を取り込む (暫定)。 */
+  /** サーバが Google マップの乗換経路を自動取得(ヘッドレス)→解析してこの区間に取り込む (暫定)。 */
+  transitFetch: (legId: string) =>
+    req<RouteLeg>(`/api/legs/${legId}/transit-fetch`, { method: 'POST', body: json({}) }),
+  /** Google マップの乗換結果テキストを LLM 解析し、この区間に取り込む (自動取得失敗時の手動版)。 */
   transitFromGmaps: (legId: string, text: string) =>
     req<RouteLeg>(`/api/legs/${legId}/transit-from-gmaps`, { method: 'POST', body: json({ text }) }),
 
