@@ -41,6 +41,14 @@ export async function listRoutes(feedId: string): Promise<GtfsRouteRow[]> {
 }
 
 export interface TimetableStop { stop_id: string; stop_name: string | null; lat: number | null; lng: number | null; }
+
+/** フィードの全停留所 (1 マップに全部出す用)。 */
+export async function feedStops(feedId: string): Promise<TimetableStop[]> {
+  return (await sql`
+    SELECT stop_id, stop_name, lat, lng FROM gtfs_stops
+    WHERE feed_id = ${feedId} AND lat IS NOT NULL AND lng IS NOT NULL`) as TimetableStop[];
+}
+
 export interface TimetableTrip { trip_id: string; headsign: string | null; service_id: string | null; times: (string | null)[]; }
 /** 同じ停車順序 (パターン) でまとめた時刻表。stops=横軸、trips=縦軸 (時刻順)。 */
 export interface TimetablePattern {

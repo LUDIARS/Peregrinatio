@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { GtfsTimetable } from './GtfsTimetable.js';
-import type { GtfsDeparture, GtfsFeed, GtfsRoute, GtfsStopHit } from '../types.js';
+import type { GtfsDeparture, GtfsFeed, GtfsRoute, GtfsStopHit, TripDay } from '../types.js';
+
+/** ローカル今日を 'YYYY-MM-DD' で返す。 */
+function todayInput(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 /**
  * GTFS 時刻表パネル (バス/一部鉄道の一括取込)。
@@ -23,6 +30,10 @@ export function GtfsPanel({ tripId }: { tripId: string }) {
   const [routesBusy, setRoutesBusy] = useState(false);
   const [ttRoute, setTtRoute] = useState<{ feedId: string; routeId: string; label: string } | null>(null);
 
+  // 旅程の日 (trip_days) と、時刻表に使う運行日。
+  const [tripDays, setTripDays] = useState<TripDay[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string>(todayInput());
+
   const [center, setCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [stops, setStops] = useState<GtfsStopHit[]>([]);
   const [stopsBusy, setStopsBusy] = useState(false);
@@ -35,13 +46,17 @@ export function GtfsPanel({ tripId }: { tripId: string }) {
   useEffect(() => {
     (async () => {
       try { await loadFeeds(); } catch (e) { setError(e instanceof Error ? e.message : 'フィード一覧の取得に失敗しました'); }
-      // 中心座標: 拠点 → 最初の座標付き場所。
+      // 中心座標: 拠点 → 最初の座標付き場所。旅程の日も取得し、初期運行日を旅の初日(なければ今日)に。
       try {
         const detail = await api.getTrip(tripId);
         const base = detail.places.find((p) => p.is_base === 1 && p.lat != null && p.lng != null)
           ?? detail.places.find((p) => p.lat != null && p.lng != null);
         if (base && base.lat != null && base.lng != null) setCenter({ lat: base.lat, lng: base.lng });
-      } catch { /* 中心未取得は現在地ボタンで補える */ }
+        const days = [...detail.days].sort((a, b) => a.day_index - b.day_index);
+        setTripDays(days);
+        const firstDated = days.find((d) => d.date);
+        if (firstDated?.date) setSelectedDate(firstDated.date);
+      } catch { /* 旅程未取得は今日のまま */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId]);
@@ -146,6 +161,21 @@ export function GtfsPanel({ tripId }: { tripId: string }) {
             <strong>🚌 {routesFeed.name} の路線</strong>
             <button type="button" className="sm ghost" onClick={() => { setRoutesFeed(null); setRoutes([]); setTtRoute(null); }}>閉じる</button>
           </div>
+          {/* 運行日: 旅程の日から選ぶ + 任意の日付。選んだ日の時刻表が出る。 */}
+          <div className="foundation-form" style={{ margin: '6px 0' }}>
+            <div className="row" style={{ gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span className="muted" style={{ fontSize: 12 }}>📅 運行日</span>
+              {tripDays.filter((d) => d.date).map((d) => (
+                <button key={d.id} type="button"
+                  className={selectedDate === d.date ? 'chip-btn active' : 'chip-btn'}
+                  onClick={() => d.date && setSelectedDate(d.date)}>
+                  {d.date!.slice(5).replace('-', '/')}（{d.day_index + 1}日目）
+                </button>
+              ))}
+              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value || todayInput())} style={{ width: 150 }} />
+            </div>
+          </div>
+
           {routesBusy && <p className="muted">路線を読み込み中…</p>}
           {!routesBusy && routes.length === 0 && <p className="muted">路線データがありません。</p>}
           <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
@@ -159,7 +189,7 @@ export function GtfsPanel({ tripId }: { tripId: string }) {
           </div>
           {ttRoute && (
             <div style={{ marginTop: 10 }}>
-              <GtfsTimetable feedId={ttRoute.feedId} routeId={ttRoute.routeId} routeLabel={ttRoute.label} />
+              <GtfsTimetable feedId={ttRoute.feedId} routeId={ttRoute.routeId} routeLabel={ttRoute.label} date={selectedDate} />
             </div>
           )}
         </div>
