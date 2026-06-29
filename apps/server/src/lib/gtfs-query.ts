@@ -50,23 +50,19 @@ export interface TimetablePattern {
   trips: TimetableTrip[];
 }
 
-/** 路線で使われる service_id の運行曜日 (平日/土曜/日祝の絞り込み用)。 */
-export interface ServiceCalendar {
-  service_id: string;
-  mon: number; tue: number; wed: number; thu: number; fri: number; sat: number; sun: number;
-}
-
 export interface RouteTimetableResult {
+  /** 実際に絞り込んだ運行日 (YYYYMMDD)。 */
+  date: string;
   patterns: TimetablePattern[];
-  services: ServiceCalendar[];
 }
 
 /**
- * 路線の時刻表を停車パターン別に組む。停車順序が同じ便を 1 つの表にまとめる
- * (停車順=横軸の駅/停留所、便=縦軸を時刻順)。services に運行曜日を添えて、
- * 平日/土曜/日祝の絞り込みに使えるようにする (同時刻の別ダイヤを分けて表示するため)。
+ * 路線の時刻表を「指定日 (date=YYYYMMDD) に運行する便」だけで停車パターン別に組む。
+ * 停車順序が同じ便を 1 つの表にまとめる (停車順=横軸の停留所、便=縦軸を時刻順)。
+ * 日で絞ることで、平日/土日祝/特別ダイヤなど別ダイヤの便が混ざらない
+ * (calendar の曜日 + calendar_dates の例外で運行日を判定)。
  */
-export async function routeTimetable(feedId: string, routeId: string): Promise<RouteTimetableResult> {
+export async function routeTimetable(feedId: string, routeId: string, date: string): Promise<RouteTimetableResult> {
   const rows = (await sql`
     SELECT st.trip_id AS trip_id, st.stop_id AS stop_id, st.departure_time AS departure_time,
            t.headsign AS headsign, t.direction_id AS direction_id, t.service_id AS service_id
@@ -77,17 +73,26 @@ export async function routeTimetable(feedId: string, routeId: string): Promise<R
     trip_id: string; stop_id: string; departure_time: string | null;
     headsign: string | null; direction_id: number | null; service_id: string | null;
   }>;
-  if (rows.length === 0) return { patterns: [], services: [] };
+  if (rows.length === 0) return { date, patterns: [] };
 
-  // trip ごとに停車順 (stop_id 列) と時刻列を作る。
+  // 指定日に運行する service だけ通す (曜日 + calendar_dates 例外)。
+  const y = Number(date.slice(0, 4));
+  const mo = Number(date.slice(4, 6));
+  const da = Number(date.slice(6, 8));
+  const weekday = new Date(Date.UTC(y, mo - 1, da)).getUTCDay();
+  const active = await activeServiceIds(feedId, date, weekday);
+
+  // trip ごとに停車順 (stop_id 列) と時刻列を作る (運行日の便のみ。service 無しは含める)。
   interface TripAgg { headsign: string | null; direction_id: number | null; service_id: string | null; stops: string[]; times: (string | null)[]; }
   const trips = new Map<string, TripAgg>();
   for (const r of rows) {
+    if (r.service_id && !active.has(r.service_id)) continue;
     let a = trips.get(r.trip_id);
     if (!a) { a = { headsign: r.headsign, direction_id: r.direction_id, service_id: r.service_id, stops: [], times: [] }; trips.set(r.trip_id, a); }
     a.stops.push(r.stop_id);
     a.times.push(r.departure_time);
   }
+  if (trips.size === 0) return { date, patterns: [] };
 
   // 停車順が同じ便を 1 パターンにまとめる。
   interface PatAgg { direction_id: number | null; headsign: string | null; stopSeq: string[]; trips: TimetableTrip[]; }
@@ -124,19 +129,7 @@ export async function routeTimetable(feedId: string, routeId: string): Promise<R
   }
   // 便数の多いパターンを先頭に。
   out.sort((a, b) => b.trips.length - a.trips.length);
-
-  // この路線で使う service_id の運行曜日 (平日/土曜/日祝の絞り込み用)。
-  const usedServices = new Set<string>();
-  for (const t of trips.values()) if (t.service_id) usedServices.add(t.service_id);
-  let services: ServiceCalendar[] = [];
-  if (usedServices.size > 0) {
-    const all = (await sql`
-      SELECT service_id, mon, tue, wed, thu, fri, sat, sun FROM gtfs_calendar
-      WHERE feed_id = ${feedId}`) as ServiceCalendar[];
-    services = all.filter((s) => usedServices.has(s.service_id));
-  }
-
-  return { patterns: out, services };
+  return { date, patterns: out };
 }
 
 /** lat/lng 近傍の停留所を距離順に返す (全フィード横断、bbox 前絞り→ハバーサイン)。 */

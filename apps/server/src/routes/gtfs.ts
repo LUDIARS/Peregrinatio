@@ -69,7 +69,8 @@ app.get('/api/gtfs/feeds/:id/routes', async (c) => {
 });
 
 app.get('/api/gtfs/feeds/:id/routes/:rid/timetable', async (c) => {
-  return c.json(await routeTimetable(c.req.param('id'), c.req.param('rid')));
+  const date = (c.req.query('date') || tokyoNow().date).replace(/-/g, '');
+  return c.json(await routeTimetable(c.req.param('id'), c.req.param('rid'), date));
 });
 
 app.get('/api/gtfs/feeds/:id/stops/:sid/departures', async (c) => {
