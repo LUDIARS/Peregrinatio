@@ -2,6 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const ludiarsHosts = (process.env.LUDIARS_ALLOWED_HOSTS ?? '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
 // 旅のしおり PWA (iOS Safari 主戦場)。dev port は 5179 固定。
 // API はデフォルト http://127.0.0.1:8090 を直叩き (サーバ側 CORS 許可済)。
 // 別オリジン (Tunnel 等) からも使えるよう /api と /uploads を proxy できるようにしておく。
@@ -72,6 +75,7 @@ export default defineConfig({
     port: 5179,
     strictPort: true,
     host: true,
+    ...(ludiarsHosts.length > 0 ? { allowedHosts: ludiarsHosts } : {}),
     proxy: {
       '/api': { target: SERVER_TARGET, changeOrigin: true },
       '/uploads': { target: SERVER_TARGET, changeOrigin: true },
