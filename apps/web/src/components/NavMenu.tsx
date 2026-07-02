@@ -23,7 +23,8 @@ const SECTIONS: Section[] = [
   { key: 'map', label: 'マップとメモ', icon: '🗺', to: (id) => `/trips/${id}`, tripScoped: true },
   { key: 'itinerary', label: '旅のしおり', icon: '🗓', to: (id) => `/trips/${id}/itinerary`, tripScoped: true },
   { key: 'add', label: '情報追加', icon: '➕', to: (id) => `/trips/${id}/add`, tripScoped: true },
-  { key: 'transit', label: '時刻表/運行', icon: '🚃', to: (id) => `/trips/${id}/transit`, tripScoped: true },
+  // 時刻表/運行はマップ画面の左パネル「経路」モード (別画面にせず地図を見ながら確認する)。
+  { key: 'transit', label: '時刻表/運行', icon: '🚃', to: (id) => `/trips/${id}?panel=transit`, tripScoped: true },
   { key: 'settings', label: '設定', icon: '⚙', to: () => '/settings', tripScoped: false },
 ];
 
@@ -34,17 +35,18 @@ function tripIdOf(pathname: string): string | null {
   return m ? m[1]! : null;
 }
 
-/** pathname から現在のセクション key を判定。 */
-function activeKey(pathname: string): string | null {
+/** pathname + query から現在のセクション key を判定。 */
+function activeKey(pathname: string, search: string): string | null {
   if (pathname.startsWith('/settings')) return 'settings';
   const m = pathname.match(/^\/trips\/[^/]+(?:\/(\w+))?/);
   if (!m) return null;
   const sub = m[1];
   if (sub === 'itinerary') return 'itinerary';
   if (sub === 'add') return 'add';
-  if (sub === 'transit') return 'transit';
+  if (sub === 'transit') return 'transit'; // 旧 URL (リダイレクト中の一瞬)
   if (sub === 'days') return 'itinerary'; // 後方互換リダイレクト
-  if (!sub) return 'map';
+  // マップ画面: 左パネルが経路モード (?panel=transit) なら「時刻表/運行」を点灯する。
+  if (!sub) return new URLSearchParams(search).get('panel') === 'transit' ? 'transit' : 'map';
   return null;
 }
 
@@ -77,9 +79,9 @@ function clamp(v: number, min: number, max: number): number {
 }
 
 export function NavMenu() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const pathTripId = tripIdOf(pathname);
-  const active = activeKey(pathname);
+  const active = activeKey(pathname, search);
 
   // 旅を選択済みなら、旅に紐づかない画面 (設定など) でも旅依存ボタンを活性に保つため、
   // 直近に開いていた tripId を覚えてフォールバックに使う (lib/currentTrip と共有)。

@@ -7,7 +7,6 @@ import { TripDetail } from './pages/TripDetail.js';
 import { PlaceDetail } from './pages/PlaceDetail.js';
 import { Itinerary } from './pages/Itinerary.js';
 import { AddInfo } from './pages/AddInfo.js';
-import { Transit } from './pages/Transit.js';
 import { Settings } from './pages/Settings.js';
 import { lockPageZoom } from './lib/lock-page-zoom.js';
 import './styles.css';
@@ -21,6 +20,12 @@ function DayRedirect() {
   return <Navigate to={`/trips/${tripId}/itinerary`} replace />;
 }
 
+/** 旧 時刻表ページ (/trips/:tripId/transit) はマップ画面の左パネル「経路」モードに統合済み。後方互換でリダイレクト。 */
+function TransitRedirect() {
+  const { tripId } = useParams<{ tripId: string }>();
+  return <Navigate to={`/trips/${tripId}?panel=transit`} replace />;
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
@@ -31,7 +36,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="trips/:tripId" element={<TripDetail />} />
           <Route path="trips/:tripId/itinerary" element={<Itinerary />} />
           <Route path="trips/:tripId/add" element={<AddInfo />} />
-          <Route path="trips/:tripId/transit" element={<Transit />} />
+          <Route path="trips/:tripId/transit" element={<TransitRedirect />} />
           <Route path="trips/:tripId/places/:placeId/add" element={<AddInfo />} />
           <Route path="trips/:tripId/places/:placeId" element={<PlaceDetail />} />
           <Route path="trips/:tripId/days/:dayId" element={<DayRedirect />} />

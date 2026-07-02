@@ -8,9 +8,12 @@ import type { GtfsTimetablePattern, GtfsTimetableStop } from '../types.js';
 /**
  * 路線の時刻表を「停留所=横軸 / 便=縦軸(時刻順)」の表で描画し、停留所の位置を地図に出す。
  * 停車順序が違う便はパターンとして分け、タブで切り替える。
+ * `map` (外部の Google 地図) を渡すとそこへ停留所・順路を描画する (メイン地図を見ながらの確認用)。
+ * 渡さなければ従来どおり専用のミニ地図を持つ。
  */
 export function GtfsTimetable(
-  { feedId, routeId, routeLabel, date }: { feedId: string; routeId: string; routeLabel: string; date: string },
+  { feedId, routeId, routeLabel, date, map: externalMap }:
+  { feedId: string; routeId: string; routeLabel: string; date: string; map?: any },
 ) {
   const [patterns, setPatterns] = useState<GtfsTimetablePattern[]>([]);
   const [allStops, setAllStops] = useState<GtfsTimetableStop[]>([]);
@@ -45,23 +48,29 @@ export function GtfsTimetable(
   }, [feedId, routeId, date]);
 
   // 1 マップに「フィードの全停留所」(小さい点) + 現在路線の停留所(番号+順路線) を描く。
+  // 外部地図 (メイン地図) があればそこへ、無ければ専用ミニ地図を生成して描く。
   useEffect(() => {
-    if (!mapHost.current) return;
     const pat = patterns[pIdx];
     let cancelled = false;
     (async () => {
       try {
-        const cfg = await api.mapConfig();
-        if (cancelled || !cfg.enabled || !cfg.apiKey || !mapHost.current) return;
-        await loadMaps(cfg.apiKey);
-        if (cancelled || !mapHost.current) return;
-        const g = window.google;
-        if (!mapObj.current) {
-          mapObj.current = new g.maps.Map(mapHost.current, {
-            center: { lat: 36.96, lng: 140.04 }, zoom: 11,
-            mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
-          });
+        let target: any = externalMap ?? null;
+        if (!target) {
+          if (!mapHost.current) return;
+          const cfg = await api.mapConfig();
+          if (cancelled || !cfg.enabled || !cfg.apiKey || !mapHost.current) return;
+          await loadMaps(cfg.apiKey);
+          if (cancelled || !mapHost.current) return;
+          if (!mapObj.current) {
+            mapObj.current = new window.google.maps.Map(mapHost.current, {
+              center: { lat: 36.96, lng: 140.04 }, zoom: 11,
+              mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
+            });
+          }
+          target = mapObj.current;
         }
+        if (cancelled || !window.google) return;
+        const g = window.google;
         for (const o of overlays.current) o.setMap(null);
         overlays.current = [];
         const bounds = new g.maps.LatLngBounds();
@@ -72,20 +81,21 @@ export function GtfsTimetable(
           const pos = { lat: s.lat, lng: s.lng };
           bounds.extend(pos);
           const dot = new g.maps.Marker({
-            position: pos, map: mapObj.current, title: s.stop_name ?? s.stop_id, clickable: false,
+            position: pos, map: target, title: s.stop_name ?? s.stop_id, clickable: false,
             icon: { path: g.maps.SymbolPath.CIRCLE, scale: 2.6, fillColor: '#9bbcbe', fillOpacity: 0.9, strokeColor: '#fff', strokeWeight: 0.6 },
           });
           overlays.current.push(dot);
         }
 
         // 現在路線の停留所を番号付き + 順路ポリラインで強調。
+        // メイン地図では場所ピン (zIndex 最大 2000) より手前に出す。
         const pts = (pat?.stops ?? []).filter((s) => s.lat != null && s.lng != null);
         const path: any[] = [];
         pts.forEach((s, i) => {
           const pos = { lat: s.lat as number, lng: s.lng as number };
           path.push(pos); bounds.extend(pos);
           const marker = new g.maps.Marker({
-            position: pos, map: mapObj.current, title: `${i + 1}. ${s.stop_name ?? ''}`, zIndex: 100,
+            position: pos, map: target, title: `${i + 1}. ${s.stop_name ?? ''}`, zIndex: 3000,
             label: { text: String(i + 1), fontSize: '10px', color: '#fff' },
             icon: { path: PIN_PATH, fillColor: '#0e7c86', fillOpacity: 0.95, strokeColor: '#fff', strokeWeight: 1.2,
               scale: 1, labelOrigin: new g.maps.Point(0, -26), anchor: new g.maps.Point(0, 0) },
@@ -93,15 +103,21 @@ export function GtfsTimetable(
           overlays.current.push(marker);
         });
         if (path.length > 1) {
-          const line = new g.maps.Polyline({ path, map: mapObj.current, strokeColor: '#0e7c86', strokeOpacity: 0.8, strokeWeight: 3, zIndex: 50 });
+          const line = new g.maps.Polyline({ path, map: target, strokeColor: '#0e7c86', strokeOpacity: 0.8, strokeWeight: 3, zIndex: 50 });
           overlays.current.push(line);
         }
         // 全停留所が見えるよう全体にフィット (全部載せる)。
-        if (!bounds.isEmpty()) mapObj.current.fitBounds(bounds);
+        if (!bounds.isEmpty()) target.fitBounds(bounds);
       } catch { /* 地図は best-effort (表は出す) */ }
     })();
     return () => { cancelled = true; };
-  }, [allStops, patterns, pIdx]);
+  }, [allStops, patterns, pIdx, externalMap]);
+
+  // アンマウント時に描画物を消す (外部地図=メイン地図に停留所を残さないため)。
+  useEffect(() => () => {
+    for (const o of overlays.current) o.setMap(null);
+    overlays.current = [];
+  }, []);
 
   const idx = Math.min(pIdx, Math.max(0, patterns.length - 1));
   const pat = patterns[idx] ?? null;
@@ -125,8 +141,13 @@ export function GtfsTimetable(
         </div>
       )}
 
-      {/* 地図: フィードの全停留所を 1 枚に表示し、選択路線を強調 (常に表示)。 */}
-      <div ref={mapHost} className="gtfs-tt-map" />
+      {/* 地図: 外部地図 (メイン地図) 使用時は専用ミニ地図を出さない。 */}
+      {!externalMap && <div ref={mapHost} className="gtfs-tt-map" />}
+      {externalMap && (
+        <p className="muted" style={{ fontSize: 11, margin: '6px 0' }}>
+          🗺 停留所と順路はメインの地図に表示しています。
+        </p>
+      )}
 
       {loading && <p className="muted">時刻表を読み込み中…</p>}
       {err && <div className="error">⚠ {err}</div>}

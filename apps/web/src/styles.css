@@ -550,6 +550,12 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .kanban-connector-note { font-size: 11px; color: var(--c-text); line-height: 1.4; }
 .kanban-connector-err { font-size: 11px; color: #a15c00; line-height: 1.4; }
 
+/* ---- 左パネル 場所/経路 切替 (マップ画面) ---- */
+.ws-mode-bar { margin: 4px 0 10px; flex-wrap: nowrap; }
+.ws-mode-bar .chip-btn { flex: 1; text-align: center; padding: 8px 10px; font-size: 14px; font-weight: 700; }
+/* 経路パネル: 狭い左カラムに収めるため時刻表の縦スクロールを控えめに。 */
+.transit-panel .gtfs-tt-scroll { max-height: 44vh; }
+
 /* ---- GTFS 路線時刻表 (横軸=停留所 / 縦軸=便) ---- */
 .gtfs-tt-map { width: 100%; height: 240px; border-radius: 12px; border: 1px solid var(--c-border); margin: 8px 0; }
 .gtfs-tt-scroll { overflow: auto; max-height: 60vh; border: 1px solid var(--c-border); border-radius: 10px; }
