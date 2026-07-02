@@ -10,13 +10,16 @@ function todayInput(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 /**
  * GTFS 時刻表パネル (バス/一部鉄道の一括取込)。
  * - GTFS zip の URL を取り込む / 取込済みフィードの一覧・削除。
  * - 拠点や現在地の近くの停留所を探し、発車時刻ボードを表示する。
  * フィードは全旅で共有。中心座標は旅の拠点 (無ければ最初の座標付き場所) を使う。
+ * `map` を渡すと路線時刻表の停留所をその地図 (メイン地図) に描画する。
  */
-export function GtfsPanel({ tripId }: { tripId: string }) {
+export function GtfsPanel({ tripId, map }: { tripId: string; map?: any }) {
   const [feeds, setFeeds] = useState<GtfsFeed[]>([]);
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
@@ -189,7 +192,7 @@ export function GtfsPanel({ tripId }: { tripId: string }) {
           </div>
           {ttRoute && (
             <div style={{ marginTop: 10 }}>
-              <GtfsTimetable feedId={ttRoute.feedId} routeId={ttRoute.routeId} routeLabel={ttRoute.label} date={selectedDate} />
+              <GtfsTimetable feedId={ttRoute.feedId} routeId={ttRoute.routeId} routeLabel={ttRoute.label} date={selectedDate} map={map} />
             </div>
           )}
         </div>
