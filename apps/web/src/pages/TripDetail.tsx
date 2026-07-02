@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl, pdfUrl } from '../api.js';
 import type { PlaceJobView, PlaceStatus, TripDetail as TripDetailData, TripPlace } from '../types.js';
 
@@ -21,6 +21,7 @@ import { PlaceDetailPane } from './PlaceDetail.js';
 import { Itinerary } from './Itinerary.js';
 import { LibraryPicker } from './LibraryPicker.js';
 import { MapSearchOverlay } from '../components/MapSearchOverlay.js';
+import { TransitPanel } from '../components/transit/TransitPanel.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -30,11 +31,21 @@ type MapStatus = 'loading' | 'disabled' | 'ready' | 'error';
 const BASE_ZOOM = 11; // 拠点クリック/フォーカス時
 const AREA_ZOOM = 11; // 初期 (拠点中心の周辺)
 
+/** 左パネルの表示モード。places=場所一覧 / transit=時刻表・運行情報 (経路)。 */
+type ListPanel = 'places' | 'transit';
+
 export function TripDetail() {
   const { tripId } = useParams<{ tripId: string }>();
   const navigate = useNavigate();
   const [data, setData] = useState<TripDetailData | null>(null);
   const [error, setError] = useState('');
+
+  // 左パネル 場所/経路 切替。URL (?panel=transit) と同期し、フッターの「時刻表/運行」からも入れる。
+  const [searchParams, setSearchParams] = useSearchParams();
+  const listPanel: ListPanel = searchParams.get('panel') === 'transit' ? 'transit' : 'places';
+  const setListPanel = (p: ListPanel) => {
+    setSearchParams(p === 'transit' ? { panel: 'transit' } : {}, { replace: true });
+  };
   // 旅のしおり: PC は移動可能なオーバーレイウインドウ、モバイルは専用ルートへ遷移。
   const [showItinerary, setShowItinerary] = useState(false);
   const openItinerary = () => {
@@ -82,6 +93,11 @@ export function TripDetail() {
   // スマホ: 情報窓 (ピン上に出す名前+詳細ボタン) を表示する place。詳細を開くと閉じる。
   const [infoPlaceId, setInfoPlaceId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // フッターの「時刻表/運行」などから経路モードに入ったら、モバイルでは左パネル (ドロワー) を開いて見せる。
+  useEffect(() => {
+    if (listPanel === 'transit' && window.matchMedia('(max-width: 1199px)').matches) setDrawerOpen(true);
+  }, [listPanel]);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => getPrefs().defaultStatusFilter);
   const [recommending, setRecommending] = useState(false);
@@ -468,6 +484,20 @@ export function TripDetail() {
         </div>
         <p className="muted">{trip.start_date ?? '日付未定'}{trip.end_date ? ` 〜 ${trip.end_date}` : ''}</p>
 
+        {/* 左パネル切替: 場所一覧 ⇔ 経路 (時刻表/運行情報)。経路は地図を見ながら確認できる。 */}
+        <div className="base-bar ws-mode-bar">
+          <button type="button" className={listPanel === 'places' ? 'chip-btn active' : 'chip-btn'}
+            onClick={() => setListPanel('places')}>📍 場所</button>
+          <button type="button" className={listPanel === 'transit' ? 'chip-btn active' : 'chip-btn'}
+            onClick={() => setListPanel('transit')}>🚃 経路</button>
+        </div>
+
+        {/* 経路モード: 時刻表/運行情報。GTFS 路線の停留所はメイン地図に描画される。 */}
+        {listPanel === 'transit' && (
+          <TransitPanel tripId={tripId} map={mapStatus === 'ready' ? mapObj.current : undefined} />
+        )}
+
+        {listPanel === 'places' && (<>
         <h3>ピン / 場所 ({places.length})</h3>
         {/* 拠点が未設定なら促す (旅は拠点ありきで設計)。 */}
         {bases.length === 0 && (
@@ -621,6 +651,7 @@ export function TripDetail() {
             </div>
           );
         })()}
+        </>)}
       </aside>
 
       {/* 中央: 地図 + 拠点バー + 検索 */}
@@ -659,7 +690,7 @@ export function TripDetail() {
         />
 
         <p className="muted" style={{ marginTop: 6 }}>
-          ピンタップで詳細（🏨拠点はズーム）。URL/画像からの情報追加は下部メニューの「情報追加」へ。
+          ピンタップで詳細（🏨拠点はズーム）。バス/新幹線の時刻表は左の「🚃 経路」タブで地図を見ながら確認できます。
         </p>
       </section>
 
