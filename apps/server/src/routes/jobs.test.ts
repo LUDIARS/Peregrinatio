@@ -20,6 +20,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await sql`DELETE FROM place_jobs`;
+  await sql`DELETE FROM place_links`;
   await sql`DELETE FROM trip_places`;
   await sql`DELETE FROM places`;
   await sql`DELETE FROM trips`;
@@ -94,6 +95,22 @@ describe('取り込みキュー (place_jobs)', () => {
     });
     const list = await json<{ id: string }[]>(await app.request(`/api/trips/${trip.id}/places`));
     expect(list.find((p) => p.id === place.id)).toBeDefined();
+  });
+
+  it('crawl ジョブ作成時点で URL を情報元リンクと source_url に保存する', async () => {
+    const trip = await createTrip('旅A');
+    const place = await addPlace(trip.id, { name: '既存', lat: 35.0, lng: 139.0 });
+    const url = 'https://example.com/detail';
+    const res = await app.request(`/api/trips/${trip.id}/jobs`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ place_id: place.id, kind: 'crawl', source_url: url, is_new_place: 0 }),
+    });
+    expect(res.status).toBe(200);
+
+    const links = await json<{ url: string; source: string }[]>(await app.request(`/api/places/${place.id}/links`));
+    expect(links).toEqual([expect.objectContaining({ url, source: 'crawl' })]);
+    const [updated] = (await sql`SELECT source_url FROM places WHERE id=${place.id}`) as { source_url: string | null }[];
+    expect(updated?.source_url).toBe(url);
   });
 
   it('未成立ドラフトのジョブを破棄すると place ごと掃除される', async () => {

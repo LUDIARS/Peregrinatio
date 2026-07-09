@@ -14,7 +14,7 @@ interface PaneProps {
   placeId: string;
   onClose: () => void;
   /** place/list に影響する変更後 (ステータス/拠点/外す/削除) に呼ぶ。 */
-  onChanged?: () => void;
+  onChanged?: () => void | Promise<void>;
 }
 
 /**
@@ -33,17 +33,25 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   // 自動検索 (情報の無い場所を Google で補完)。
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoMsg, setAutoMsg] = useState('');
+  const [locOpen, setLocOpen] = useState(false);
+  const [locAddress, setLocAddress] = useState('');
+  const [locLat, setLocLat] = useState('');
+  const [locLng, setLocLng] = useState('');
+  const [locBusy, setLocBusy] = useState(false);
+  const [locGeocodeBusy, setLocGeocodeBusy] = useState(false);
+  const [locMsg, setLocMsg] = useState('');
   // 画像のライトボックス (ページ内オーバーレイ)。
   // 旧実装は <a target="_blank"> でナビゲートしていたが、PWA の SW navigation fallback が
   // index.html を返し ルータ * → / リダイレクトでトップへ飛ぶ不具合があったため、遷移せず
   // ページ内で開く。
   const [lightbox, setLightbox] = useState<string | null>(null);
 
-  const loadPlace = async () => {
+  const loadPlace = async (): Promise<TripPlace | null> => {
     const detail = await api.getTrip(tripId);
     const p = detail.places.find((x) => x.id === placeId) ?? null;
-    if (!p) { setError('この場所が見つかりません'); return; }
+    if (!p) { setError('この場所が見つかりません'); return null; }
     setPlace(p);
+    return p;
   };
   const loadLinks = async () => { setLinks(await api.listLinks(placeId)); };
   // 取り込んだ画像 (Kindle 連番などの連結 composite + 元画像 source)。
@@ -60,7 +68,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const setStatus = async (status: PlaceStatus) => {
     try {
       const p = await api.patchPlace(placeId, { status });
-      setPlace((prev) => (prev ? { ...prev, ...p } : null)); onChanged?.();
+      setPlace((prev) => (prev ? { ...prev, ...p } : null)); await onChanged?.(); await loadPlace();
     } catch (e) { setError(e instanceof Error ? e.message : 'ステータス更新に失敗しました'); }
   };
 
@@ -68,7 +76,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     if (!place) return;
     try {
       const p = await api.setTripBase(tripId, placeId, place.is_base === 1 ? 0 : 1);
-      setPlace((prev) => (prev ? { ...prev, ...p } : p)); onChanged?.();
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace();
     } catch (e) { setError(e instanceof Error ? e.message : '拠点の更新に失敗しました'); }
   };
 
@@ -77,7 +85,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     if (!place) return;
     try {
       const p = await api.setPostponed(tripId, placeId, place.postponed !== 1);
-      setPlace((prev) => (prev ? { ...prev, ...p } : p)); onChanged?.();
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace();
     } catch (e) { setError(e instanceof Error ? e.message : '「また今度」の更新に失敗しました'); }
   };
 
@@ -85,7 +93,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const saveHotelTime = async (field: 'checkin_time' | 'checkout_time', value: string) => {
     try {
       const p = await api.patchTripPlace(tripId, placeId, { [field]: value || null });
-      setPlace((prev) => (prev ? { ...prev, ...p } : p)); onChanged?.();
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace();
     } catch (e) { setHotelMsg(e instanceof Error ? e.message : '時刻の保存に失敗しました'); }
   };
 
@@ -94,7 +102,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     setHotelBusy(true); setHotelMsg('');
     try {
       const p = await api.fetchHotelTimes(tripId, placeId);
-      setPlace((prev) => (prev ? { ...prev, ...p } : p)); onChanged?.();
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace();
       setHotelMsg('チェックイン/アウト時刻を取得しました。必要なら調整してください。');
     } catch (e) {
       setHotelMsg(e instanceof Error ? e.message : '自動取得に失敗しました（手入力で設定してください）');
@@ -115,22 +123,101 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
       } else {
         setAutoMsg('公式情報を取り込みました。');
       }
-      onChanged?.();
+      await onChanged?.();
+      await loadPlace();
     } catch (e) {
       setAutoMsg(e instanceof Error ? e.message : '自動検索に失敗しました');
     } finally { setAutoBusy(false); }
   };
 
+  const openLocationEditor = () => {
+    if (!place) return;
+    setLocAddress(place.address ?? '');
+    setLocLat(place.lat == null ? '' : String(place.lat));
+    setLocLng(place.lng == null ? '' : String(place.lng));
+    setLocMsg('');
+    setLocOpen((v) => !v);
+  };
+
+  const saveLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const latText = locLat.trim();
+    const lngText = locLng.trim();
+    const hasLatLng = latText !== '' || lngText !== '';
+    if (!hasLatLng) {
+      if (locAddress.trim()) {
+        await geocodeLocation();
+      } else {
+        setLocMsg('住所、または緯度と経度を入力してください。');
+      }
+      return;
+    }
+    if (!latText || !lngText) {
+      setLocMsg('緯度と経度は両方入力してください。');
+      return;
+    }
+    const lat = Number(latText);
+    const lng = Number(lngText);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      setLocMsg('緯度と経度は数値で入力してください。');
+      return;
+    }
+    setLocBusy(true); setLocMsg(''); setError('');
+    try {
+      const p = await api.patchPlace(placeId, {
+        address: locAddress.trim() || null,
+        lat,
+        lng,
+      });
+      setPlace((prev) => (prev ? { ...prev, ...p } : null));
+      setLocMsg('位置を更新しました。');
+      await onChanged?.();
+      await loadPlace();
+    } catch (err) {
+      setLocMsg(err instanceof Error ? err.message : '位置の更新に失敗しました');
+    } finally {
+      setLocBusy(false);
+    }
+  };
+
+  const geocodeLocation = async () => {
+    const address = locAddress.trim();
+    if (!address) {
+      setLocMsg('住所を入力してください。');
+      return;
+    }
+    setLocGeocodeBusy(true); setLocMsg(''); setError('');
+    try {
+      const p = await api.geocodePlace(placeId, { address });
+      setPlace((prev) => (prev ? { ...prev, ...p } : null));
+      setLocAddress(p.address ?? address);
+      setLocLat(p.lat == null ? '' : String(p.lat));
+      setLocLng(p.lng == null ? '' : String(p.lng));
+      setLocMsg('住所から緯度経度を取得しました。');
+      await onChanged?.();
+      const fresh = await loadPlace();
+      if (fresh) {
+        setLocAddress(fresh.address ?? address);
+        setLocLat(fresh.lat == null ? '' : String(fresh.lat));
+        setLocLng(fresh.lng == null ? '' : String(fresh.lng));
+      }
+    } catch (err) {
+      setLocMsg(err instanceof Error ? err.message : '住所から緯度経度を取得できませんでした');
+    } finally {
+      setLocGeocodeBusy(false);
+    }
+  };
+
   const removeFromTrip = async () => {
     if (!place) return;
     if (!window.confirm(`「${place.name}」をこの旅から外しますか? (場所ライブラリには残ります)`)) return;
-    try { await api.removeFromTrip(tripId, placeId); onChanged?.(); onClose(); }
+    try { await api.removeFromTrip(tripId, placeId); await onChanged?.(); onClose(); }
     catch (e) { setError(e instanceof Error ? e.message : '除外に失敗しました'); }
   };
 
   const remove = async () => {
     if (!window.confirm('この場所をライブラリから完全に削除しますか?')) return;
-    try { await api.deletePlace(placeId); onChanged?.(); onClose(); }
+    try { await api.deletePlace(placeId); await onChanged?.(); onClose(); }
     catch (e) { setError(e instanceof Error ? e.message : '削除に失敗しました'); }
   };
 
@@ -157,7 +244,38 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
               {place.lat != null && place.lng != null
                 ? <span className="chip">📍 {place.lat.toFixed(4)}, {place.lng.toFixed(4)}</span>
                 : <span className="chip" style={{ background: '#f3f3f1', color: 'var(--c-muted)' }}>位置なし</span>}
+              <button type="button" className="sm ghost" onClick={openLocationEditor}>
+                位置を補正する
+              </button>
             </div>
+            {locOpen && (
+              <form className="location-corrector foundation-form" onSubmit={saveLocation}>
+                <label>
+                  <span className="muted" style={{ fontSize: 12 }}>住所</span>
+                  <input type="text" value={locAddress} onChange={(e) => setLocAddress(e.target.value)} />
+                </label>
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <label style={{ flex: 1, minWidth: 120 }}>
+                    <span className="muted" style={{ fontSize: 12 }}>緯度</span>
+                    <input type="number" step="any" value={locLat} onChange={(e) => setLocLat(e.target.value)} />
+                  </label>
+                  <label style={{ flex: 1, minWidth: 120 }}>
+                    <span className="muted" style={{ fontSize: 12 }}>経度</span>
+                    <input type="number" step="any" value={locLng} onChange={(e) => setLocLng(e.target.value)} />
+                  </label>
+                </div>
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" className="sm ghost" disabled={locGeocodeBusy} onClick={() => void geocodeLocation()}>
+                    {locGeocodeBusy ? '取得中…' : '住所から取得'}
+                  </button>
+                  <button type="submit" className="sm" disabled={locBusy}>
+                    {locBusy ? '保存中…' : '位置を保存'}
+                  </button>
+                  <button type="button" className="sm ghost" onClick={() => setLocOpen(false)}>閉じる</button>
+                </div>
+                {locMsg && <div className="muted">{locMsg}</div>}
+              </form>
+            )}
           </div>
 
           {/* 説明 (サマリー) */}

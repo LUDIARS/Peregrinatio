@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { sql } from '../db/index.js';
 import { newId, nowIso } from '../lib/ids.js';
 import { pick, userOf } from '../lib/http.js';
+import { geocodeCached, GeocodeNotConfiguredError } from '../lib/geocode.js';
 import type { Place, TripPlace } from '../types.js';
 
 const app = new Hono();
@@ -42,6 +43,28 @@ app.patch('/api/places/:id', async (c) => {
     image_url=${m.image_url}, status=${m.status}, status_by=${statusBy}, updated_at=${now} WHERE id=${id}`;
   const [p] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
   return c.json(p);
+});
+
+/** POST /api/places/:id/geocode — 住所から緯度経度を取得し、場所に反映する。 */
+app.post('/api/places/:id/geocode', async (c) => {
+  const id = c.req.param('id');
+  const [cur] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
+  if (!cur) return c.json({ error: 'not found' }, 404);
+
+  const b = (await c.req.json().catch(() => ({}))) as { address?: string };
+  const address = (b.address ?? cur.address ?? '').trim();
+  if (!address) return c.json({ error: '住所を入力してください' }, 400);
+
+  try {
+    const loc = await geocodeCached(address);
+    if (!loc) return c.json({ error: '住所から場所を特定できませんでした (住所を見直してください)' }, 422);
+    await sql`UPDATE places SET address=${address}, lat=${loc.lat}, lng=${loc.lng}, updated_at=${nowIso()} WHERE id=${id}`;
+    const [updated] = (await sql`SELECT * FROM places WHERE id=${id}`) as Place[];
+    return c.json(updated);
+  } catch (e) {
+    if (e instanceof GeocodeNotConfiguredError) return c.json({ error: e.message }, 400);
+    throw e;
+  }
 });
 
 /** DELETE /api/places/:id — ライブラリから完全削除 (全旅の紐付け/画像/リンクも cascade)。 */
