@@ -4,6 +4,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { requestLogger } from './observability/request-log.js';
 
 // 純 DB CRUD (スパイン)
 import map from './routes/map.js';
@@ -28,14 +29,17 @@ import jobs from './routes/jobs.js';
 import reservation from './routes/reservation.js';
 import autosearch from './routes/autosearch.js';
 import gtfs from './routes/gtfs.js';
+import checkItems from './routes/check-items.js';
 
 /** API ルートだけを束ねた Hono アプリ (静的配信なし)。 */
 export function buildApiApp(): Hono {
   const app = new Hono();
+  // 全リクエストの所要時間/結果を計測して JSONL に記録 (最初に噛ませる)。
+  app.use('*', requestLogger());
   app.use('/api/*', cors());
   app.get('/healthz', (c) => c.json({ ok: true }));
 
-  for (const r of [map, trips, days, places, itinerary, crawl, links, search, images, routing, pdf, recommend, placeMedia, baseSummary, hotel, timetable, settings, jobs, reservation, autosearch, gtfs]) {
+  for (const r of [map, trips, days, places, itinerary, crawl, links, search, images, routing, pdf, recommend, placeMedia, baseSummary, hotel, timetable, settings, jobs, reservation, autosearch, gtfs, checkItems]) {
     app.route('/', r);
   }
   return app;

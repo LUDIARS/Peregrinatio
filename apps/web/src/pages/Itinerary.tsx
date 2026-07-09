@@ -5,7 +5,7 @@ import { getPrefs } from '../lib/prefs.js';
 import { gmapsDirUrl } from '../lib/gmaps.js';
 import { adjustOptionToTarget, hhmmToMin } from '../lib/transit-adjust.js';
 import type {
-  ItineraryItem, OriginKind, RouteLeg, RouteMode, Timetable, TimetableDeparture,
+  HomeLocation, ItineraryItem, OriginKind, RouteLeg, RouteMode, Timetable, TimetableDeparture,
   TransitOption, Trip, TripDay, TripPlace,
 } from '../types.js';
 
@@ -58,6 +58,7 @@ export function Itinerary() {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [days, setDays] = useState<TripDay[]>([]);
   const [places, setPlaces] = useState<TripPlace[]>([]);
+  const [home, setHome] = useState<HomeLocation | null>(null);
   const [itemsByDay, setItemsByDay] = useState<ItemsByDay>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -84,6 +85,9 @@ export function Itinerary() {
   // 時刻表 (移動の候補表示用) と、移動ピッカーを開いている day id。
   const [departureOpts, setDepartureOpts] = useState<DepartureOption[]>([]);
   const [movePickerDay, setMovePickerDay] = useState<string | null>(null);
+  const [moveFreeMode, setMoveFreeMode] = useState<RouteMode>(getPrefs().defaultRouteMode);
+  const [placePickerDay, setPlacePickerDay] = useState<string | null>(null);
+  const [placePickerQuery, setPlacePickerQuery] = useState('');
 
   // 公共交通の取り込み (暫定)。自動取得(ヘッドレス)を主、貼り付けを手動フォールバックに。
   const [fetchingLegId, setFetchingLegId] = useState<string | null>(null);
@@ -92,6 +96,7 @@ export function Itinerary() {
   const [optionsModal, setOptionsModal] = useState<{ dayId: string; leg: RouteLeg; options: TransitOption[] } | null>(null);
   const [optionBusy, setOptionBusy] = useState(false);
   const [targetArrive, setTargetArrive] = useState(''); // 目標到着時刻 'HH:MM' (逆算用)
+  const [freeMode, setFreeMode] = useState<RouteMode>('transit');
   const [pasteTarget, setPasteTarget] = useState<{ dayId: string; leg: RouteLeg } | null>(null);
   const [pasteText, setPasteText] = useState('');
   const [pasteBusy, setPasteBusy] = useState(false);
@@ -161,9 +166,13 @@ export function Itinerary() {
 
   const load = async () => {
     if (!tripId) return;
-    const detail = await api.getTrip(tripId);
+    const [detail, homeSetting] = await Promise.all([
+      api.getTrip(tripId),
+      api.getHome().catch(() => null),
+    ]);
     const sorted = [...detail.days].sort((a, b) => a.day_index - b.day_index);
     setTrip(detail.trip);
+    setHome(homeSetting);
     setOKind(detail.trip.origin_kind);
     setOAddr(detail.trip.origin_kind === 'meeting' ? detail.trip.origin_address ?? '' : '');
     setOLabel(detail.trip.origin_kind === 'meeting' ? detail.trip.origin_label ?? '' : '');
@@ -314,6 +323,7 @@ export function Itinerary() {
     try {
       const { options } = await api.transitFetch(leg.id);
       if (options.length === 0) { setLegMsg((m) => ({ ...m, [leg.id]: '経路候補が見つかりませんでした' })); return; }
+      setFreeMode(leg.mode);
       setTargetArrive(''); setOptionsModal({ dayId, leg, options });
     } catch (e) {
       // 自動取得失敗時は手動貼り付けへ誘導する。
@@ -330,6 +340,7 @@ export function Itinerary() {
     try {
       const { options } = await api.transitFromGmaps(pasteTarget.leg.id, text);
       if (options.length === 0) { setPasteMsg('経路候補が見つかりませんでした'); return; }
+      setFreeMode(pasteTarget.leg.mode);
       setTargetArrive(''); setOptionsModal({ dayId: pasteTarget.dayId, leg: pasteTarget.leg, options });
       setPasteTarget(null); setPasteText('');
     } catch (e) {
@@ -379,19 +390,62 @@ export function Itinerary() {
     catch (e) { setError(e instanceof Error ? e.message : '削除に失敗しました'); await load(); }
   };
 
-  const addPendingToDay = async (dayId: string) => {
-    if (!pendingPlaceId) return;
+  const selectFreeMode = async () => {
+    if (!optionsModal) return;
+    setOptionBusy(true);
+    try {
+      await setLegMode(optionsModal.dayId, optionsModal.leg, freeMode);
+      setOptionsModal(null);
+    } finally { setOptionBusy(false); }
+  };
+
+  const addPlaceToDay = async (dayId: string, placeId: string, opts?: { clearPending?: boolean }) => {
     setBusy(true); setError('');
     try {
-      const it = await api.createItem(dayId, { place_id: pendingPlaceId, kind: 'visit' });
+      const it = await api.createItem(dayId, { place_id: placeId, kind: 'visit' });
       const next = [...(itemsByDay[dayId] ?? []), it];
       setItemsByDay((m) => ({ ...m, [dayId]: next }));
       void recomputeRoute(dayId, next);
-      // 配置完了 → バナーを閉じる (param を外す)。
-      setParams({}, { replace: true });
+      setPlacePickerDay(null);
+      setPlacePickerQuery('');
+      if (opts?.clearPending) setParams({}, { replace: true });
     } catch (e) {
-      setError(e instanceof Error ? e.message : '予定への追加に失敗しました');
+      setError(e instanceof Error ? e.message : '場所の追加に失敗しました');
     } finally { setBusy(false); }
+  };
+
+  const addHomeToDay = async (dayId: string) => {
+    if (!tripId) return;
+    if (!home) { setError('自宅が未設定です。設定ページで自宅を登録してください。'); return; }
+    setBusy(true); setError('');
+    try {
+      let homePlace = places.find((p) => p.name === '自宅' && p.address === home.address);
+      if (!homePlace) {
+        homePlace = await api.addPlaceToTrip(tripId, {
+          name: '自宅',
+          address: home.address,
+          lat: home.lat,
+          lng: home.lng,
+          category: '自宅',
+          status: 'none',
+        });
+        setPlaces((prev) => (prev.some((p) => p.id === homePlace!.id) ? prev : [homePlace!, ...prev]));
+      }
+
+      const it = await api.createItem(dayId, { place_id: homePlace.id, kind: 'visit' });
+      const next = [...(itemsByDay[dayId] ?? []), it];
+      setItemsByDay((m) => ({ ...m, [dayId]: next }));
+      void recomputeRoute(dayId, next);
+      setPlacePickerDay(null);
+      setPlacePickerQuery('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '自宅の追加に失敗しました');
+    } finally { setBusy(false); }
+  };
+
+  const addPendingToDay = async (dayId: string) => {
+    if (!pendingPlaceId) return;
+    await addPlaceToDay(dayId, pendingPlaceId, { clearPending: true });
   };
 
   /** 日付のインライン編集 (日程はしおりで調整可能)。 */
@@ -439,6 +493,18 @@ export function Itinerary() {
       .filter((t): t is string => !!t)
       .sort();
     return times.at(-1) ?? '';
+  };
+
+  const addFreeMove = async (dayId: string) => {
+    const modeLabel = MODES.find((m) => m.value === moveFreeMode)?.label ?? moveFreeMode;
+    setBusy(true); setError('');
+    try {
+      const it = await api.createItem(dayId, { kind: 'move', note: `自由選択（${modeLabel}）` });
+      setItemsByDay((m) => ({ ...m, [dayId]: [...(m[dayId] ?? []), it] }));
+      setMovePickerDay(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '移動の追加に失敗しました');
+    } finally { setBusy(false); }
   };
 
   /** その日の算出済み経路区間から移動カードを自動サジェストして作る (時刻表が無くても使える)。 */
@@ -657,17 +723,22 @@ export function Itinerary() {
                   {/* 日付はインライン編集可 (日程はしおりで調整可能)。 */}
                   <input type="date" className="kanban-day-date" value={d.date ?? ''}
                     onChange={(e) => void setDayDateValue(d.id, e.target.value)} aria-label="日付" />
-                  {pendingPlaceId && pendingPlace ? (
-                    <button type="button" className="sm" style={{ marginTop: 6 }}
-                      onClick={() => void addPendingToDay(d.id)} disabled={busy}>
-                      ＋ ここに追加
+                  <div className="itinerary-day-actions">
+                    {pendingPlaceId && pendingPlace && (
+                      <button type="button" className="sm"
+                        onClick={() => void addPendingToDay(d.id)} disabled={busy}>
+                        ＋ ここに追加
+                      </button>
+                    )}
+                    <button type="button" className="sm ghost"
+                      onClick={() => { setPlacePickerDay(d.id); setPlacePickerQuery(''); }} disabled={busy}>
+                      📍 場所を追加
                     </button>
-                  ) : (
-                    <button type="button" className="sm ghost" style={{ marginTop: 6 }}
-                      onClick={() => setMovePickerDay(d.id)} disabled={busy}>
+                    <button type="button" className="sm ghost"
+                      onClick={() => { setMoveFreeMode(modeByDay[d.id] ?? getPrefs().defaultRouteMode); setMovePickerDay(d.id); }} disabled={busy}>
                       🚃 移動を追加
                     </button>
-                  )}
+                  </div>
                 </header>
 
                 <div className="kanban-cards">
@@ -756,6 +827,76 @@ export function Itinerary() {
         </div>
       )}
 
+      {/* 場所ピッカー: 旅に追加済みの場所を、この日の訪問カードとして配置する。 */}
+      {placePickerDay && (() => {
+        const q = placePickerQuery.trim().toLowerCase();
+        const isHomePlace = (p: TripPlace) => !!home && p.name === '自宅' && p.address === home.address;
+        const homeMatches = !!home && (!q || [home.address, home.station, '自宅']
+          .filter(Boolean)
+          .some((v) => v!.toLowerCase().includes(q)));
+        const candidates = places
+          .filter((p) => p.postponed !== 1)
+          .filter((p) => !isHomePlace(p))
+          .filter((p) => {
+            if (!q) return true;
+            return [p.name, p.category, p.address].filter(Boolean)
+              .some((v) => v!.toLowerCase().includes(q));
+          });
+        return (
+          <div className="modal-backdrop" onClick={() => setPlacePickerDay(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="spread">
+                <strong>📍 場所を追加</strong>
+                <button type="button" className="sm ghost" onClick={() => setPlacePickerDay(null)}>閉じる</button>
+              </div>
+              <input
+                type="search"
+                value={placePickerQuery}
+                onChange={(e) => setPlacePickerQuery(e.target.value)}
+                placeholder="場所名・カテゴリ・住所で検索"
+                aria-label="追加する場所を検索"
+                style={{ margin: '8px 0 10px' }}
+              />
+              {!home && places.length === 0 && (
+                <p className="muted">この旅にはまだ場所がありません。マップや場所一覧から先に場所を追加してください。</p>
+              )}
+              {home && !homeMatches && candidates.length === 0 && (
+                <p className="muted">一致する場所がありません。</p>
+              )}
+              {!home && places.length > 0 && candidates.length === 0 && (
+                <p className="muted">一致する場所がありません。</p>
+              )}
+              <div className="stack">
+                {homeMatches && (
+                  <button type="button" className="card card-link itinerary-place-option"
+                    onClick={() => void addHomeToDay(placePickerDay)} disabled={busy}>
+                    <span className="itinerary-place-icon" aria-hidden="true">🏠</span>
+                    <span>
+                      <strong>自宅</strong>
+                      <span className="muted">
+                        {[home.station ? `最寄り駅: ${home.station}` : null, home.address].filter(Boolean).join(' ・ ')}
+                      </span>
+                    </span>
+                  </button>
+                )}
+                {candidates.map((p) => (
+                  <button key={p.id} type="button" className="card card-link itinerary-place-option"
+                    onClick={() => void addPlaceToDay(placePickerDay, p.id)} disabled={busy}>
+                    {p.image_url && <img src={assetUrl(p.image_url)} alt="" />}
+                    <span>
+                      <strong>{p.name}</strong>
+                      <span className="muted">
+                        {[p.is_base === 1 ? '拠点' : null, p.category, p.address].filter(Boolean).join(' ・ ')}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* 移動ピッカー: 経路からの自動サジェスト + 登録済み時刻表の便。 */}
       {movePickerDay && (() => {
         const ref = lastTimeOfDay(movePickerDay);
@@ -777,6 +918,21 @@ export function Itinerary() {
                 <p className="muted">この日の経路がまだありません（場所を2つ以上入れて移動手段を選ぶと算出されます）。</p>
               )}
               <div className="stack">
+                <div className="card itinerary-free-mode">
+                  <div>
+                    <strong>自由選択</strong>
+                    <p className="muted">経路候補にない移動を、交通機関だけ選んで追加します。</p>
+                  </div>
+                  <div className="row">
+                    <select className="kanban-connector-mode" value={moveFreeMode}
+                      onChange={(e) => setMoveFreeMode(e.target.value as RouteMode)} aria-label="自由選択の交通機関">
+                      {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                    </select>
+                    <button type="button" className="sm" onClick={() => void addFreeMove(movePickerDay)} disabled={busy}>
+                      この交通機関で追加
+                    </button>
+                  </div>
+                </div>
                 {suggestLegs.map((leg) => (
                   <button key={`leg-${leg.id}`} type="button" className="card card-link"
                     onClick={() => void addMoveFromLeg(movePickerDay, leg)} disabled={busy}>
@@ -875,6 +1031,21 @@ export function Itinerary() {
               <p className="muted" style={{ margin: '4px 0 6px' }}>
                 {endpointName(leg.from_place_id, leg.from_label)} → {endpointName(leg.to_place_id, leg.to_label)}。どのパターンで行くか選んでください。
               </p>
+              <div className="card itinerary-free-mode">
+                <div>
+                  <strong>自由選択</strong>
+                  <p className="muted">自動候補を使わず、この区間の交通機関だけを設定します。</p>
+                </div>
+                <div className="row">
+                  <select className="kanban-connector-mode" value={freeMode}
+                    onChange={(e) => setFreeMode(e.target.value as RouteMode)} aria-label="自由選択の交通機関">
+                    {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                  <button type="button" className="sm" onClick={() => void selectFreeMode()} disabled={optionBusy}>
+                    この交通機関にする
+                  </button>
+                </div>
+              </div>
               {/* 目標到着時刻からの逆算 (運行間隔ベース)。 */}
               <div className="foundation-form" style={{ margin: '0 0 8px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
