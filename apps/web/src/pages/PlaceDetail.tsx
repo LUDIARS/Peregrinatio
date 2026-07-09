@@ -30,6 +30,9 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const [error, setError] = useState('');
   const [hotelBusy, setHotelBusy] = useState(false);
   const [hotelMsg, setHotelMsg] = useState('');
+  const [memoText, setMemoText] = useState('');
+  const [memoBusy, setMemoBusy] = useState(false);
+  const [memoMsg, setMemoMsg] = useState('');
   // 自動検索 (情報の無い場所を Google で補完)。
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoMsg, setAutoMsg] = useState('');
@@ -46,11 +49,12 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   // ページ内で開く。
   const [lightbox, setLightbox] = useState<string | null>(null);
 
-  const loadPlace = async (): Promise<TripPlace | null> => {
+  const loadPlace = async (syncMemo = true): Promise<TripPlace | null> => {
     const detail = await api.getTrip(tripId);
     const p = detail.places.find((x) => x.id === placeId) ?? null;
     if (!p) { setError('この場所が見つかりません'); return null; }
     setPlace(p);
+    if (syncMemo) setMemoText(p.notes ?? '');
     return p;
   };
   const loadLinks = async () => { setLinks(await api.listLinks(placeId)); };
@@ -68,7 +72,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const setStatus = async (status: PlaceStatus) => {
     try {
       const p = await api.patchPlace(placeId, { status });
-      setPlace((prev) => (prev ? { ...prev, ...p } : null)); await onChanged?.(); await loadPlace();
+      setPlace((prev) => (prev ? { ...prev, ...p } : null)); await onChanged?.(); await loadPlace(false);
     } catch (e) { setError(e instanceof Error ? e.message : 'ステータス更新に失敗しました'); }
   };
 
@@ -76,7 +80,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     if (!place) return;
     try {
       const p = await api.setTripBase(tripId, placeId, place.is_base === 1 ? 0 : 1);
-      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace();
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace(false);
     } catch (e) { setError(e instanceof Error ? e.message : '拠点の更新に失敗しました'); }
   };
 
@@ -85,7 +89,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     if (!place) return;
     try {
       const p = await api.setPostponed(tripId, placeId, place.postponed !== 1);
-      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace();
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace(false);
     } catch (e) { setError(e instanceof Error ? e.message : '「また今度」の更新に失敗しました'); }
   };
 
@@ -93,7 +97,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const saveHotelTime = async (field: 'checkin_time' | 'checkout_time', value: string) => {
     try {
       const p = await api.patchTripPlace(tripId, placeId, { [field]: value || null });
-      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace();
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace(false);
     } catch (e) { setHotelMsg(e instanceof Error ? e.message : '時刻の保存に失敗しました'); }
   };
 
@@ -102,7 +106,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     setHotelBusy(true); setHotelMsg('');
     try {
       const p = await api.fetchHotelTimes(tripId, placeId);
-      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace();
+      setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace(false);
       setHotelMsg('チェックイン/アウト時刻を取得しました。必要なら調整してください。');
     } catch (e) {
       setHotelMsg(e instanceof Error ? e.message : '自動取得に失敗しました（手入力で設定してください）');
@@ -124,10 +128,26 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
         setAutoMsg('公式情報を取り込みました。');
       }
       await onChanged?.();
-      await loadPlace();
+      await loadPlace(false);
     } catch (e) {
       setAutoMsg(e instanceof Error ? e.message : '自動検索に失敗しました');
     } finally { setAutoBusy(false); }
+  };
+
+  const saveMemo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMemoBusy(true); setMemoMsg(''); setError('');
+    try {
+      const p = await api.patchPlace(placeId, { notes: memoText.trim() || null });
+      setPlace((prev) => (prev ? { ...prev, ...p } : null));
+      setMemoText(p.notes ?? '');
+      setMemoMsg('メモを保存しました。');
+      await onChanged?.();
+    } catch (err) {
+      setMemoMsg(err instanceof Error ? err.message : 'メモの保存に失敗しました');
+    } finally {
+      setMemoBusy(false);
+    }
   };
 
   const openLocationEditor = () => {
@@ -172,7 +192,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
       setPlace((prev) => (prev ? { ...prev, ...p } : null));
       setLocMsg('位置を更新しました。');
       await onChanged?.();
-      await loadPlace();
+      await loadPlace(false);
     } catch (err) {
       setLocMsg(err instanceof Error ? err.message : '位置の更新に失敗しました');
     } finally {
@@ -195,7 +215,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
       setLocLng(p.lng == null ? '' : String(p.lng));
       setLocMsg('住所から緯度経度を取得しました。');
       await onChanged?.();
-      const fresh = await loadPlace();
+      const fresh = await loadPlace(false);
       if (fresh) {
         setLocAddress(fresh.address ?? address);
         setLocLat(fresh.lat == null ? '' : String(fresh.lat));
@@ -293,6 +313,27 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
               </button>
             )}
             {autoMsg && <div className="muted" style={{ marginTop: 4 }}>{autoMsg}</div>}
+          </div>
+
+          <div className="place-section">
+            <h3 className="place-section-title">メモ</h3>
+            <form className="foundation-form" onSubmit={saveMemo}>
+              <textarea
+                rows={4}
+                value={memoText}
+                onChange={(e) => {
+                  setMemoText(e.target.value);
+                  if (memoMsg) setMemoMsg('');
+                }}
+                placeholder="営業時間の注意、予約番号、現地で確認したいことなど"
+              />
+              <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button type="submit" className="sm" disabled={memoBusy || memoText === (place.notes ?? '')}>
+                  {memoBusy ? '保存中…' : 'メモを保存'}
+                </button>
+                {memoMsg && <span className="muted">{memoMsg}</span>}
+              </div>
+            </form>
           </div>
 
           {/* 情報元 (出典 URL / 資料リンク) */}

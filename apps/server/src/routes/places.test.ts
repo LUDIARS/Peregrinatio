@@ -157,6 +157,29 @@ describe('places library + trip membership', () => {
     expect(q[0]!.name).toBe('美術館');
   });
 
+  it('場所メモを保存して旅の場所詳細で返せる', async () => {
+    const trip = await createTrip('旅A');
+    const created = await json<{ id: string }>(
+      await app.request(`/api/trips/${trip.id}/places`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'メモ対象の場所' }),
+      }),
+    );
+
+    const patched = await json<{ notes: string | null }>(
+      await app.request(`/api/places/${created.id}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ notes: '紙のチケットを持っていく' }),
+      }),
+    );
+    expect(patched.notes).toBe('紙のチケットを持っていく');
+
+    const list = await json<{ id: string; notes: string | null }[]>(
+      await app.request(`/api/trips/${trip.id}/places`),
+    );
+    expect(list.find((p) => p.id === created.id)?.notes).toBe('紙のチケットを持っていく');
+  });
+
   it('is_base を切り替えられる (メンバーシップ単位)', async () => {
     const trip = await createTrip('旅A');
     const created = await json<{ id: string }>(
