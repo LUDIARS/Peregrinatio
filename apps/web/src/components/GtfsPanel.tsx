@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 import { GtfsTimetable } from './GtfsTimetable.js';
 import { RoutePreviewSection } from './transit/RoutePreviewSection.js';
-import type { GtfsFeed, RouteSummary, ServiceDayKind, TripDay } from '../types.js';
+import { transitRouteStyle } from '../lib/maps.js';
+import type { GtfsFeed, RouteSummary, SelectedGtfsRoute, ServiceDayKind, TripDay } from '../types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -57,15 +58,22 @@ function dayKindDate(kind: DayKind, route: RouteSummary | null, tripDays: TripDa
   return tripDate ?? nextMatchingDate(kind === 'holiday' ? 'weekend' : kind);
 }
 
-function routeIcon(routeType: number | null): string {
-  return routeType != null && routeType !== 3 ? '🚆' : '🚌';
+function routeIcon(route: Pick<RouteSummary, 'route_type' | 'route_label' | 'feed_name'>): string {
+  const style = transitRouteStyle({ routeType: route.route_type, routeLabel: route.route_label, feedName: route.feed_name });
+  if (style.kind === 'shinkansen') return '🚄';
+  if (style.kind === 'rail') return '🚆';
+  if (style.kind === 'shuttle_bus') return '🚌';
+  return '🚌';
 }
 
 /**
  * 路線パネル。
  * データ形式名は出さず、ユーザ操作を「路線一覧」と「経路取り込み」に集約する。
  */
-export function GtfsPanel({ tripId, map }: { tripId: string; map?: any }) {
+export function GtfsPanel(
+  { tripId, map, selectedRoute, onSelectedRouteChange }:
+  { tripId: string; map?: any; selectedRoute?: SelectedGtfsRoute | null; onSelectedRouteChange?: (route: SelectedGtfsRoute | null) => void },
+) {
   const [routes, setRoutes] = useState<RouteSummary[]>([]);
   const [feeds, setFeeds] = useState<GtfsFeed[]>([]);
   const [tripDays, setTripDays] = useState<TripDay[]>([]);
@@ -83,7 +91,10 @@ export function GtfsPanel({ tripId, map }: { tripId: string; map?: any }) {
     setRoutes(routeRows);
     setFeeds(feedRows);
     setSelected((cur) => {
-      const next = cur ? routeRows.find((r) => r.feed_id === cur.feed_id && r.route_id === cur.route_id) : null;
+      const parentSelected = selectedRoute
+        ? routeRows.find((r) => r.feed_id === selectedRoute.feed_id && r.route_id === selectedRoute.route_id)
+        : null;
+      const next = parentSelected ?? (cur ? routeRows.find((r) => r.feed_id === cur.feed_id && r.route_id === cur.route_id) : null);
       return next ?? routeRows[0] ?? null;
     });
   };
@@ -101,7 +112,27 @@ export function GtfsPanel({ tripId, map }: { tripId: string; map?: any }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId]);
 
+  useEffect(() => {
+    if (!selectedRoute || routes.length === 0) return;
+    const next = routes.find((r) => r.feed_id === selectedRoute.feed_id && r.route_id === selectedRoute.route_id);
+    if (next) setSelected(next);
+  }, [selectedRoute, routes]);
+
   const selectedDate = useMemo(() => dayKindDate(dayKind, selected, tripDays), [dayKind, selected, tripDays]);
+  useEffect(() => {
+    if (!selected) {
+      onSelectedRouteChange?.(null);
+      return;
+    }
+    onSelectedRouteChange?.({
+      feed_id: selected.feed_id,
+      route_id: selected.route_id,
+      route_label: selected.route_label,
+      route_type: selected.route_type,
+      date: selectedDate,
+    });
+  }, [selected, selectedDate, onSelectedRouteChange]);
+
   const filteredRoutes = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return routes;
@@ -127,7 +158,10 @@ export function GtfsPanel({ tripId, map }: { tripId: string; map?: any }) {
     try {
       await api.gtfsDeleteFeed(id);
       await load();
-      if (selected?.feed_id === id) setSelected(null);
+      if (selected?.feed_id === id) {
+        setSelected(null);
+        onSelectedRouteChange?.(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : '削除に失敗しました');
     }
@@ -173,7 +207,7 @@ export function GtfsPanel({ tripId, map }: { tripId: string; map?: any }) {
                 onClick={() => setSelected(r)}
               >
                 <span className="route-row-main">
-                  <strong>{routeIcon(r.route_type)} {r.route_label}</strong>
+                  <strong>{routeIcon(r)} {r.route_label}</strong>
                   <span className="muted">{r.feed_name}</span>
                 </span>
                 <span className={`chip ${r.limited ? 'limited-chip' : ''}`}>
@@ -187,11 +221,11 @@ export function GtfsPanel({ tripId, map }: { tripId: string; map?: any }) {
         {selected && (
           <div className="route-detail">
             <div className="spread">
-              <strong>{routeIcon(selected.route_type)} {selected.route_label}</strong>
+              <strong>{routeIcon(selected)} {selected.route_label}</strong>
               {selected.limited && <span className="chip limited-chip">限定ダイヤあり</span>}
             </div>
             <p className="muted" style={{ margin: '2px 0 8px' }}>
-              表示ダイヤ: {DAY_KIND_LABEL[dayKind]} / {selectedDate.replaceAll('-', '/')}
+              表示ダイヤ: {DAY_KIND_LABEL[dayKind]} / {selectedDate.replaceAll('-', '/')} ・ 地図に常時表示
             </p>
             <GtfsTimetable
               feedId={selected.feed_id}
@@ -199,7 +233,7 @@ export function GtfsPanel({ tripId, map }: { tripId: string; map?: any }) {
               routeLabel={selected.route_label}
               routeType={selected.route_type}
               date={selectedDate}
-              map={map}
+              showMap={!map}
               compact
             />
           </div>

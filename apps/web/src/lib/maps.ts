@@ -19,7 +19,7 @@ export interface TransitRouteStyleInput {
 }
 
 export interface TransitRouteStyle {
-  kind: 'bus' | 'shinkansen' | 'rail';
+  kind: 'bus' | 'shuttle_bus' | 'shinkansen' | 'rail';
   strokeColor: string;
   markerColor: string;
   labelColor: string;
@@ -33,13 +33,43 @@ export function transitRouteStyle(input: TransitRouteStyleInput): TransitRouteSt
     input.feedName,
   ].filter(Boolean).join(' ');
   const isShinkansen = /\bshinkansen\b/i.test(text) || text.includes('\u65b0\u5e79\u7dda');
+  const isShuttleBus = text.includes('\u30b7\u30e3\u30c8\u30eb') || /\bshuttle\b/i.test(text);
   if (isShinkansen) {
     return { kind: 'shinkansen', strokeColor: '#facc15', markerColor: '#eab308', labelColor: '#1f2937' };
+  }
+  if (isShuttleBus) {
+    return { kind: 'shuttle_bus', strokeColor: '#22c55e', markerColor: '#16a34a', labelColor: '#fff' };
   }
   if (input.routeType === 3) {
     return { kind: 'bus', strokeColor: '#16a34a', markerColor: '#15803d', labelColor: '#fff' };
   }
-  return { kind: 'rail', strokeColor: '#0e7c86', markerColor: '#0e7c86', labelColor: '#fff' };
+  return { kind: 'rail', strokeColor: '#2563eb', markerColor: '#1d4ed8', labelColor: '#fff' };
+}
+
+export const UNCATEGORIZED_PLACE_TYPE = '\u672a\u5206\u985e';
+
+const PLACE_TYPE_COLORS = [
+  '#0e7c86',
+  '#7c3aed',
+  '#d97706',
+  '#059669',
+  '#dc2626',
+  '#2563eb',
+  '#c026d3',
+  '#4d7c0f',
+  '#b45309',
+  '#be123c',
+];
+
+export function placeTypeLabel(category: string | null | undefined): string {
+  const label = category?.trim();
+  return label || UNCATEGORIZED_PLACE_TYPE;
+}
+
+export function placeTypeColor(type: string): string {
+  let hash = 0;
+  for (const ch of type) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return PLACE_TYPE_COLORS[hash % PLACE_TYPE_COLORS.length]!;
 }
 
 let legacyMapsCacheCleared = false;

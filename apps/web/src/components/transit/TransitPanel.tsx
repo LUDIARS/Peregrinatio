@@ -5,7 +5,7 @@ import { ReservationSuggests } from './ReservationSuggests.js';
 import { TimetableSection } from './TimetableSection.js';
 import { ServiceAlertsSection } from './ServiceAlertsSection.js';
 import type { TransitCfg } from './ProviderPicker.js';
-import type { ReservationSuggestion, ServiceAlert, Timetable, TimetableDeparture } from '../../types.js';
+import type { ReservationSuggestion, SelectedGtfsRoute, ServiceAlert, Timetable, TimetableDeparture } from '../../types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -15,7 +15,10 @@ import type { ReservationSuggestion, ServiceAlert, Timetable, TimetableDeparture
  * GTFS 路線の停留所・順路は `map` (メインの Google 地図) に直接描画し、
  * 地図を見ながら時刻表を確認できるようにする。
  */
-export function TransitPanel({ tripId, map }: { tripId: string; map?: any }) {
+export function TransitPanel(
+  { tripId, map, selectedRoute, onSelectedRouteChange }:
+  { tripId: string; map?: any; selectedRoute?: SelectedGtfsRoute | null; onSelectedRouteChange?: (route: SelectedGtfsRoute | null) => void },
+) {
   const [timetables, setTimetables] = useState<Timetable[]>([]);
   const [depByTt, setDepByTt] = useState<Record<string, TimetableDeparture[]>>({});
   const [alerts, setAlerts] = useState<ServiceAlert[]>([]);
@@ -59,7 +62,12 @@ export function TransitPanel({ tripId, map }: { tripId: string; map?: any }) {
       {error && <div className="card error">⚠ {error}</div>}
       {info && <div className="card">{info}</div>}
 
-      <GtfsPanel tripId={tripId} map={map} />
+      <GtfsPanel
+        tripId={tripId}
+        map={map}
+        selectedRoute={selectedRoute}
+        onSelectedRouteChange={onSelectedRouteChange}
+      />
 
       {/* 予約サジェスト (新幹線/飛行機) */}
       <ReservationSuggests suggests={suggests} origin={suggestOrigin} />

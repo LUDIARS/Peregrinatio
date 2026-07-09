@@ -12,8 +12,18 @@ import type { GtfsTimetablePattern, GtfsTimetableStop } from '../types.js';
  * 渡さなければ従来どおり専用のミニ地図を持つ。
  */
 export function GtfsTimetable(
-  { feedId, routeId, routeLabel, routeType, date, map: externalMap, compact = false }:
-  { feedId: string; routeId: string; routeLabel: string; routeType?: number | null; date: string; map?: any; compact?: boolean },
+  { feedId, routeId, routeLabel, routeType, date, map: externalMap, compact = false, mapOnly = false, showMap = true }:
+  {
+    feedId: string;
+    routeId: string;
+    routeLabel: string;
+    routeType?: number | null;
+    date: string;
+    map?: any;
+    compact?: boolean;
+    mapOnly?: boolean;
+    showMap?: boolean;
+  },
 ) {
   const [patterns, setPatterns] = useState<GtfsTimetablePattern[]>([]);
   const [allStops, setAllStops] = useState<GtfsTimetableStop[]>([]);
@@ -57,6 +67,7 @@ export function GtfsTimetable(
       try {
         let target: any = externalMap ?? null;
         if (!target) {
+          if (!showMap) return;
           if (!mapHost.current) return;
           const cfg = await api.mapConfig();
           if (cancelled || !cfg.enabled || !cfg.apiKey || !mapHost.current) return;
@@ -126,6 +137,8 @@ export function GtfsTimetable(
   const firstStop = pat?.stops[0] ?? null;
   const lastStop = pat && pat.stops.length > 0 ? pat.stops[pat.stops.length - 1]! : null;
 
+  if (mapOnly) return null;
+
   return (
     <div className={`gtfs-tt${compact ? ' compact' : ''}`}>
       <div className="spread" style={{ alignItems: 'baseline' }}>
@@ -162,8 +175,8 @@ export function GtfsTimetable(
       )}
 
       {/* 地図: 外部地図 (メイン地図) 使用時は専用ミニ地図を出さない。 */}
-      {!externalMap && <div ref={mapHost} className="gtfs-tt-map" />}
-      {externalMap && (
+      {showMap && !externalMap && <div ref={mapHost} className="gtfs-tt-map" />}
+      {showMap && externalMap && (
         <p className="muted" style={{ fontSize: 11, margin: '6px 0' }}>
           🗺 停留所と順路はメインの地図に表示しています。
         </p>
