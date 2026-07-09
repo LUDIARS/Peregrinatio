@@ -9,8 +9,11 @@ import { runMigrations } from './db/migrate.js';
 import { buildApiApp } from './app.js';
 import { startBaseSummaryQueue } from './base-summary/queue.js';
 import { startJobQueue } from './jobs/queue.js';
+import { initVestigium, shutdownVestigium } from './observability/vestigium.js';
 
 async function main() {
+  // 横断ログを最初に立ち上げる (以降の console.* も JSONL に流れる)。
+  initVestigium();
   await hydrateSecrets();
   initSql();
   await runMigrations();
@@ -57,8 +60,10 @@ async function main() {
   // 取り込みジョブ (画像解析/クロール) の順次処理キューを開始。
   if (config.jobs.enabled) startJobQueue();
 
-  // 終了シグナルで WAL をチェックポイントして安全に閉じる (取りこぼし防止)。
-  const shutdown = () => { void sql.end().finally(() => process.exit(0)); };
+  // 終了シグナルで WAL をチェックポイントし、ログ writer を flush してから閉じる。
+  const shutdown = () => {
+    void shutdownVestigium().finally(() => sql.end().finally(() => process.exit(0)));
+  };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }

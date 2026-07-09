@@ -26,6 +26,7 @@ export function TimetableSection({
   const [ttLine, setTtLine] = useState('');
   const [ttFrom, setTtFrom] = useState('');
   const [ttTo, setTtTo] = useState('');
+  const [busBusy, setBusBusy] = useState(false);
 
   const addTimetable = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,9 +47,49 @@ export function TimetableSection({
     catch (e) { onError(e instanceof Error ? e.message : '削除に失敗しました'); }
   };
 
+  const seedTohokuShinkansen = async () => {
+    onError(''); onInfo('');
+    try {
+      const r = await api.seedTohokuShinkansen(tripId);
+      onInfo(`東北新幹線 なすの（東京〜那須塩原）を用意しました（追加 ${r.added} 件）`);
+      await onReload();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : '東北新幹線の時刻表を用意できませんでした');
+    }
+  };
+
+  const suggestBusesForShinkansen = async () => {
+    setBusBusy(true); onError(''); onInfo('');
+    try {
+      const r = await api.suggestBusesForTohokuShinkansen(tripId);
+      onInfo(`新幹線に接続するバス候補を検索しました（行き ${r.outbound.length} 件 / 帰り ${r.inbound.length} 件、追加 ${r.added} 件）`);
+      await onReload();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : '新幹線に対応するバス候補を検索できませんでした');
+    } finally {
+      setBusBusy(false);
+    }
+  };
+
   return (
     <>
       <h3>時刻表</h3>
+      <div className="card transit-preset">
+        <div>
+          <strong>東北新幹線 なすの 東京〜那須塩原</strong>
+          <p className="muted" style={{ margin: '2px 0 0' }}>
+            JR東日本 PDF「東北新幹線 時刻表（3/19〜）」を元に、下り/上りをまとめて登録します。
+          </p>
+        </div>
+        <div className="row" style={{ gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button type="button" className="sm" onClick={() => void seedTohokuShinkansen()}>
+            用意する
+          </button>
+          <button type="button" className="sm ghost" disabled={busBusy} onClick={() => void suggestBusesForShinkansen()}>
+            {busBusy ? '検索中…' : '対応バスを検索'}
+          </button>
+        </div>
+      </div>
       <form className="card foundation-form" onSubmit={addTimetable}>
         <div className="row">
           <select value={ttKind} onChange={(e) => setTtKind(e.target.value as TimetableKind)}>
@@ -164,10 +205,13 @@ function TimetableCard({
             {departures.map((d) => (
               <div key={d.id} className="spread tt-dep">
                 <span>
-                  <strong>{d.depart_time ?? '—'}</strong>
-                  {d.arrive_time ? ` → ${d.arrive_time}` : ''}
-                  {d.train_name ? ` ｜ ${d.train_name}` : ''}
-                  {d.fare_text ? ` ｜ ${d.fare_text}` : ''}
+                  <span>
+                    <strong>{d.depart_time ?? '—'}</strong>
+                    {d.arrive_time ? ` → ${d.arrive_time}` : ''}
+                    {d.train_name ? ` ｜ ${d.train_name}` : ''}
+                    {d.fare_text ? ` ｜ ${d.fare_text}` : ''}
+                  </span>
+                  {d.note ? <small className="muted tt-note">{d.note}</small> : null}
                 </span>
                 <button type="button" className="sm danger" onClick={() => void removeDeparture(d.id)}>🗑</button>
               </div>

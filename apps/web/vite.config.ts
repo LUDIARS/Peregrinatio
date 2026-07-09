@@ -22,12 +22,12 @@ export default defineConfig({
         runtimeCaching: [
           {
             // Google Maps の JS / タイル / 静的アセット (cross-origin = opaque を許可)。
-            urlPattern: ({ url }) =>
-              /(\bmaps\.googleapis\.com|\bmaps\.gstatic\.com|\bkhms\d*\.googleapis\.com|\.ggpht\.com)/.test(url.hostname),
+            // Uploads cache. Google Maps is intentionally not matched by this SW.
+            urlPattern: ({ url }) => url.pathname.startsWith('/uploads/'),
             handler: 'CacheFirst',
             options: {
-              cacheName: 'google-maps',
-              expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheName: 'pe-uploads',
+              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

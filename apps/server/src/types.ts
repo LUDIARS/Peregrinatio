@@ -181,6 +181,24 @@ export interface ServiceAlert {
   created_at: string;
 }
 
+export type TripCheckListType = 'packing' | 'todo';
+export type TripCheckStatus = 'todo' | 'doing' | 'done';
+
+export interface TripCheckItem {
+  id: string;
+  trip_id: string;
+  list_type: TripCheckListType;
+  title: string;
+  details: string | null;
+  status: TripCheckStatus;
+  quantity: number | null;
+  category: string | null;
+  due_at: string | null;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
 /** 取り込みジョブの種別と状態。 */
 export type PlaceJobKind = 'image' | 'crawl';
 export type PlaceJobStatus = 'pending' | 'processing' | 'done' | 'needs_info' | 'failed';

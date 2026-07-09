@@ -23,6 +23,10 @@ export interface GtfsDeparture {
 
 const WEEKDAY_COL = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
+function placeholders(values: readonly unknown[]): string {
+  return values.map(() => '?').join(',');
+}
+
 export interface GtfsRouteRow {
   route_id: string;
   short_name: string | null;
@@ -186,6 +190,161 @@ async function activeServiceIds(feedId: string, date: string, weekday: number): 
   return set;
 }
 
+export interface GtfsConnection {
+  feed_id: string;
+  feed_name: string;
+  trip_id: string;
+  route_name: string | null;
+  headsign: string | null;
+  route_type: number | null;
+  origin_stop_id: string;
+  origin_stop_name: string | null;
+  origin_lat: number | null;
+  origin_lng: number | null;
+  dest_stop_id: string;
+  dest_stop_name: string | null;
+  dest_lat: number | null;
+  dest_lng: number | null;
+  departure_time: string;
+  arrival_time: string;
+  travel_min: number | null;
+}
+
+function timeToMinutes(time: string | null): number | null {
+  if (!time) return null;
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(time);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function connectionSortKey(row: GtfsConnection): number {
+  return timeToMinutes(row.departure_time) ?? 99_999;
+}
+
+/**
+ * GTFS の同一便で origin 停留所群から dest 停留所群へ移動できる候補を返す。
+ * route_type=3(バス)を優先し、route_type が欠けているフィードは取りこぼさない。
+ */
+export async function findStopConnections(
+  feedId: string,
+  originStopIds: readonly string[],
+  destStopIds: readonly string[],
+  date: string,
+  opts: {
+    departureAfter?: string;
+    departureBefore?: string;
+    arrivalBefore?: string;
+    routeTypes?: readonly number[];
+    limit?: number;
+  } = {},
+): Promise<GtfsConnection[]> {
+  const origins = [...new Set(originStopIds)].filter(Boolean);
+  const dests = [...new Set(destStopIds)].filter(Boolean);
+  if (origins.length === 0 || dests.length === 0) return [];
+
+  const y = Number(date.slice(0, 4));
+  const m = Number(date.slice(4, 6));
+  const d = Number(date.slice(6, 8));
+  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const active = await activeServiceIds(feedId, date, weekday);
+  if (active.size === 0) return [];
+
+  const routeTypes = opts.routeTypes ?? [3];
+  const params: unknown[] = [feedId, ...origins, ...dests];
+  let routeWhere = '';
+  if (routeTypes.length > 0) {
+    routeWhere = `AND (r.route_type IS NULL OR r.route_type IN (${placeholders(routeTypes)}))`;
+    params.push(...routeTypes);
+  }
+  let timeWhere = '';
+  if (opts.departureAfter) {
+    timeWhere += ' AND o.departure_time >= ?';
+    params.push(opts.departureAfter);
+  }
+  if (opts.departureBefore) {
+    timeWhere += ' AND o.departure_time <= ?';
+    params.push(opts.departureBefore);
+  }
+  if (opts.arrivalBefore) {
+    timeWhere += ' AND COALESCE(d.arrive_time, d.departure_time) <= ?';
+    params.push(opts.arrivalBefore);
+  }
+  const scanLimit = Math.max((opts.limit ?? 20) * 8, 80);
+  params.push(scanLimit);
+
+  const rows = (await sql.unsafe(
+    `SELECT o.feed_id AS feed_id, f.name AS feed_name, o.trip_id AS trip_id,
+            t.service_id AS service_id, t.headsign AS headsign,
+            r.short_name AS short_name, r.long_name AS long_name, r.route_type AS route_type,
+            o.stop_id AS origin_stop_id, os.stop_name AS origin_stop_name,
+            os.lat AS origin_lat, os.lng AS origin_lng,
+            d.stop_id AS dest_stop_id, ds.stop_name AS dest_stop_name,
+            ds.lat AS dest_lat, ds.lng AS dest_lng,
+            o.departure_time AS departure_time,
+            COALESCE(d.arrive_time, d.departure_time) AS arrival_time
+     FROM gtfs_stop_times o
+     JOIN gtfs_stop_times d
+       ON d.feed_id = o.feed_id
+      AND d.trip_id = o.trip_id
+      AND COALESCE(d.stop_sequence, 999999) > COALESCE(o.stop_sequence, -1)
+     JOIN gtfs_trips t ON t.feed_id = o.feed_id AND t.trip_id = o.trip_id
+     JOIN gtfs_feeds f ON f.id = o.feed_id
+     LEFT JOIN gtfs_routes r ON r.feed_id = t.feed_id AND r.route_id = t.route_id
+     LEFT JOIN gtfs_stops os ON os.feed_id = o.feed_id AND os.stop_id = o.stop_id
+     LEFT JOIN gtfs_stops ds ON ds.feed_id = d.feed_id AND ds.stop_id = d.stop_id
+     WHERE o.feed_id = ?
+       AND o.stop_id IN (${placeholders(origins)})
+       AND d.stop_id IN (${placeholders(dests)})
+       AND o.departure_time IS NOT NULL
+       AND COALESCE(d.arrive_time, d.departure_time) IS NOT NULL
+       ${routeWhere}
+       ${timeWhere}
+     ORDER BY o.departure_time
+     LIMIT ?`,
+    params,
+  )) as Array<{
+    feed_id: string; feed_name: string; trip_id: string; service_id: string | null;
+    headsign: string | null; short_name: string | null; long_name: string | null; route_type: number | null;
+    origin_stop_id: string; origin_stop_name: string | null; origin_lat: number | null; origin_lng: number | null;
+    dest_stop_id: string; dest_stop_name: string | null; dest_lat: number | null; dest_lng: number | null;
+    departure_time: string | null; arrival_time: string | null;
+  }>;
+
+  const out: GtfsConnection[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (r.service_id && !active.has(r.service_id)) continue;
+    if (!r.departure_time || !r.arrival_time) continue;
+    const key = `${r.trip_id}|${r.origin_stop_id}|${r.dest_stop_id}|${r.departure_time}|${r.arrival_time}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const dep = timeToMinutes(r.departure_time);
+    const arr = timeToMinutes(r.arrival_time);
+    out.push({
+      feed_id: r.feed_id,
+      feed_name: r.feed_name,
+      trip_id: r.trip_id,
+      route_name: r.short_name ?? r.long_name ?? null,
+      headsign: r.headsign,
+      route_type: r.route_type,
+      origin_stop_id: r.origin_stop_id,
+      origin_stop_name: r.origin_stop_name,
+      origin_lat: r.origin_lat,
+      origin_lng: r.origin_lng,
+      dest_stop_id: r.dest_stop_id,
+      dest_stop_name: r.dest_stop_name,
+      dest_lat: r.dest_lat,
+      dest_lng: r.dest_lng,
+      departure_time: r.departure_time,
+      arrival_time: r.arrival_time,
+      travel_min: dep == null || arr == null ? null : arr - dep,
+    });
+    if (out.length >= (opts.limit ?? 20)) break;
+  }
+  out.sort((a, b) => connectionSortKey(a) - connectionSortKey(b));
+  return out;
+}
+
 /**
  * 停留所の発車時刻ボード。date(YYYYMMDD) に走る便のうち after(HH:MM:SS) 以降を時刻順に。
  */
@@ -226,4 +385,376 @@ export async function stopDepartures(
     if (out.length >= limit) break;
   }
   return out;
+}
+
+export type ServiceDayKind = 'weekday' | 'weekend' | 'holiday';
+
+export interface GtfsRouteSummary {
+  feed_id: string;
+  feed_name: string;
+  route_id: string;
+  route_label: string;
+  short_name: string | null;
+  long_name: string | null;
+  route_type: number | null;
+  trip_count: number;
+  weekday_trip_count: number;
+  weekend_trip_count: number;
+  holiday_trip_count: number;
+  holiday_sample_date: string | null;
+  limited: boolean;
+}
+
+function routeName(shortName: string | null, longName: string | null, fallback: string): string {
+  return [shortName, longName].filter(Boolean).join(' ') || fallback;
+}
+
+/** 取込済みデータを横断した路線一覧。UI ではフィード由来を前面に出さず、この一覧を使う。 */
+export async function listRouteSummaries(): Promise<GtfsRouteSummary[]> {
+  const rows = (await sql`
+    SELECT f.id AS feed_id, f.name AS feed_name,
+           r.route_id AS route_id, r.short_name AS short_name, r.long_name AS long_name, r.route_type AS route_type,
+           COUNT(t.trip_id) AS trip_count,
+           SUM(CASE
+             WHEN t.trip_id IS NULL THEN 0
+             WHEN t.service_id IS NULL OR c.service_id IS NULL THEN 1
+             WHEN COALESCE(c.mon, 0) = 1 OR COALESCE(c.tue, 0) = 1 OR COALESCE(c.wed, 0) = 1 OR COALESCE(c.thu, 0) = 1 OR COALESCE(c.fri, 0) = 1 THEN 1
+             ELSE 0 END) AS weekday_trip_count,
+           SUM(CASE
+             WHEN t.trip_id IS NULL THEN 0
+             WHEN t.service_id IS NULL OR c.service_id IS NULL THEN 1
+             WHEN COALESCE(c.sat, 0) = 1 OR COALESCE(c.sun, 0) = 1 THEN 1
+             ELSE 0 END) AS weekend_trip_count,
+           SUM(CASE
+             WHEN t.trip_id IS NULL THEN 0
+             WHEN EXISTS (
+               SELECT 1 FROM gtfs_calendar_dates cd
+               WHERE cd.feed_id = t.feed_id AND cd.service_id = t.service_id AND cd.exception_type = 1
+             ) THEN 1
+             ELSE 0 END) AS holiday_trip_count
+           ,
+           MIN((
+             SELECT cd.date FROM gtfs_calendar_dates cd
+             WHERE cd.feed_id = t.feed_id AND cd.service_id = t.service_id AND cd.exception_type = 1
+             ORDER BY cd.date
+             LIMIT 1
+           )) AS holiday_sample_date
+    FROM gtfs_routes r
+    JOIN gtfs_feeds f ON f.id = r.feed_id
+    LEFT JOIN gtfs_trips t ON t.feed_id = r.feed_id AND t.route_id = r.route_id
+    LEFT JOIN gtfs_calendar c ON c.feed_id = t.feed_id AND c.service_id = t.service_id
+    GROUP BY f.id, f.name, r.route_id, r.short_name, r.long_name, r.route_type
+    ORDER BY f.name, trip_count DESC, r.short_name, r.long_name`) as Array<{
+    feed_id: string; feed_name: string; route_id: string; short_name: string | null; long_name: string | null; route_type: number | null;
+    trip_count: number; weekday_trip_count: number | null; weekend_trip_count: number | null; holiday_trip_count: number | null; holiday_sample_date: string | null;
+  }>;
+
+  return rows.map((r) => {
+    const weekday = Number(r.weekday_trip_count ?? 0);
+    const weekend = Number(r.weekend_trip_count ?? 0);
+    const holiday = Number(r.holiday_trip_count ?? 0);
+    return {
+      ...r,
+      route_label: routeName(r.short_name, r.long_name, r.route_id),
+      trip_count: Number(r.trip_count ?? 0),
+      weekday_trip_count: weekday,
+      weekend_trip_count: weekend,
+      holiday_trip_count: holiday,
+      holiday_sample_date: r.holiday_sample_date,
+      limited: holiday > 0 || weekday !== weekend || weekday === 0 || weekend === 0,
+    };
+  });
+}
+
+export interface GtfsRouteSearchLeg extends GtfsConnection {
+  transfer_wait_min: number | null;
+}
+
+export interface GtfsRouteSearchOption {
+  summary: string;
+  departure_time: string;
+  arrival_time: string;
+  duration_min: number;
+  transfer_count: number;
+  walk_from_m: number;
+  walk_to_m: number;
+  legs: GtfsRouteSearchLeg[];
+}
+
+export interface GtfsRouteSearchResult {
+  date: string;
+  basis: 'departure' | 'arrival';
+  from_stop_count: number;
+  to_stop_count: number;
+  options: GtfsRouteSearchOption[];
+}
+
+function minutesToGtfs(minutes: number): string {
+  const clamped = Math.max(0, minutes);
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+}
+
+function normalizeTime(time: string): string {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(time.trim());
+  if (!m) return '00:00:00';
+  return `${String(Number(m[1])).padStart(2, '0')}:${m[2]}:${m[3] ?? '00'}`;
+}
+
+function normalizeDate(date: string): string {
+  return date.replaceAll('-', '');
+}
+
+function shortGtfsTime(time: string): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec(time);
+  return m ? `${String(Number(m[1])).padStart(2, '0')}:${m[2]}` : time;
+}
+
+function stopKey(feedId: string, stopId: string): string {
+  return `${feedId}:${stopId}`;
+}
+
+function byFeed(stops: readonly GtfsStopHit[]): Map<string, string[]> {
+  const m = new Map<string, string[]>();
+  for (const s of stops) {
+    const arr = m.get(s.feed_id) ?? [];
+    arr.push(s.stop_id);
+    m.set(s.feed_id, arr);
+  }
+  return m;
+}
+
+async function findReachableConnections(
+  feedId: string,
+  originStopIds: readonly string[],
+  date: string,
+  opts: { departureAfter: string; departureBefore: string; routeTypes?: readonly number[]; limit?: number },
+): Promise<GtfsConnection[]> {
+  const origins = [...new Set(originStopIds)].filter(Boolean);
+  if (origins.length === 0) return [];
+
+  const y = Number(date.slice(0, 4));
+  const m = Number(date.slice(4, 6));
+  const d = Number(date.slice(6, 8));
+  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const active = await activeServiceIds(feedId, date, weekday);
+  if (active.size === 0) return [];
+
+  const routeTypes = opts.routeTypes ?? [0, 1, 2, 3];
+  const params: unknown[] = [feedId, ...origins];
+  let routeWhere = '';
+  if (routeTypes.length > 0) {
+    routeWhere = `AND (r.route_type IS NULL OR r.route_type IN (${placeholders(routeTypes)}))`;
+    params.push(...routeTypes);
+  }
+  params.push(opts.departureAfter, opts.departureBefore, Math.max(opts.limit ?? 160, 40));
+
+  const rows = (await sql.unsafe(
+    `SELECT o.feed_id AS feed_id, f.name AS feed_name, o.trip_id AS trip_id,
+            t.service_id AS service_id, t.headsign AS headsign,
+            r.short_name AS short_name, r.long_name AS long_name, r.route_type AS route_type,
+            o.stop_id AS origin_stop_id, os.stop_name AS origin_stop_name,
+            os.lat AS origin_lat, os.lng AS origin_lng,
+            d.stop_id AS dest_stop_id, ds.stop_name AS dest_stop_name,
+            ds.lat AS dest_lat, ds.lng AS dest_lng,
+            o.departure_time AS departure_time,
+            COALESCE(d.arrive_time, d.departure_time) AS arrival_time
+     FROM gtfs_stop_times o
+     JOIN gtfs_stop_times d
+       ON d.feed_id = o.feed_id
+      AND d.trip_id = o.trip_id
+      AND COALESCE(d.stop_sequence, 999999) > COALESCE(o.stop_sequence, -1)
+      AND d.stop_id <> o.stop_id
+     JOIN gtfs_trips t ON t.feed_id = o.feed_id AND t.trip_id = o.trip_id
+     JOIN gtfs_feeds f ON f.id = o.feed_id
+     LEFT JOIN gtfs_routes r ON r.feed_id = t.feed_id AND r.route_id = t.route_id
+     LEFT JOIN gtfs_stops os ON os.feed_id = o.feed_id AND os.stop_id = o.stop_id
+     LEFT JOIN gtfs_stops ds ON ds.feed_id = d.feed_id AND ds.stop_id = d.stop_id
+     WHERE o.feed_id = ?
+       AND o.stop_id IN (${placeholders(origins)})
+       ${routeWhere}
+       AND o.departure_time IS NOT NULL
+       AND o.departure_time >= ?
+       AND o.departure_time <= ?
+       AND COALESCE(d.arrive_time, d.departure_time) IS NOT NULL
+     ORDER BY o.departure_time, d.stop_sequence
+     LIMIT ?`,
+    params,
+  )) as Array<{
+    feed_id: string; feed_name: string; trip_id: string; service_id: string | null;
+    headsign: string | null; short_name: string | null; long_name: string | null; route_type: number | null;
+    origin_stop_id: string; origin_stop_name: string | null; origin_lat: number | null; origin_lng: number | null;
+    dest_stop_id: string; dest_stop_name: string | null; dest_lat: number | null; dest_lng: number | null;
+    departure_time: string | null; arrival_time: string | null;
+  }>;
+
+  const out: GtfsConnection[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (r.service_id && !active.has(r.service_id)) continue;
+    if (!r.departure_time || !r.arrival_time) continue;
+    const key = `${r.trip_id}|${r.origin_stop_id}|${r.dest_stop_id}|${r.departure_time}|${r.arrival_time}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const dep = timeToMinutes(r.departure_time);
+    const arr = timeToMinutes(r.arrival_time);
+    out.push({
+      feed_id: r.feed_id,
+      feed_name: r.feed_name,
+      trip_id: r.trip_id,
+      route_name: r.short_name ?? r.long_name ?? null,
+      headsign: r.headsign,
+      route_type: r.route_type,
+      origin_stop_id: r.origin_stop_id,
+      origin_stop_name: r.origin_stop_name,
+      origin_lat: r.origin_lat,
+      origin_lng: r.origin_lng,
+      dest_stop_id: r.dest_stop_id,
+      dest_stop_name: r.dest_stop_name,
+      dest_lat: r.dest_lat,
+      dest_lng: r.dest_lng,
+      departure_time: r.departure_time,
+      arrival_time: r.arrival_time,
+      travel_min: dep == null || arr == null ? null : arr - dep,
+    });
+  }
+  out.sort((a, b) => connectionSortKey(a) - connectionSortKey(b));
+  return out;
+}
+
+function optionFromLegs(
+  legs: GtfsConnection[],
+  fromDistances: Map<string, number>,
+  toDistances: Map<string, number>,
+): GtfsRouteSearchOption | null {
+  if (legs.length === 0) return null;
+  const first = legs[0]!;
+  const last = legs[legs.length - 1]!;
+  const dep = timeToMinutes(first.departure_time);
+  const arr = timeToMinutes(last.arrival_time);
+  if (dep == null || arr == null || arr < dep) return null;
+
+  const searchLegs: GtfsRouteSearchLeg[] = legs.map((leg, i) => {
+    const prev = i > 0 ? legs[i - 1] : null;
+    const wait = prev ? (timeToMinutes(leg.departure_time) ?? 0) - (timeToMinutes(prev.arrival_time) ?? 0) : null;
+    return { ...leg, transfer_wait_min: wait == null ? null : Math.max(0, wait) };
+  });
+  const routes = searchLegs.map((leg) => routeName(leg.route_name, leg.headsign, '路線')).filter(Boolean);
+  return {
+    summary: routes.join(' → '),
+    departure_time: shortGtfsTime(first.departure_time),
+    arrival_time: shortGtfsTime(last.arrival_time),
+    duration_min: arr - dep,
+    transfer_count: Math.max(0, legs.length - 1),
+    walk_from_m: fromDistances.get(stopKey(first.feed_id, first.origin_stop_id)) ?? 0,
+    walk_to_m: toDistances.get(stopKey(last.feed_id, last.dest_stop_id)) ?? 0,
+    legs: searchLegs,
+  };
+}
+
+/**
+ * 取り込み済み路線を時刻付きグラフとして検索する。Google Directions API は使わない。
+ * 現時点では直通 + 1 回乗換までに絞る。UI の ZERO_RESULT 回避を優先した軽量探索。
+ */
+export async function searchRouteGraph(params: {
+  from: { lat: number; lng: number };
+  to: { lat: number; lng: number };
+  date: string;
+  time: string;
+  basis: 'departure' | 'arrival';
+  radiusM?: number;
+  limit?: number;
+}): Promise<GtfsRouteSearchResult> {
+  const date = normalizeDate(params.date);
+  const target = timeToMinutes(normalizeTime(params.time)) ?? 0;
+  const windowMin = 240;
+  const departureAfter = params.basis === 'arrival' ? Math.max(0, target - windowMin) : target;
+  const departureBefore = params.basis === 'arrival' ? target : target + windowMin;
+  const radiusM = params.radiusM ?? 1200;
+  const limit = params.limit ?? 6;
+
+  const [fromStops, toStops] = await Promise.all([
+    nearbyStops(params.from.lat, params.from.lng, radiusM, 12),
+    nearbyStops(params.to.lat, params.to.lng, radiusM, 12),
+  ]);
+  const fromDistances = new Map(fromStops.map((s) => [stopKey(s.feed_id, s.stop_id), s.distance_m]));
+  const toDistances = new Map(toStops.map((s) => [stopKey(s.feed_id, s.stop_id), s.distance_m]));
+  const fromByFeed = byFeed(fromStops);
+  const toByFeed = byFeed(toStops);
+  const feedIds = [...fromByFeed.keys()].filter((id) => toByFeed.has(id));
+  const options: GtfsRouteSearchOption[] = [];
+  const seen = new Set<string>();
+
+  for (const feedId of feedIds) {
+    const origins = fromByFeed.get(feedId)!;
+    const dests = toByFeed.get(feedId)!;
+
+    const direct = await findStopConnections(feedId, origins, dests, date, {
+      departureAfter: minutesToGtfs(departureAfter),
+      departureBefore: minutesToGtfs(departureBefore),
+      arrivalBefore: params.basis === 'arrival' ? minutesToGtfs(target) : undefined,
+      routeTypes: [0, 1, 2, 3],
+      limit: 20,
+    });
+    for (const leg of direct) {
+      const opt = optionFromLegs([leg], fromDistances, toDistances);
+      if (!opt) continue;
+      const key = opt.legs.map((l) => `${l.trip_id}:${l.origin_stop_id}:${l.dest_stop_id}:${l.departure_time}`).join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      options.push(opt);
+    }
+
+    const firstLegs = await findReachableConnections(feedId, origins, date, {
+      departureAfter: minutesToGtfs(departureAfter),
+      departureBefore: minutesToGtfs(departureBefore),
+      routeTypes: [0, 1, 2, 3],
+      limit: 220,
+    });
+    for (const leg1 of firstLegs.slice(0, 120)) {
+      if (dests.includes(leg1.dest_stop_id)) continue;
+      const arr1 = timeToMinutes(leg1.arrival_time);
+      if (arr1 == null) continue;
+      const secondDepartureAfter = arr1 + 5;
+      const secondDepartureBefore = Math.min(target + windowMin, arr1 + 120);
+      if (secondDepartureAfter > secondDepartureBefore) continue;
+      const second = await findStopConnections(feedId, [leg1.dest_stop_id], dests, date, {
+        departureAfter: minutesToGtfs(secondDepartureAfter),
+        departureBefore: minutesToGtfs(secondDepartureBefore),
+        arrivalBefore: params.basis === 'arrival' ? minutesToGtfs(target) : undefined,
+        routeTypes: [0, 1, 2, 3],
+        limit: 3,
+      });
+      for (const leg2 of second) {
+        if (leg1.trip_id === leg2.trip_id) continue;
+        const opt = optionFromLegs([leg1, leg2], fromDistances, toDistances);
+        if (!opt) continue;
+        const key = opt.legs.map((l) => `${l.trip_id}:${l.origin_stop_id}:${l.dest_stop_id}:${l.departure_time}`).join('|');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        options.push(opt);
+      }
+    }
+  }
+
+  const sorted = options
+    .filter((o) => params.basis !== 'arrival' || (timeToMinutes(`${o.arrival_time}:00`) ?? 99_999) <= target)
+    .sort((a, b) => {
+      const aDep = timeToMinutes(`${a.departure_time}:00`) ?? 0;
+      const bDep = timeToMinutes(`${b.departure_time}:00`) ?? 0;
+      const aArr = timeToMinutes(`${a.arrival_time}:00`) ?? 99_999;
+      const bArr = timeToMinutes(`${b.arrival_time}:00`) ?? 99_999;
+      if (params.basis === 'arrival') return bDep - aDep || aArr - bArr || a.transfer_count - b.transfer_count;
+      return aDep - bDep || aArr - bArr || a.transfer_count - b.transfer_count;
+    })
+    .slice(0, limit);
+
+  return {
+    date,
+    basis: params.basis,
+    from_stop_count: fromStops.length,
+    to_stop_count: toStops.length,
+    options: sorted,
+  };
 }

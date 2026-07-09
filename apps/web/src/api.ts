@@ -20,9 +20,12 @@ import type {
   RouteLeg,
   RouteMode,
   ServiceAlert,
+  ShinkansenBusSuggestionsResult,
   Timetable,
   TimetableDeparture,
   TimetableKind,
+  TripCheckItem,
+  TripCheckListType,
   TransitOption,
   TransitProviderKind,
   GtfsFeed,
@@ -31,6 +34,8 @@ import type {
   GtfsRoute,
   GtfsRouteTimetable,
   GtfsTimetableStop,
+  RouteSearchResult,
+  RouteSummary,
   Trip,
   TripDay,
   TripDetail,
@@ -75,8 +80,12 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   if (!res.ok) {
-    let body: unknown;
-    try { body = await res.json(); } catch { body = await res.text(); }
+    // body ストリームは 1 度しか読めない。res.json() 失敗後に res.text() を呼ぶと
+    // 「Body is disturbed or locked」で本当のエラーが握り潰されるため、必ず text で
+    // 一度だけ読んでから JSON.parse を試す。
+    const raw = await res.text().catch(() => '');
+    let body: unknown = raw;
+    try { body = raw ? JSON.parse(raw) : undefined; } catch { /* JSON でなければ raw 文字列のまま */ }
     const msg = (body && typeof body === 'object' && 'error' in body)
       ? String((body as { error: unknown }).error)
       : `HTTP ${res.status} ${res.statusText}`;
@@ -155,6 +164,8 @@ export const api = {
     id: string,
     input: Partial<Pick<Place, 'name' | 'address' | 'lat' | 'lng' | 'category' | 'source_url' | 'summary' | 'notes' | 'image_url' | 'status'>>,
   ) => req<Place>(`/api/places/${id}`, { method: 'PATCH', body: json(input) }),
+  geocodePlace: (id: string, input: { address?: string }) =>
+    req<Place>(`/api/places/${id}/geocode`, { method: 'POST', body: json(input) }),
   /** この旅での拠点フラグ切替 (メンバーシップ)。 */
   setTripBase: (tripId: string, placeId: string, is_base: number) =>
     req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json({ is_base }) }),
@@ -288,6 +299,16 @@ export const api = {
       `/api/timetables/${timetableId}/fetch`,
       { method: 'POST', body: json(opts) },
     ),
+  seedTohokuShinkansen: (tripId: string) =>
+    req<{ timetables: Timetable[]; added: number; departures: TimetableDeparture[]; source_url: string }>(
+      `/api/trips/${tripId}/timetables/tohoku-shinkansen-seed`,
+      { method: 'POST', body: json({}) },
+    ),
+  suggestBusesForTohokuShinkansen: (tripId: string) =>
+    req<ShinkansenBusSuggestionsResult>(
+      `/api/trips/${tripId}/timetables/tohoku-shinkansen-bus-suggestions`,
+      { method: 'POST', body: json({}) },
+    ),
 
   // --- 取り込みジョブ (画像解析/クロールの順次処理キュー) ---
   /** ジョブを積む。is_new_place=true は取り込みで新規作成したドラフト place (成立まで一覧に出さない)。 */
@@ -310,8 +331,18 @@ export const api = {
   /** GTFS zip URL を取り込む (フィード作成。重い)。 */
   gtfsImport: (input: { url: string; name?: string }) =>
     req<GtfsFeed>('/api/gtfs/import', { method: 'POST', body: json(input) }),
+  gtfsImportFromPage: (input: { url: string; name?: string }) =>
+    req<{ feed: GtfsFeed; source_url: string }>('/api/gtfs/import-from-page', { method: 'POST', body: json(input) }),
   gtfsFeeds: () => req<GtfsFeed[]>('/api/gtfs/feeds'),
   gtfsDeleteFeed: (id: string) => req<{ ok: true }>(`/api/gtfs/feeds/${id}`, { method: 'DELETE' }),
+  routeSummaries: () => req<RouteSummary[]>('/api/gtfs/routes'),
+  routeSearch: (input: {
+    from: { lat: number; lng: number };
+    to: { lat: number; lng: number };
+    date: string;
+    time: string;
+    basis: 'departure' | 'arrival';
+  }) => req<RouteSearchResult>('/api/gtfs/route-search', { method: 'POST', body: json(input) }),
   /** フィードの路線一覧 (便数つき)。 */
   gtfsRoutes: (feedId: string) => req<GtfsRoute[]>(`/api/gtfs/feeds/${feedId}/routes`),
   /** フィードの全停留所 (1 マップに全部出す用)。 */
@@ -354,4 +385,19 @@ export const api = {
       `/api/trips/${tripId}/service-alerts/refresh`,
       { method: 'POST', body: json(opts) },
     ),
+
+  // --- 旅の準備: 持ち物 / TODO ---
+  listCheckItems: (tripId: string, listType?: TripCheckListType) =>
+    req<TripCheckItem[]>(
+      `/api/trips/${tripId}/check-items${listType ? `?list_type=${encodeURIComponent(listType)}` : ''}`,
+    ),
+  createCheckItem: (
+    tripId: string,
+    input: Pick<TripCheckItem, 'list_type' | 'title'> & Partial<Pick<TripCheckItem, 'details' | 'status' | 'quantity' | 'category' | 'due_at'>>,
+  ) => req<TripCheckItem>(`/api/trips/${tripId}/check-items`, { method: 'POST', body: json(input) }),
+  patchCheckItem: (
+    id: string,
+    input: Partial<Pick<TripCheckItem, 'title' | 'details' | 'status' | 'quantity' | 'category' | 'due_at' | 'order_index'>>,
+  ) => req<TripCheckItem>(`/api/check-items/${id}`, { method: 'PATCH', body: json(input) }),
+  deleteCheckItem: (id: string) => req<{ ok: true }>(`/api/check-items/${id}`, { method: 'DELETE' }),
 };

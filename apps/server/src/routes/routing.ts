@@ -12,6 +12,7 @@ import {
   parseGmapsTransitOptions, optionToParsed, type ParsedTransit, type TransitOption,
 } from '../lib/transit-parse.js';
 import { fetchGmapsTransitText } from '../lib/transit-fetch.js';
+import { getCachedTransit, putCachedTransit } from '../lib/transit-cache.js';
 import { computeRoute } from '@peregrinatio/routing';
 import type { RouteLeg, RouteMode, Trip } from '../types.js';
 
@@ -276,12 +277,22 @@ function sortByArrival(options: TransitOption[]): TransitOption[] {
  */
 app.post('/api/legs/:id/transit-fetch', async (c) => {
   const id = c.req.param('id');
+  const b = (await c.req.json().catch(() => ({}))) as { refresh?: boolean };
   const [leg] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
   if (!leg) return c.json({ error: 'leg not found' }, 404);
 
   const from = await endpointCoords(leg.day_id, leg.from_place_id);
   const to = await endpointCoords(leg.day_id, leg.to_place_id);
   if (!from || !to) return c.json({ error: '区間の座標を特定できませんでした' }, 422);
+
+  // 再取得はまずキャッシュを見る (重い Puppeteer+LLM を鮮度内は再実行しない)。
+  // refresh=true で強制的に取り直す。
+  if (b.refresh !== true) {
+    const cached = await getCachedTransit(from, to, config.transit.fetchCacheTtlMs);
+    if (cached) {
+      return c.json({ options: sortByArrival(cached.options), cached: true, fetched_at: cached.fetchedAt });
+    }
+  }
 
   let options: TransitOption[];
   try {
@@ -290,7 +301,8 @@ app.post('/api/legs/:id/transit-fetch', async (c) => {
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : 'Google マップからの経路取得に失敗しました' }, 502);
   }
-  return c.json({ options: sortByArrival(options) });
+  await putCachedTransit(from, to, options);
+  return c.json({ options: sortByArrival(options), cached: false, fetched_at: nowIso() });
 });
 
 /**

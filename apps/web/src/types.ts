@@ -203,6 +203,24 @@ export interface ServiceAlert {
   created_at: string;
 }
 
+export type TripCheckListType = 'packing' | 'todo';
+export type TripCheckStatus = 'todo' | 'doing' | 'done';
+
+export interface TripCheckItem {
+  id: string;
+  trip_id: string;
+  list_type: TripCheckListType;
+  title: string;
+  details: string | null;
+  status: TripCheckStatus;
+  quantity: number | null;
+  category: string | null;
+  due_at: string | null;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
 /** 取り込みジョブ (画像解析/クロールの順次処理キュー)。 */
 export type PlaceJobKind = 'image' | 'crawl';
 export type PlaceJobStatus = 'pending' | 'processing' | 'done' | 'needs_info' | 'failed';
@@ -279,6 +297,48 @@ export interface GtfsDeparture {
   route_type: number | null;
 }
 
+export interface GtfsConnection {
+  feed_id: string;
+  feed_name: string;
+  trip_id: string;
+  route_name: string | null;
+  headsign: string | null;
+  route_type: number | null;
+  origin_stop_id: string;
+  origin_stop_name: string | null;
+  origin_lat: number | null;
+  origin_lng: number | null;
+  dest_stop_id: string;
+  dest_stop_name: string | null;
+  dest_lat: number | null;
+  dest_lng: number | null;
+  departure_time: string;
+  arrival_time: string;
+  travel_min: number | null;
+}
+
+export interface ShinkansenBusSuggestion {
+  direction: 'outbound' | 'inbound';
+  date: string;
+  shinkansen_train_name: string;
+  shinkansen_depart_time: string;
+  shinkansen_arrive_time: string | null;
+  transfer_min: number;
+  connection: GtfsConnection;
+}
+
+export interface ShinkansenBusSuggestionsResult {
+  target: { name: string; lat: number; lng: number };
+  station: string;
+  outbound_date: string;
+  inbound_date: string;
+  added: number;
+  timetables: Timetable[];
+  departures: TimetableDeparture[];
+  outbound: ShinkansenBusSuggestion[];
+  inbound: ShinkansenBusSuggestion[];
+}
+
 /** GTFS 路線 (選択用、便数つき)。 */
 export interface GtfsRoute {
   route_id: string;
@@ -286,6 +346,47 @@ export interface GtfsRoute {
   long_name: string | null;
   route_type: number | null;
   trip_count: number;
+}
+
+export type ServiceDayKind = 'weekday' | 'weekend' | 'holiday';
+
+export interface RouteSummary {
+  feed_id: string;
+  feed_name: string;
+  route_id: string;
+  route_label: string;
+  short_name: string | null;
+  long_name: string | null;
+  route_type: number | null;
+  trip_count: number;
+  weekday_trip_count: number;
+  weekend_trip_count: number;
+  holiday_trip_count: number;
+  holiday_sample_date: string | null;
+  limited: boolean;
+}
+
+export interface RouteSearchLeg extends GtfsConnection {
+  transfer_wait_min: number | null;
+}
+
+export interface RouteSearchOption {
+  summary: string;
+  departure_time: string;
+  arrival_time: string;
+  duration_min: number;
+  transfer_count: number;
+  walk_from_m: number;
+  walk_to_m: number;
+  legs: RouteSearchLeg[];
+}
+
+export interface RouteSearchResult {
+  date: string;
+  basis: 'departure' | 'arrival';
+  from_stop_count: number;
+  to_stop_count: number;
+  options: RouteSearchOption[];
 }
 
 export interface GtfsTimetableStop { stop_id: string; stop_name: string | null; lat: number | null; lng: number | null; }

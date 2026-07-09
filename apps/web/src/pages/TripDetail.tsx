@@ -22,6 +22,7 @@ import { Itinerary } from './Itinerary.js';
 import { LibraryPicker } from './LibraryPicker.js';
 import { MapSearchOverlay } from '../components/MapSearchOverlay.js';
 import { TransitPanel } from '../components/transit/TransitPanel.js';
+import { TripPrepPanel } from '../components/TripPrepPanel.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -31,8 +32,8 @@ type MapStatus = 'loading' | 'disabled' | 'ready' | 'error';
 const BASE_ZOOM = 11; // 拠点クリック/フォーカス時
 const AREA_ZOOM = 11; // 初期 (拠点中心の周辺)
 
-/** 左パネルの表示モード。places=場所一覧 / transit=時刻表・運行情報 (経路)。 */
-type ListPanel = 'places' | 'transit';
+/** 左パネルの表示モード。places=場所一覧 / transit=時刻表・運行情報 (経路) / prep=旅の準備。 */
+type ListPanel = 'places' | 'transit' | 'prep';
 
 export function TripDetail() {
   const { tripId } = useParams<{ tripId: string }>();
@@ -42,9 +43,13 @@ export function TripDetail() {
 
   // 左パネル 場所/経路 切替。URL (?panel=transit) と同期し、フッターの「時刻表/運行」からも入れる。
   const [searchParams, setSearchParams] = useSearchParams();
-  const listPanel: ListPanel = searchParams.get('panel') === 'transit' ? 'transit' : 'places';
+  const listPanel: ListPanel = searchParams.get('panel') === 'transit'
+    ? 'transit'
+    : searchParams.get('panel') === 'prep'
+      ? 'prep'
+      : 'places';
   const setListPanel = (p: ListPanel) => {
-    setSearchParams(p === 'transit' ? { panel: 'transit' } : {}, { replace: true });
+    setSearchParams(p === 'places' ? {} : { panel: p }, { replace: true });
   };
   // 旅のしおり: PC は移動可能なオーバーレイウインドウ、モバイルは専用ルートへ遷移。
   const [showItinerary, setShowItinerary] = useState(false);
@@ -490,11 +495,17 @@ export function TripDetail() {
             onClick={() => setListPanel('places')}>📍 場所</button>
           <button type="button" className={listPanel === 'transit' ? 'chip-btn active' : 'chip-btn'}
             onClick={() => setListPanel('transit')}>🚃 経路</button>
+          <button type="button" className={listPanel === 'prep' ? 'chip-btn active' : 'chip-btn'}
+            onClick={() => setListPanel('prep')}>準備</button>
         </div>
 
         {/* 経路モード: 時刻表/運行情報。GTFS 路線の停留所はメイン地図に描画される。 */}
         {listPanel === 'transit' && (
           <TransitPanel tripId={tripId} map={mapStatus === 'ready' ? mapObj.current : undefined} />
+        )}
+
+        {listPanel === 'prep' && (
+          <TripPrepPanel tripId={tripId} />
         )}
 
         {listPanel === 'places' && (<>

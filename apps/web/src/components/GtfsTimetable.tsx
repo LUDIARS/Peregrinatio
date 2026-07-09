@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
-import { loadMaps, PIN_PATH } from '../lib/maps.js';
+import { loadMaps, PIN_PATH, transitRouteStyle } from '../lib/maps.js';
 import type { GtfsTimetablePattern, GtfsTimetableStop } from '../types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -12,8 +12,8 @@ import type { GtfsTimetablePattern, GtfsTimetableStop } from '../types.js';
  * 渡さなければ従来どおり専用のミニ地図を持つ。
  */
 export function GtfsTimetable(
-  { feedId, routeId, routeLabel, date, map: externalMap }:
-  { feedId: string; routeId: string; routeLabel: string; date: string; map?: any },
+  { feedId, routeId, routeLabel, routeType, date, map: externalMap, compact = false }:
+  { feedId: string; routeId: string; routeLabel: string; routeType?: number | null; date: string; map?: any; compact?: boolean },
 ) {
   const [patterns, setPatterns] = useState<GtfsTimetablePattern[]>([]);
   const [allStops, setAllStops] = useState<GtfsTimetableStop[]>([]);
@@ -24,6 +24,7 @@ export function GtfsTimetable(
   const mapHost = useRef<HTMLDivElement | null>(null);
   const mapObj = useRef<any>(null);
   const overlays = useRef<any[]>([]);
+  const routeStyle = transitRouteStyle({ routeType, routeLabel });
 
   // フィードの全停留所 (1 マップに全部出す用)。フィードが変わった時だけ取り直す。
   useEffect(() => {
@@ -96,14 +97,14 @@ export function GtfsTimetable(
           path.push(pos); bounds.extend(pos);
           const marker = new g.maps.Marker({
             position: pos, map: target, title: `${i + 1}. ${s.stop_name ?? ''}`, zIndex: 3000,
-            label: { text: String(i + 1), fontSize: '10px', color: '#fff' },
-            icon: { path: PIN_PATH, fillColor: '#0e7c86', fillOpacity: 0.95, strokeColor: '#fff', strokeWeight: 1.2,
+            label: { text: String(i + 1), fontSize: '10px', color: routeStyle.labelColor },
+            icon: { path: PIN_PATH, fillColor: routeStyle.markerColor, fillOpacity: 0.95, strokeColor: '#fff', strokeWeight: 1.2,
               scale: 1, labelOrigin: new g.maps.Point(0, -26), anchor: new g.maps.Point(0, 0) },
           });
           overlays.current.push(marker);
         });
         if (path.length > 1) {
-          const line = new g.maps.Polyline({ path, map: target, strokeColor: '#0e7c86', strokeOpacity: 0.8, strokeWeight: 3, zIndex: 50 });
+          const line = new g.maps.Polyline({ path, map: target, strokeColor: routeStyle.strokeColor, strokeOpacity: 0.85, strokeWeight: 4, zIndex: 50 });
           overlays.current.push(line);
         }
         // 全停留所が見えるよう全体にフィット (全部載せる)。
@@ -111,7 +112,7 @@ export function GtfsTimetable(
       } catch { /* 地図は best-effort (表は出す) */ }
     })();
     return () => { cancelled = true; };
-  }, [allStops, patterns, pIdx, externalMap]);
+  }, [allStops, patterns, pIdx, externalMap, routeLabel, routeType]);
 
   // アンマウント時に描画物を消す (外部地図=メイン地図に停留所を残さないため)。
   useEffect(() => () => {
@@ -122,9 +123,11 @@ export function GtfsTimetable(
   const idx = Math.min(pIdx, Math.max(0, patterns.length - 1));
   const pat = patterns[idx] ?? null;
   const hhmm = (t: string | null) => (t ? t.slice(0, 5) : '');
+  const firstStop = pat?.stops[0] ?? null;
+  const lastStop = pat && pat.stops.length > 0 ? pat.stops[pat.stops.length - 1]! : null;
 
   return (
-    <div className="gtfs-tt">
+    <div className={`gtfs-tt${compact ? ' compact' : ''}`}>
       <div className="spread" style={{ alignItems: 'baseline' }}>
         <strong>🕒 {routeLabel}</strong>
         {pat && <span className="muted" style={{ fontSize: 12 }}>{date.replace(/-/g, '/')} ・ {pat.trips.length} 便 / {pat.stops.length} 停留所</span>}
@@ -139,6 +142,23 @@ export function GtfsTimetable(
             </button>
           ))}
         </div>
+      )}
+
+      {pat && pat.stops.length > 0 && (
+        <details className="route-stop-outline">
+          <summary>
+            <span><strong>始発</strong> {firstStop?.stop_name ?? firstStop?.stop_id}</span>
+            <span className="muted">→ {lastStop?.stop_name ?? lastStop?.stop_id}</span>
+          </summary>
+          <ol>
+            {pat.stops.map((s, i) => (
+              <li key={`${s.stop_id}-${i}`} className={i === 0 || i === pat.stops.length - 1 ? 'terminal' : ''}>
+                <span className="chip">{i === 0 ? '始発' : i === pat.stops.length - 1 ? '終点' : '中継'}</span>
+                <span>{s.stop_name ?? s.stop_id}</span>
+              </li>
+            ))}
+          </ol>
+        </details>
       )}
 
       {/* 地図: 外部地図 (メイン地図) 使用時は専用ミニ地図を出さない。 */}

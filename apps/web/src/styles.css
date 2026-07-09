@@ -413,6 +413,13 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   margin: 0 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--c-border);
 }
 .place-source { display: block; font-size: 13px; word-break: break-all; line-height: 1.6; }
+.location-corrector {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: #fafafa;
+}
 .place-toolbar {
   margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--c-border);
 }
@@ -538,6 +545,49 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   margin-top: 4px; font-size: 12px; padding: 4px 6px; min-height: 0;
   border: 1px solid var(--c-border); border-radius: 8px; width: 100%;
 }
+.itinerary-day-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-top: 6px;
+}
+.itinerary-day-actions .sm { width: 100%; }
+.itinerary-place-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+.itinerary-place-option img {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+.itinerary-place-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  background: #eef6f6;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  font-size: 24px;
+}
+.itinerary-place-option > span:not(.itinerary-place-icon) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.itinerary-free-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0;
+}
+.itinerary-free-mode p { margin: 2px 0 0; }
 
 /* 場所カードの間に挟む「移動」コネクタ (区間ごとの手段セレクタ+所要)。 */
 .kanban-connector {
@@ -555,10 +605,124 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .ws-mode-bar .chip-btn { flex: 1; text-align: center; padding: 8px 10px; font-size: 14px; font-weight: 700; }
 /* 経路パネル: 狭い左カラムに収めるため時刻表の縦スクロールを控えめに。 */
 .transit-panel .gtfs-tt-scroll { max-height: 44vh; }
+.transit-route-finder {
+  display: grid;
+  gap: 10px;
+}
+.transit-route-finder label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.transit-route-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.route-search-results {
+  margin-top: 8px;
+}
+.route-search-option {
+  width: 100%;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  padding: 10px;
+  text-align: left;
+  display: grid;
+  gap: 4px;
+}
+.route-search-option:hover {
+  border-color: var(--c-accent);
+  background: #f4fbfb;
+}
+.route-search-option > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 520px) {
+  .transit-route-grid { grid-template-columns: 1fr; }
+}
 
 /* ---- GTFS 路線時刻表 (横軸=停留所 / 縦軸=便) ---- */
+.route-panel {
+  display: grid;
+  gap: 12px;
+}
+.route-list-panel {
+  display: grid;
+  gap: 10px;
+}
+.route-day-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.route-list {
+  display: grid;
+  gap: 6px;
+  max-height: 320px;
+  overflow: auto;
+}
+.route-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  padding: 9px;
+  text-align: left;
+}
+.route-row.active {
+  border-color: var(--c-accent);
+  background: #eef8f8;
+}
+.route-row.limited {
+  border-left: 4px solid #d88400;
+}
+.route-row.muted-route {
+  opacity: 0.62;
+}
+.route-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.limited-chip {
+  background: #fff1d6;
+  color: #9a5a00;
+}
+.route-detail {
+  border-top: 1px solid var(--c-border);
+  padding-top: 10px;
+}
+.route-imported {
+  margin-top: 8px;
+}
+.route-imported summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.route-imported-row {
+  padding-top: 8px;
+  border-top: 1px solid var(--c-border);
+}
+.route-imported-row span {
+  display: grid;
+  gap: 2px;
+}
 .gtfs-tt-map { width: 100%; height: 240px; border-radius: 12px; border: 1px solid var(--c-border); margin: 8px 0; }
 .gtfs-tt-scroll { overflow: auto; max-height: 60vh; border: 1px solid var(--c-border); border-radius: 10px; }
+.gtfs-tt.compact .gtfs-tt-scroll { max-height: 36vh; }
 .gtfs-tt-table { border-collapse: separate; border-spacing: 0; font-size: 12px; white-space: nowrap; }
 .gtfs-tt-table th, .gtfs-tt-table td { border-bottom: 1px solid var(--c-border); border-right: 1px solid var(--c-border); padding: 4px 8px; text-align: center; background: #fff; }
 /* 上端の停留所見出しは縦書き気味に省スペース。 */
@@ -569,6 +733,36 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .gtfs-tt-corner { position: sticky; top: 0; left: 0; z-index: 3; background: #e7f0f0; font-weight: 700; }
 .gtfs-tt-table tbody td { color: var(--c-text); }
 .gtfs-tt-table tbody td:empty::after { content: '·'; color: var(--c-border); }
+.route-stop-outline {
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 8px;
+  margin: 8px 0;
+  background: #fafafa;
+}
+.route-stop-outline summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.route-stop-outline ol {
+  list-style: none;
+  padding: 8px 0 0;
+  margin: 0;
+  display: grid;
+  gap: 5px;
+}
+.route-stop-outline li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.route-stop-outline li.terminal {
+  font-weight: 700;
+}
 .kanban-connector-ico { font-size: 13px; }
 .kanban-connector-mode {
   font-size: 11px; font-weight: 700; color: var(--c-accent-d);
@@ -681,10 +875,105 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 
 /* ============ 時刻表 / 運行情報 ============ */
 .tt-dep { padding: 6px 8px; background: #f7f7f5; border-radius: 8px; font-size: 13px; }
+.tt-dep > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tt-note {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
 .chip.severity-warning { background: #fff3cd; color: #a15c00; }
 .chip.severity-suspended { background: #fde0e0; color: var(--c-danger); }
 .chip.severity-info { background: #e3f2fd; color: #1565c0; }
 .chip.severity-normal { background: #e8f5e9; color: #2e7d32; }
+
+.transit-preset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.prep-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.prep-section {
+  display: grid;
+  gap: 8px;
+}
+
+.prep-form textarea {
+  resize: vertical;
+}
+
+.prep-shortcuts,
+.prep-meta,
+.prep-status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.prep-list {
+  gap: 8px;
+}
+
+.prep-item {
+  display: grid;
+  gap: 6px;
+}
+
+.prep-item.is-done {
+  opacity: 0.72;
+}
+
+.prep-item.is-done .prep-check span {
+  text-decoration: line-through;
+}
+
+.prep-item-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prep-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.prep-check span {
+  overflow-wrap: anywhere;
+}
+
+.prep-details {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.prep-status-row .active {
+  border-color: var(--c-accent);
+  background: var(--c-accent-soft);
+}
+
+@media (max-width: 520px) {
+  .transit-preset {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
 
 /* ============ 旅一覧カード + カードメニュー ============ */
 .trip-cards {

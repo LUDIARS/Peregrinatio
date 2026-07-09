@@ -1,238 +1,248 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 import { GtfsTimetable } from './GtfsTimetable.js';
-import type { GtfsDeparture, GtfsFeed, GtfsRoute, GtfsStopHit, TripDay } from '../types.js';
-
-/** ローカル今日を 'YYYY-MM-DD' で返す。 */
-function todayInput(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+import { RoutePreviewSection } from './transit/RoutePreviewSection.js';
+import type { GtfsFeed, RouteSummary, ServiceDayKind, TripDay } from '../types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+type DayKind = ServiceDayKind;
+
+const DAY_KIND_LABEL: Record<DayKind, string> = {
+  weekday: '平日',
+  weekend: '土日',
+  holiday: '祝日',
+};
+
+function pad(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function toYmd(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function fromGtfsDate(date: string): string {
+  return `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
+}
+
+function nextMatchingDate(kind: DayKind): string {
+  const d = new Date();
+  for (let i = 0; i < 14; i++) {
+    const day = d.getDay();
+    if (kind === 'weekday' && day >= 1 && day <= 5) return toYmd(d);
+    if (kind === 'weekend' && (day === 0 || day === 6)) return toYmd(d);
+    d.setDate(d.getDate() + 1);
+  }
+  return toYmd(new Date());
+}
+
+function dateMatchesKind(date: string, kind: DayKind): boolean {
+  const d = new Date(`${date}T00:00:00`);
+  const day = d.getDay();
+  if (kind === 'weekday') return day >= 1 && day <= 5;
+  if (kind === 'weekend') return day === 0 || day === 6;
+  return false;
+}
+
+function countForKind(route: RouteSummary, kind: DayKind): number {
+  if (kind === 'weekday') return route.weekday_trip_count;
+  if (kind === 'weekend') return route.weekend_trip_count;
+  return route.holiday_trip_count;
+}
+
+function dayKindDate(kind: DayKind, route: RouteSummary | null, tripDays: TripDay[]): string {
+  if (kind === 'holiday' && route?.holiday_sample_date) return fromGtfsDate(route.holiday_sample_date);
+  const tripDate = tripDays.find((d) => d.date && dateMatchesKind(d.date, kind))?.date;
+  return tripDate ?? nextMatchingDate(kind === 'holiday' ? 'weekend' : kind);
+}
+
+function routeIcon(routeType: number | null): string {
+  return routeType != null && routeType !== 3 ? '🚆' : '🚌';
+}
+
 /**
- * GTFS 時刻表パネル (バス/一部鉄道の一括取込)。
- * - GTFS zip の URL を取り込む / 取込済みフィードの一覧・削除。
- * - 拠点や現在地の近くの停留所を探し、発車時刻ボードを表示する。
- * フィードは全旅で共有。中心座標は旅の拠点 (無ければ最初の座標付き場所) を使う。
- * `map` を渡すと路線時刻表の停留所をその地図 (メイン地図) に描画する。
+ * 路線パネル。
+ * データ形式名は出さず、ユーザ操作を「路線一覧」と「経路取り込み」に集約する。
  */
 export function GtfsPanel({ tripId, map }: { tripId: string; map?: any }) {
+  const [routes, setRoutes] = useState<RouteSummary[]>([]);
   const [feeds, setFeeds] = useState<GtfsFeed[]>([]);
+  const [tripDays, setTripDays] = useState<TripDay[]>([]);
+  const [query, setQuery] = useState('');
+  const [dayKind, setDayKind] = useState<DayKind>('weekday');
+  const [selected, setSelected] = useState<RouteSummary | null>(null);
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
-  const [importBusy, setImportBusy] = useState(false);
-  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [msg, setMsg] = useState('');
 
-  // 路線→時刻表(表+地図)。
-  const [routesFeed, setRoutesFeed] = useState<GtfsFeed | null>(null);
-  const [routes, setRoutes] = useState<GtfsRoute[]>([]);
-  const [routesBusy, setRoutesBusy] = useState(false);
-  const [ttRoute, setTtRoute] = useState<{ feedId: string; routeId: string; label: string } | null>(null);
-
-  // 旅程の日 (trip_days) と、時刻表に使う運行日。
-  const [tripDays, setTripDays] = useState<TripDay[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>(todayInput());
-
-  const [center, setCenter] = useState<{ lat: number; lng: number } | null>(null);
-  const [stops, setStops] = useState<GtfsStopHit[]>([]);
-  const [stopsBusy, setStopsBusy] = useState(false);
-  const [selected, setSelected] = useState<GtfsStopHit | null>(null);
-  const [departures, setDepartures] = useState<GtfsDeparture[]>([]);
-  const [depBusy, setDepBusy] = useState(false);
-
-  const loadFeeds = async () => { setFeeds(await api.gtfsFeeds()); };
+  const load = async () => {
+    const [routeRows, feedRows] = await Promise.all([api.routeSummaries(), api.gtfsFeeds()]);
+    setRoutes(routeRows);
+    setFeeds(feedRows);
+    setSelected((cur) => {
+      const next = cur ? routeRows.find((r) => r.feed_id === cur.feed_id && r.route_id === cur.route_id) : null;
+      return next ?? routeRows[0] ?? null;
+    });
+  };
 
   useEffect(() => {
     (async () => {
-      try { await loadFeeds(); } catch (e) { setError(e instanceof Error ? e.message : 'フィード一覧の取得に失敗しました'); }
-      // 中心座標: 拠点 → 最初の座標付き場所。旅程の日も取得し、初期運行日を旅の初日(なければ今日)に。
       try {
+        await load();
         const detail = await api.getTrip(tripId);
-        const base = detail.places.find((p) => p.is_base === 1 && p.lat != null && p.lng != null)
-          ?? detail.places.find((p) => p.lat != null && p.lng != null);
-        if (base && base.lat != null && base.lng != null) setCenter({ lat: base.lat, lng: base.lng });
-        const days = [...detail.days].sort((a, b) => a.day_index - b.day_index);
-        setTripDays(days);
-        const firstDated = days.find((d) => d.date);
-        if (firstDated?.date) setSelectedDate(firstDated.date);
-      } catch { /* 旅程未取得は今日のまま */ }
+        setTripDays([...detail.days].sort((a, b) => a.day_index - b.day_index));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '路線一覧の取得に失敗しました');
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId]);
 
-  const doImport = async () => {
-    if (!/^https?:\/\/\S+$/i.test(url.trim())) { setError('GTFS zip の URL を入力してください'); return; }
-    setImportBusy(true); setMsg(''); setError('');
-    try {
-      const feed = await api.gtfsImport({ url: url.trim(), name: name.trim() || undefined });
-      setMsg(`「${feed.name}」を取り込みました（停留所 ${feed.stop_count} / 便 ${feed.trip_count}）。`);
-      setUrl(''); setName('');
-      await loadFeeds();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '取込に失敗しました');
-    } finally { setImportBusy(false); }
-  };
+  const selectedDate = useMemo(() => dayKindDate(dayKind, selected, tripDays), [dayKind, selected, tripDays]);
+  const filteredRoutes = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return routes;
+    return routes.filter((r) => [r.route_label, r.feed_name].some((v) => v.toLowerCase().includes(q)));
+  }, [query, routes]);
 
-  const openRoutes = async (f: GtfsFeed) => {
-    setRoutesFeed(f); setRoutes([]); setTtRoute(null); setRoutesBusy(true); setError('');
-    try { setRoutes(await api.gtfsRoutes(f.id)); }
-    catch (e) { setError(e instanceof Error ? e.message : '路線一覧の取得に失敗しました'); }
-    finally { setRoutesBusy(false); }
+  const importFromUrl = async () => {
+    if (!/^https?:\/\/\S+$/i.test(url.trim())) { setError('路線情報ページの URL を入力してください'); return; }
+    setBusy(true); setError(''); setMsg('');
+    try {
+      const r = await api.gtfsImportFromPage({ url: url.trim(), name: name.trim() || undefined });
+      setMsg(`「${r.feed.name}」を取り込みました（停留所 ${r.feed.stop_count} / 便 ${r.feed.trip_count}）。`);
+      setUrl(''); setName('');
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '路線情報の取り込みに失敗しました');
+    } finally { setBusy(false); }
   };
-  const routeLabel = (r: GtfsRoute) => [r.short_name, r.long_name].filter(Boolean).join(' ') || r.route_id;
 
   const removeFeed = async (id: string) => {
-    if (!window.confirm('このフィードを削除しますか？（取り込んだ停留所・時刻も消えます）')) return;
+    if (!window.confirm('この取り込み済み路線情報を削除しますか？')) return;
+    setError(''); setMsg('');
     try {
-      await api.gtfsDeleteFeed(id); await loadFeeds();
-      setStops([]); setSelected(null); setDepartures([]);
-      if (routesFeed?.id === id) { setRoutesFeed(null); setRoutes([]); setTtRoute(null); }
+      await api.gtfsDeleteFeed(id);
+      await load();
+      if (selected?.feed_id === id) setSelected(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '削除に失敗しました');
     }
-    catch (e) { setError(e instanceof Error ? e.message : '削除に失敗しました'); }
   };
-
-  const findStops = async (at: { lat: number; lng: number }) => {
-    setStopsBusy(true); setError(''); setSelected(null); setDepartures([]);
-    try {
-      const hits = await api.gtfsNearbyStops({ lat: at.lat, lng: at.lng, radius: 800, limit: 10 });
-      setStops(hits);
-      if (hits.length === 0) setMsg('近くに取り込み済みの停留所がありません（先に GTFS を取り込んでください）。');
-    } catch (e) { setError(e instanceof Error ? e.message : '停留所の検索に失敗しました'); }
-    finally { setStopsBusy(false); }
-  };
-
-  const useCurrentLocation = () => {
-    if (!('geolocation' in navigator)) { setError('この端末では現在地を取得できません'); return; }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => { const at = { lat: pos.coords.latitude, lng: pos.coords.longitude }; setCenter(at); void findStops(at); },
-      () => setError('現在地を取得できませんでした'),
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
-  };
-
-  const openStop = async (s: GtfsStopHit) => {
-    setSelected(s); setDepBusy(true); setDepartures([]);
-    try { setDepartures(await api.gtfsDepartures(s.feed_id, s.stop_id, { limit: 12 })); }
-    catch (e) { setError(e instanceof Error ? e.message : '時刻の取得に失敗しました'); }
-    finally { setDepBusy(false); }
-  };
-
-  const hhmm = (t: string | null) => (t ? t.slice(0, 5) : '—');
-  const modeIcon = (rt: number | null) => (rt == null ? '🚏' : rt === 3 ? '🚌' : '🚆');
 
   return (
-    <section className="card foundation-form">
-      <h3 style={{ marginTop: 0 }}>🚌 GTFS 時刻表（バス／一部鉄道）</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
-        GTFS / GTFS-JP の zip を取り込み、近くの停留所の発車時刻を表示します。
-        データは <a href="https://gtfs-data.jp/" target="_blank" rel="noreferrer">gtfs-data.jp</a> など事業者の公開 URL から。
-      </p>
-      {error && <div className="error">⚠ {error}</div>}
-      {msg && <p className="muted">{msg}</p>}
+    <section className="route-panel">
+      {error && <div className="card error">⚠ {error}</div>}
+      {msg && <div className="card">{msg}</div>}
 
-      {/* 取込 */}
-      <label htmlFor="gtfs-url">GTFS zip の URL</label>
-      <input id="gtfs-url" type="url" placeholder="https://.../gtfs.zip" value={url} onChange={(e) => setUrl(e.target.value)} />
-      <input type="text" placeholder="表示名（任意・空なら事業者名）" value={name} onChange={(e) => setName(e.target.value)} />
-      <button type="button" onClick={() => void doImport()} disabled={importBusy || !url.trim()}>
-        {importBusy ? '取り込み中…（大きいと時間がかかります）' : '取り込む'}
-      </button>
+      <RoutePreviewSection tripId={tripId} map={map} />
 
-      {/* フィード一覧 */}
-      {feeds.length > 0 && (
-        <div className="stack" style={{ marginTop: 10 }}>
-          {feeds.map((f) => (
-            <div key={f.id} className="spread" style={{ alignItems: 'center', gap: 6 }}>
-              <span style={{ minWidth: 0 }}><strong>{f.name}</strong> <span className="muted">停留所 {f.stop_count} / 便 {f.trip_count}</span></span>
-              <span className="row" style={{ gap: 6 }}>
-                <button type="button" className="sm" onClick={() => void openRoutes(f)}>🕒 路線・時刻表</button>
-                <button type="button" className="sm ghost" onClick={() => void removeFeed(f.id)}>削除</button>
-              </span>
-            </div>
-          ))}
+      <div className="card route-list-panel">
+        <div className="spread">
+          <h3 style={{ margin: 0 }}>路線一覧</h3>
+          <span className="chip">{routes.length}路線</span>
         </div>
-      )}
-
-      {/* 路線選択 → 時刻表(表+地図) */}
-      {routesFeed && (
-        <div className="card" style={{ marginTop: 10 }}>
-          <div className="spread">
-            <strong>🚌 {routesFeed.name} の路線</strong>
-            <button type="button" className="sm ghost" onClick={() => { setRoutesFeed(null); setRoutes([]); setTtRoute(null); }}>閉じる</button>
-          </div>
-          {/* 運行日: 旅程の日から選ぶ + 任意の日付。選んだ日の時刻表が出る。 */}
-          <div className="foundation-form" style={{ margin: '6px 0' }}>
-            <div className="row" style={{ gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              <span className="muted" style={{ fontSize: 12 }}>📅 運行日</span>
-              {tripDays.filter((d) => d.date).map((d) => (
-                <button key={d.id} type="button"
-                  className={selectedDate === d.date ? 'chip-btn active' : 'chip-btn'}
-                  onClick={() => d.date && setSelectedDate(d.date)}>
-                  {d.date!.slice(5).replace('-', '/')}（{d.day_index + 1}日目）
-                </button>
-              ))}
-              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value || todayInput())} style={{ width: 150 }} />
-            </div>
-          </div>
-
-          {routesBusy && <p className="muted">路線を読み込み中…</p>}
-          {!routesBusy && routes.length === 0 && <p className="muted">路線データがありません。</p>}
-          <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-            {routes.map((r) => (
-              <button key={r.route_id} type="button"
-                className={ttRoute?.routeId === r.route_id && ttRoute?.feedId === routesFeed.id ? 'chip-btn active' : 'chip-btn'}
-                onClick={() => setTtRoute({ feedId: routesFeed.id, routeId: r.route_id, label: routeLabel(r) })}>
-                {r.route_type != null && r.route_type !== 3 ? '🚆 ' : '🚌 '}{routeLabel(r)}（{r.trip_count}便）
-              </button>
-            ))}
-          </div>
-          {ttRoute && (
-            <div style={{ marginTop: 10 }}>
-              <GtfsTimetable feedId={ttRoute.feedId} routeId={ttRoute.routeId} routeLabel={ttRoute.label} date={selectedDate} map={map} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 近くの停留所 */}
-      <div className="row" style={{ gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-        <button type="button" className="sm" onClick={() => center && void findStops(center)} disabled={!center || stopsBusy}>
-          {stopsBusy ? '検索中…' : '🏨 拠点の近くの停留所'}
-        </button>
-        <button type="button" className="sm ghost" onClick={useCurrentLocation}>📍 現在地で探す</button>
-      </div>
-
-      {stops.length > 0 && (
-        <div className="stack" style={{ marginTop: 8 }}>
-          {stops.map((s) => (
-            <button key={`${s.feed_id}:${s.stop_id}`} type="button"
-              className={`card card-link${selected?.stop_id === s.stop_id && selected?.feed_id === s.feed_id ? ' active' : ''}`}
-              onClick={() => void openStop(s)}>
-              <strong>{s.stop_name ?? s.stop_id}</strong>
-              <div className="muted">{s.feed_name} ・ {s.distance_m}m</div>
+        <div className="route-day-tabs" role="group" aria-label="ダイヤ">
+          {(['weekday', 'weekend', 'holiday'] as const).map((k) => (
+            <button key={k} type="button" className={dayKind === k ? 'chip-btn active' : 'chip-btn'} onClick={() => setDayKind(k)}>
+              {DAY_KIND_LABEL[k]}
             </button>
           ))}
         </div>
-      )}
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="路線名で検索"
+          aria-label="路線検索"
+        />
 
-      {selected && (
-        <div className="card" style={{ marginTop: 8 }}>
-          <strong>{selected.stop_name ?? selected.stop_id} の発車（{depBusy ? '取得中…' : '直近'}）</strong>
-          {!depBusy && departures.length === 0 && <p className="muted" style={{ margin: '6px 0 0' }}>直近の発車はありません（運行日/時間帯外の可能性）。</p>}
-          <div className="stack" style={{ marginTop: 6 }}>
-            {departures.map((d, i) => (
-              <div key={i} className="spread">
-                <strong>{hhmm(d.departure_time)}</strong>
-                <span className="muted">{modeIcon(d.route_type)} {[d.route_name, d.headsign].filter(Boolean).join(' ／ ')}</span>
-              </div>
-            ))}
-          </div>
+        {filteredRoutes.length === 0 && <p className="muted">取り込み済みの路線がありません。下の「経路取り込み」から追加してください。</p>}
+        <div className="route-list">
+          {filteredRoutes.map((r) => {
+            const count = countForKind(r, dayKind);
+            const active = selected?.feed_id === r.feed_id && selected.route_id === r.route_id;
+            return (
+              <button
+                key={`${r.feed_id}:${r.route_id}`}
+                type="button"
+                className={`route-row${active ? ' active' : ''}${r.limited ? ' limited' : ''}${count === 0 ? ' muted-route' : ''}`}
+                onClick={() => setSelected(r)}
+              >
+                <span className="route-row-main">
+                  <strong>{routeIcon(r.route_type)} {r.route_label}</strong>
+                  <span className="muted">{r.feed_name}</span>
+                </span>
+                <span className={`chip ${r.limited ? 'limited-chip' : ''}`}>
+                  {count > 0 ? `${DAY_KIND_LABEL[dayKind]} ${count}便` : `${DAY_KIND_LABEL[dayKind]}なし`}
+                </span>
+              </button>
+            );
+          })}
         </div>
-      )}
+
+        {selected && (
+          <div className="route-detail">
+            <div className="spread">
+              <strong>{routeIcon(selected.route_type)} {selected.route_label}</strong>
+              {selected.limited && <span className="chip limited-chip">限定ダイヤあり</span>}
+            </div>
+            <p className="muted" style={{ margin: '2px 0 8px' }}>
+              表示ダイヤ: {DAY_KIND_LABEL[dayKind]} / {selectedDate.replaceAll('-', '/')}
+            </p>
+            <GtfsTimetable
+              feedId={selected.feed_id}
+              routeId={selected.route_id}
+              routeLabel={selected.route_label}
+              routeType={selected.route_type}
+              date={selectedDate}
+              map={map}
+              compact
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="card foundation-form">
+        <h3 style={{ marginTop: 0 }}>経路取り込み</h3>
+        <label htmlFor="route-import-url">路線情報ページの URL</label>
+        <input
+          id="route-import-url"
+          type="url"
+          placeholder="https://..."
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <input
+          type="text"
+          placeholder="表示名（任意）"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button type="button" onClick={() => void importFromUrl()} disabled={busy || !url.trim()}>
+          {busy ? '取り込み中…' : 'URLから取り込む'}
+        </button>
+
+        {feeds.length > 0 && (
+          <details className="route-imported">
+            <summary>取り込み済み ({feeds.length})</summary>
+            <div className="stack">
+              {feeds.map((f) => (
+                <div key={f.id} className="spread route-imported-row">
+                  <span>
+                    <strong>{f.name}</strong>
+                    <span className="muted">停留所 {f.stop_count} / 便 {f.trip_count}</span>
+                  </span>
+                  <button type="button" className="sm ghost" onClick={() => void removeFeed(f.id)}>削除</button>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
     </section>
   );
 }

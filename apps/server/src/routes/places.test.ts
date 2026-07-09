@@ -23,6 +23,7 @@ afterAll(async () => {
 
 // 各テストは独立させる: trip_places / places を空にする。
 beforeEach(async () => {
+  await sql`DELETE FROM geocode_cache`;
   await sql`DELETE FROM trip_places`;
   await sql`DELETE FROM places`;
   await sql`DELETE FROM trips`;
@@ -171,6 +172,28 @@ describe('places library + trip membership', () => {
       }),
     );
     expect(patched.is_base).toBe(1);
+  });
+
+  it('住所から緯度経度を取得して場所に反映できる', async () => {
+    const trip = await createTrip('旅A');
+    const created = await json<{ id: string }>(
+      await app.request(`/api/trips/${trip.id}/places`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: '住所だけの場所' }),
+      }),
+    );
+    await sql`INSERT INTO geocode_cache (location, lat, lng, ok, geocoded_at)
+      VALUES (${'東京都港区芝公園4-2-8'}, ${35.6586}, ${139.7454}, ${1}, ${'2026-01-01T00:00:00.000Z'})`;
+
+    const res = await app.request(`/api/places/${created.id}/geocode`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ address: '東京都港区芝公園4-2-8' }),
+    });
+    expect(res.status).toBe(200);
+    const patched = await json<{ address: string; lat: number; lng: number }>(res);
+    expect(patched.address).toBe('東京都港区芝公園4-2-8');
+    expect(patched.lat).toBe(35.6586);
+    expect(patched.lng).toBe(139.7454);
   });
 
   it('「また今度」は旅ごと: 旅A で postponed=1 にしても旅B では 0 のまま', async () => {

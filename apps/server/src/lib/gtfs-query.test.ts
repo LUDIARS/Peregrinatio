@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setupTestDb, teardownTestDb } from '../test/db.js';
 import { sql } from '../db/index.js';
-import { nearbyStops, stopDepartures, listRoutes, routeTimetable, feedStops } from './gtfs-query.js';
+import { nearbyStops, stopDepartures, listRoutes, routeTimetable, feedStops, findStopConnections, listRouteSummaries, searchRouteGraph } from './gtfs-query.js';
 
 beforeAll(async () => { await setupTestDb(); });
 afterAll(async () => { await teardownTestDb(); });
@@ -86,5 +86,64 @@ describe('listRoutes / routeTimetable', () => {
     const stops = await feedStops('F1');
     // S_NEAR/S_FAR/S2/S3 すべて座標あり。
     expect(stops.map((s) => s.stop_id).sort()).toEqual(['S2', 'S3', 'S_FAR', 'S_NEAR']);
+  });
+
+  it('取込済み路線の横断一覧はダイヤ種別の便数を返す', async () => {
+    const rows = await listRouteSummaries();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(expect.objectContaining({
+      feed_id: 'F1',
+      route_id: 'R1',
+      route_label: '0001 循環線',
+      weekday_trip_count: 2,
+      weekend_trip_count: 2,
+      holiday_trip_count: 0,
+    }));
+  });
+});
+
+describe('findStopConnections', () => {
+  it('同一便で origin から dest へ進むバス接続だけ返す', async () => {
+    const rows = await findStopConnections('F1', ['S_NEAR'], ['S3'], '20260629', {
+      departureAfter: '07:30:00',
+      departureBefore: '09:00:00',
+      limit: 5,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.departure_time).toBe('08:00:00');
+    expect(rows[0]!.arrival_time).toBe('08:20:00');
+    expect(rows[0]!.route_name).toBe('0001');
+    expect(rows[0]!.origin_stop_name).toBe('駅前');
+    expect(rows[0]!.dest_stop_name).toBe('三番');
+  });
+
+  it('逆順の停留所は接続候補にしない', async () => {
+    const rows = await findStopConnections('F1', ['S3'], ['S_NEAR'], '20260629', {
+      departureAfter: '00:00:00',
+      limit: 5,
+    });
+    expect(rows).toEqual([]);
+  });
+});
+
+describe('searchRouteGraph', () => {
+  it('Google API を使わず、取り込み済み停留所グラフから経路候補を返す', async () => {
+    const res = await searchRouteGraph({
+      from: { lat: 35.681, lng: 139.767 },
+      to: { lat: 35.50, lng: 139.50 },
+      date: '2026-06-29',
+      time: '07:30',
+      basis: 'departure',
+    });
+    expect(res.options.length).toBeGreaterThan(0);
+    expect(res.options[0]).toEqual(expect.objectContaining({
+      departure_time: '08:00',
+      arrival_time: '08:20',
+      transfer_count: 0,
+    }));
+    expect(res.options[0]!.legs[0]).toEqual(expect.objectContaining({
+      origin_stop_name: '駅前',
+      dest_stop_name: '三番',
+    }));
   });
 });

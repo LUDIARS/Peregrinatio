@@ -48,6 +48,9 @@ export const config = {
   transit: {
     ekispertKey: '',
     ekispertBaseUrl: 'https://api.ekispert.jp/v1/json',
+    // transit-fetch (Puppeteer+LLM で重い) 結果の再利用可能時間。同一区間の再取得は
+    // まずキャッシュを見て、この時間内なら取り直さない。transit は時刻依存なので既定 60 分。
+    fetchCacheTtlMs: 60 * 60 * 1000,
   },
   // 拠点サマリー自動生成のバックグラウンド設定。
   baseSummary: {
@@ -63,6 +66,16 @@ export const config = {
   // アップロード/合成画像・生成 PDF の保存先 (gitignore 済)。
   uploadsDir: resolve(PROJECT_ROOT, 'apps/server/uploads'),
   exportsDir: resolve(PROJECT_ROOT, 'apps/server/exports'),
+  // 横断ログ収集 (Vestigium)。console.* を JSONL に吐き、リクエスト計測を仕込む。
+  // 出力先: <repo>/logs/peregrinatio/YYYY-MM-DD.jsonl (logs/ は gitignore 済)。
+  // Concordia の file-tail が拾えるよう serviceCode は catalog と一致させる。
+  logging: {
+    enabled: true,
+    serviceCode: 'peregrinatio',
+    logsDir: resolve(PROJECT_ROOT, 'logs'),
+    retentionDays: 14,
+    captureConsole: true,   // 既存の console.log/error も JSONL に流す
+  },
 };
 
 export type Config = typeof config;
