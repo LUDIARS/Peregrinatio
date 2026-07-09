@@ -76,6 +76,7 @@ export function GtfsTimetable(
           if (!mapObj.current) {
             mapObj.current = new window.google.maps.Map(mapHost.current, {
               center: { lat: 36.96, lng: 140.04 }, zoom: 11,
+              gestureHandling: 'greedy',
               mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
             });
           }
