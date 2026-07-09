@@ -59,7 +59,6 @@ export function TransitPanel({ tripId, map }: { tripId: string; map?: any }) {
       {error && <div className="card error">⚠ {error}</div>}
       {info && <div className="card">{info}</div>}
 
-      {/* GTFS 時刻表 (バス/一部鉄道の一括取込)。路線を選ぶと停留所がメイン地図に出る。 */}
       <GtfsPanel tripId={tripId} map={map} />
 
       {/* 予約サジェスト (新幹線/飛行機) */}
