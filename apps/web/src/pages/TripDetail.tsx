@@ -183,6 +183,7 @@ export function TripDetail() {
         // 保持している地図インスタンスを取得 (初回のみ生成)、ホストへ付け替える。
         const { map, info, div, created } = acquireMap({
           center: { lat: 35.681, lng: 139.767 }, zoom: 11,
+          gestureHandling: 'greedy',
           mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
         });
         mapObj.current = map;
