@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl, pdfUrl } from '../api.js';
-import type { PlaceJobView, PlaceStatus, TripDetail as TripDetailData, TripPlace } from '../types.js';
+import type { PlaceJobView, PlaceStatus, SelectedGtfsRoute, TripDetail as TripDetailData, TripPlace } from '../types.js';
 
 const STATUS_LABEL: Record<string, string> = { interested: '気になる', visited: '訪問済み' };
 const JOB_STATUS_LABEL: Record<string, string> = {
@@ -13,7 +13,7 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'interested', label: '気になる' },
   { key: 'visited', label: '訪問済み' },
 ];
-import { loadMaps, PIN_PATH } from '../lib/maps.js';
+import { loadMaps, PIN_PATH, placeTypeColor, placeTypeLabel } from '../lib/maps.js';
 import { acquireMap, releaseMap, needsCentering, markCentered, clearMarkers, addMarker } from '../lib/mapInstance.js';
 import { getCachedTrip, fetchTrip } from '../lib/dataCache.js';
 import { getPrefs } from '../lib/prefs.js';
@@ -23,10 +23,18 @@ import { LibraryPicker } from './LibraryPicker.js';
 import { MapSearchOverlay } from '../components/MapSearchOverlay.js';
 import { TransitPanel } from '../components/transit/TransitPanel.js';
 import { TripPrepPanel } from '../components/TripPrepPanel.js';
+import { GtfsTimetable } from '../components/GtfsTimetable.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 type MapStatus = 'loading' | 'disabled' | 'ready' | 'error';
+
+function placeMatchesFilters(p: TripPlace, statusFilter: StatusFilter, placeTypeFilters: readonly string[]): boolean {
+  if (p.postponed === 1) return false;
+  if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+  if (placeTypeFilters.length > 0 && !placeTypeFilters.includes(placeTypeLabel(p.category))) return false;
+  return true;
+}
 
 // 周囲 ~10-30km を見せたいので低めのズームに。z11≈横20km / z10≈横40km。
 const BASE_ZOOM = 11; // 拠点クリック/フォーカス時
@@ -105,9 +113,24 @@ export function TripDetail() {
   }, [listPanel]);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => getPrefs().defaultStatusFilter);
+  const [placeTypeFilters, setPlaceTypeFilters] = useState<string[]>([]);
   const [recommending, setRecommending] = useState(false);
   const [recommendMsg, setRecommendMsg] = useState('');
   const [recommendRadius, setRecommendRadius] = useState(8000);
+  const [selectedTransitRoute, setSelectedTransitRoute] = useState<SelectedGtfsRoute | null>(null);
+
+  const setMapRoute = useCallback((route: SelectedGtfsRoute | null) => {
+    setSelectedTransitRoute((cur) => {
+      if (!cur && !route) return cur;
+      if (cur && route
+        && cur.feed_id === route.feed_id
+        && cur.route_id === route.route_id
+        && cur.route_label === route.route_label
+        && cur.route_type === route.route_type
+        && cur.date === route.date) return cur;
+      return route;
+    });
+  }, []);
 
   // 取り込みキュー (画像解析/クロールの順次処理)。3 秒ごとにポーリングして進捗を表示する。
   const [jobs, setJobs] = useState<PlaceJobView[]>([]);
@@ -206,7 +229,7 @@ export function TripDetail() {
   const fitAll = () => {
     if (!mapObj.current || !data) return;
     const g = window.google;
-    const pinned = data.places.filter((p) => p.lat != null && p.lng != null && p.postponed !== 1);
+    const pinned = data.places.filter((p) => placeMatchesFilters(p, statusFilter, placeTypeFilters) && p.lat != null && p.lng != null);
     if (pinned.length === 0) return;
     const b = new g.maps.LatLngBounds();
     for (const p of pinned) b.extend({ lat: p.lat as number, lng: p.lng as number });
@@ -363,23 +386,23 @@ export function TripDetail() {
     const g = window.google;
     clearMarkers();
     markerById.current.clear();
-    const pinned = data.places.filter((p) => p.lat != null && p.lng != null && p.postponed !== 1);
+    const pinned = data.places.filter((p) => placeMatchesFilters(p, statusFilter, placeTypeFilters) && p.lat != null && p.lng != null);
     const bases = pinned.filter((p) => p.is_base === 1);
 
     for (const p of pinned) {
       const isBase = p.is_base === 1;
       const isSelected = p.id === focusedId; // フォーカス/選択中はピンの色を変える (強調)
       const pos = { lat: p.lat as number, lng: p.lng as number };
+      const typeColor = placeTypeColor(placeTypeLabel(p.category));
       const marker = new g.maps.Marker({
         position: pos, map: mapObj.current, title: p.name,
         zIndex: isSelected ? 2000 : isBase ? 1000 : 1,
         label: isBase ? { text: '🏨', fontSize: '14px' } : undefined,
         icon: {
           path: PIN_PATH,
-          // 選択中=マゼンタ / 拠点=オレンジ / 通常=ティール
-          fillColor: isSelected ? '#d6336c' : isBase ? '#e8590c' : '#0e7c86',
-          fillOpacity: 0.95, strokeColor: '#fff',
-          strokeWeight: isSelected ? 2.5 : isBase ? 2 : 1.5,
+          fillColor: typeColor,
+          fillOpacity: 0.95, strokeColor: isSelected ? '#d6336c' : '#fff',
+          strokeWeight: isSelected ? 3 : isBase ? 2.2 : 1.5,
           scale: isSelected ? 1.5 : isBase ? 1.7 : 1,
           labelOrigin: new g.maps.Point(0, -26),
           anchor: new g.maps.Point(0, 0),
@@ -418,7 +441,7 @@ export function TripDetail() {
       } else { fitAll(); }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, mapStatus, focusedId, infoPlaceId]);
+  }, [data, mapStatus, focusedId, infoPlaceId, statusFilter, placeTypeFilters]);
 
   const collectRecommendations = async () => {
     if (!tripId) return;
@@ -459,16 +482,36 @@ export function TripDetail() {
     catch (e) { setError(e instanceof Error ? e.message : '拠点の設定に失敗しました'); }
   };
 
+  const places = data?.places ?? [];
+  const bases = useMemo(
+    () => places.filter((p) => p.is_base === 1 && p.lat != null && p.lng != null),
+    [places],
+  );
+  const activePlaces = useMemo(
+    () => places.filter((p) => p.postponed !== 1),
+    [places],
+  );
+  const postponedPlaces = useMemo(
+    () => places.filter((p) => p.postponed === 1),
+    [places],
+  );
+  const placeTypes = useMemo(
+    () => Array.from(new Set(activePlaces.map((p) => placeTypeLabel(p.category)))).sort((a, b) => a.localeCompare(b, 'ja')),
+    [activePlaces],
+  );
+  const visiblePlaces = useMemo(
+    () => activePlaces.filter((p) => placeMatchesFilters(p, statusFilter, placeTypeFilters)),
+    [activePlaces, statusFilter, placeTypeFilters],
+  );
+  const togglePlaceTypeFilter = (type: string) => {
+    setPlaceTypeFilters((cur) => (cur.includes(type) ? cur.filter((x) => x !== type) : [...cur, type]));
+  };
+
   if (!tripId) return null;
   if (error && !data) return <div className="card error">⚠ {error}</div>;
   if (!data) return <p className="muted">読み込み中…</p>;
 
-  const { trip, places } = data;
-  const bases = places.filter((p) => p.is_base === 1 && p.lat != null && p.lng != null);
-  // 「また今度」は場所リスト/地図から隔離し、専用セクションにだけ出す。
-  const activePlaces = places.filter((p) => p.postponed !== 1);
-  const postponedPlaces = places.filter((p) => p.postponed === 1);
-  const visiblePlaces = statusFilter === 'all' ? activePlaces : activePlaces.filter((p) => p.status === statusFilter);
+  const { trip } = data;
 
   return (
     <div className={`trip-ws${selectedId ? ' has-detail' : ''}${drawerOpen ? ' drawer-open' : ''}`}>
@@ -501,7 +544,12 @@ export function TripDetail() {
 
         {/* 経路モード: 時刻表/運行情報。GTFS 路線の停留所はメイン地図に描画される。 */}
         {listPanel === 'transit' && (
-          <TransitPanel tripId={tripId} map={mapStatus === 'ready' ? mapObj.current : undefined} />
+          <TransitPanel
+            tripId={tripId}
+            map={mapStatus === 'ready' ? mapObj.current : undefined}
+            selectedRoute={selectedTransitRoute}
+            onSelectedRouteChange={setMapRoute}
+          />
         )}
 
         {listPanel === 'prep' && (
@@ -526,9 +574,31 @@ export function TripDetail() {
             ))}
           </div>
         )}
+        {placeTypes.length > 0 && (
+          <div className="place-type-filter" aria-label="場所タイプフィルタ">
+            <div className="base-bar-label">タイプ</div>
+            <div className="place-type-filter-row">
+              {placeTypes.map((type) => {
+                const active = placeTypeFilters.includes(type);
+                return (
+                  <button key={type} type="button"
+                    className={`place-type-btn${active ? ' active' : ''}`}
+                    onClick={() => togglePlaceTypeFilter(type)}
+                    aria-pressed={active}>
+                    <span className="type-swatch" style={{ background: placeTypeColor(type) }} />
+                    <span>{type}</span>
+                  </button>
+                );
+              })}
+              {placeTypeFilters.length > 0 && (
+                <button type="button" className="place-type-clear" onClick={() => setPlaceTypeFilters([])}>解除</button>
+              )}
+            </div>
+          </div>
+        )}
         {places.length === 0 && <p className="muted">まだ場所がありません。地図右の検索から追加してください。</p>}
         {places.length > 0 && visiblePlaces.length === 0 && (
-          <p className="muted">この状態の場所はありません。</p>
+          <p className="muted">この条件の場所はありません。</p>
         )}
         <div className="stack">
           {visiblePlaces.map((p: TripPlace) => (
@@ -559,7 +629,10 @@ export function TripDetail() {
                           {STATUS_LABEL[p.status]}{p.status_by ? ` · ${p.status_by}` : ''}
                         </span>
                       )}
-                      {p.category && <span className="muted">{p.category}</span>}
+                      <span className="place-type-chip">
+                        <span className="type-swatch" style={{ background: placeTypeColor(placeTypeLabel(p.category)) }} />
+                        {placeTypeLabel(p.category)}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -676,7 +749,7 @@ export function TripDetail() {
                 className={activeBaseId === b.id ? 'chip-btn active' : 'chip-btn'}
                 onClick={() => focusBase(b)}>🏨 {b.name}</button>
             ))}
-            {places.some((p) => p.lat != null) && (
+            {visiblePlaces.some((p) => p.lat != null) && (
               <button type="button" className="chip-btn ghost" onClick={fitAll}>全体表示</button>
             )}
           </div>
@@ -691,6 +764,18 @@ export function TripDetail() {
             center={bases[0] ? { lat: bases[0].lat as number, lng: bases[0].lng as number } : null}
             onChanged={reload}
           />
+          {mapStatus === 'ready' && selectedTransitRoute && (
+            <GtfsTimetable
+              key={`${selectedTransitRoute.feed_id}:${selectedTransitRoute.route_id}:${selectedTransitRoute.date}`}
+              feedId={selectedTransitRoute.feed_id}
+              routeId={selectedTransitRoute.route_id}
+              routeLabel={selectedTransitRoute.route_label}
+              routeType={selectedTransitRoute.route_type}
+              date={selectedTransitRoute.date}
+              map={mapObj.current}
+              mapOnly
+            />
+          )}
         </div>
 
         {/* 既存ライブラリ場所の使い回し (他の旅で登録済みの場所をこの旅にも紐付け) */}
@@ -701,7 +786,7 @@ export function TripDetail() {
         />
 
         <p className="muted" style={{ marginTop: 6 }}>
-          ピンタップで詳細（🏨拠点はズーム）。バス/新幹線の時刻表は左の「🚃 経路」タブで地図を見ながら確認できます。
+          ピンタップで詳細（🏨拠点はズーム）。場所フィルタは一覧と地図に反映され、選択した路線は地図に表示し続けます。
         </p>
       </section>
 

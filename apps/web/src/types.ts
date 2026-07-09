@@ -366,6 +366,14 @@ export interface RouteSummary {
   limited: boolean;
 }
 
+export interface SelectedGtfsRoute {
+  feed_id: string;
+  route_id: string;
+  route_label: string;
+  route_type: number | null;
+  date: string;
+}
+
 export interface RouteSearchLeg extends GtfsConnection {
   transfer_wait_min: number | null;
 }
