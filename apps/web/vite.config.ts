@@ -32,16 +32,6 @@ export default defineConfig({
             },
           },
           {
-            // 取り込み/合成画像。
-            urlPattern: ({ url }) => url.pathname.startsWith('/uploads/'),
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'pe-uploads',
-              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
             // 旅データ等の API (GET)。オンラインは最新優先、オフラインはキャッシュ。
             urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
             handler: 'NetworkFirst',
