@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl, pdfUrl } from '../api.js';
-import type { PlaceJobView, PlaceStatus, SelectedGtfsRoute, TripDetail as TripDetailData, TripPlace } from '../types.js';
+import type { PlaceFacility, PlaceJobView, PlaceStatus, SelectedGtfsRoute, TripDetail as TripDetailData, TripPlace } from '../types.js';
 
 const STATUS_LABEL: Record<string, string> = { interested: '気になる', visited: '訪問済み' };
 const JOB_STATUS_LABEL: Record<string, string> = {
@@ -17,6 +17,7 @@ import { loadMaps, PIN_PATH, placeTypeColor, placeTypeLabel } from '../lib/maps.
 import { acquireMap, releaseMap, needsCentering, markCentered, clearMarkers, addMarker } from '../lib/mapInstance.js';
 import { getCachedTrip, fetchTrip } from '../lib/dataCache.js';
 import { getPrefs } from '../lib/prefs.js';
+import { groupFacilitiesByPlace, wantedFacilityNames } from '../lib/placeFacilities.js';
 import { PlaceDetailPane } from './PlaceDetail.js';
 import { Itinerary } from './Itinerary.js';
 import { LibraryPicker } from './LibraryPicker.js';
@@ -48,7 +49,9 @@ export function TripDetail() {
   const { tripId } = useParams<{ tripId: string }>();
   const navigate = useNavigate();
   const [data, setData] = useState<TripDetailData | null>(null);
+  const [facilities, setFacilities] = useState<PlaceFacility[]>([]);
   const [error, setError] = useState('');
+  const facilitiesByPlace = useMemo(() => groupFacilitiesByPlace(facilities), [facilities]);
 
   // 左パネル 場所/経路 切替。URL (?panel=transit) と同期し、フッターの「時刻表/運行」からも入れる。
   const [searchParams, setSearchParams] = useSearchParams();
@@ -142,7 +145,14 @@ export function TripDetail() {
 
   const reload = async () => {
     if (!tripId) return;
-    try { setData(await fetchTrip(tripId)); }
+    try {
+      const [detail, facilityRows] = await Promise.all([
+        fetchTrip(tripId),
+        api.listTripFacilities(tripId),
+      ]);
+      setData(detail);
+      setFacilities(facilityRows);
+    }
     catch (e) { setError(e instanceof Error ? e.message : '読み込みに失敗しました'); }
   };
   useEffect(() => {
@@ -277,6 +287,23 @@ export function TripDetail() {
       cat.textContent = p.category;
       root.appendChild(cat);
     }
+    const wantedNames = wantedFacilityNames(facilitiesByPlace, p.id);
+    if (wantedNames.length > 0) {
+      const facilityBox = document.createElement('div');
+      facilityBox.className = 'pin-info-facilities';
+      const facilityLabel = document.createElement('strong');
+      facilityLabel.textContent = 'やりたい設備';
+      facilityBox.appendChild(facilityLabel);
+      const facilityList = document.createElement('div');
+      facilityList.className = 'pin-info-facility-list';
+      for (const facilityName of wantedNames) {
+        const chip = document.createElement('span');
+        chip.textContent = `✓ ${facilityName}`;
+        facilityList.appendChild(chip);
+      }
+      facilityBox.appendChild(facilityList);
+      root.appendChild(facilityBox);
+    }
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'pin-info-btn';
@@ -393,13 +420,17 @@ export function TripDetail() {
 
     for (const p of pinned) {
       const isBase = p.is_base === 1;
+      const wantedNames = wantedFacilityNames(facilitiesByPlace, p.id);
+      const labelText = [isBase ? '🏨' : '', wantedNames.join('・')].filter(Boolean).join(' ');
       const isSelected = p.id === focusedId; // フォーカス/選択中はピンの色を変える (強調)
       const pos = { lat: p.lat as number, lng: p.lng as number };
       const typeColor = placeTypeColor(placeTypeLabel(p.category));
       const marker = new g.maps.Marker({
-        position: pos, map: mapObj.current, title: p.name,
+        position: pos,
+        map: mapObj.current,
+        title: wantedNames.length > 0 ? `${p.name}: ${wantedNames.join('、')}` : p.name,
         zIndex: isSelected ? 2000 : isBase ? 1000 : 1,
-        label: isBase ? { text: '🏨', fontSize: '14px' } : undefined,
+        label: labelText ? { text: labelText, fontSize: '12px', className: 'map-pin-facilities' } : undefined,
         icon: {
           path: PIN_PATH,
           fillColor: typeColor,
@@ -443,7 +474,7 @@ export function TripDetail() {
       } else { fitAll(); }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, mapStatus, focusedId, infoPlaceId, statusFilter, placeTypeFilters]);
+  }, [data, facilitiesByPlace, mapStatus, focusedId, infoPlaceId, statusFilter, placeTypeFilters]);
 
   const collectRecommendations = async () => {
     if (!tripId) return;
@@ -827,7 +858,9 @@ export function TripDetail() {
             <button type="button" className="icon-btn" onClick={() => setShowItinerary(false)} aria-label="閉じる">✕</button>
           </div>
           <div className="itinerary-overlay-body">
-            <Itinerary />
+            <Itinerary onFacilityChanged={(saved) => {
+              setFacilities((rows) => rows.map((row) => row.id === saved.id ? saved : row));
+            }} />
           </div>
         </div>
       )}

@@ -188,6 +188,8 @@ export const api = {
   ) => req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json(input) }),
   listPlaceFacilities: (tripId: string, placeId: string) =>
     req<PlaceFacility[]>(`/api/trips/${tripId}/places/${placeId}/facilities`),
+  listTripFacilities: (tripId: string) =>
+    req<PlaceFacility[]>(`/api/trips/${tripId}/facilities`),
   suggestPlaceFacilities: (tripId: string, placeId: string) =>
     req<{ place: TripPlace; facilities: PlaceFacility[] }>(
       `/api/trips/${tripId}/places/${placeId}/facilities/suggest`,
