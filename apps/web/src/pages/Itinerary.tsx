@@ -4,11 +4,13 @@ import { api, assetUrl } from '../api.js';
 import { DayNotesEditor } from '../components/itinerary/DayNotesEditor.js';
 import { MobileDayNotes } from '../components/itinerary/MobileDayNotes.js';
 import { PersistedNoteEditor } from '../components/itinerary/PersistedNoteEditor.js';
+import { InlineFacilityChoices } from '../components/place/InlineFacilityChoices.js';
 import { getPrefs } from '../lib/prefs.js';
 import { gmapsDirUrl } from '../lib/gmaps.js';
+import { groupFacilitiesByPlace } from '../lib/placeFacilities.js';
 import { adjustOptionToTarget, hhmmToMin } from '../lib/transit-adjust.js';
 import type {
-  HomeLocation, ItineraryItem, OriginKind, RouteLeg, RouteMode, Timetable, TimetableDeparture,
+  HomeLocation, ItineraryItem, OriginKind, PlaceFacility, RouteLeg, RouteMode, Timetable, TimetableDeparture,
   TransitOption, Trip, TripDay, TripPlace,
 } from '../types.js';
 
@@ -57,7 +59,11 @@ function fmtDistance(m: number | null): string {
  * - 予定を変更すると各日の経路を自動再計算し、無理な経路 (区間が繋がらない等) は警告を出す。
  * - 「ここに行く」から `?place=<id>` 付きで開くと配置モードになり、各列の「＋ ここに追加」で日を選ぶ。
  */
-export function Itinerary() {
+interface ItineraryProps {
+  onFacilityChanged?: (facility: PlaceFacility) => void;
+}
+
+export function Itinerary({ onFacilityChanged }: ItineraryProps = {}) {
   const { tripId } = useParams<{ tripId: string }>();
   const [params, setParams] = useSearchParams();
   const pendingPlaceId = params.get('place');
@@ -65,6 +71,8 @@ export function Itinerary() {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [days, setDays] = useState<TripDay[]>([]);
   const [places, setPlaces] = useState<TripPlace[]>([]);
+  const [facilities, setFacilities] = useState<PlaceFacility[]>([]);
+  const [facilityBusyId, setFacilityBusyId] = useState<string | null>(null);
   const [home, setHome] = useState<HomeLocation | null>(null);
   const [itemsByDay, setItemsByDay] = useState<ItemsByDay>({});
   const [error, setError] = useState('');
@@ -110,6 +118,7 @@ export function Itinerary() {
   const [pasteMsg, setPasteMsg] = useState('');
 
   const placeMap = useMemo(() => new Map(places.map((p) => [p.id, p])), [places]);
+  const facilitiesByPlace = useMemo(() => groupFacilitiesByPlace(facilities), [facilities]);
   const pendingPlace = pendingPlaceId ? placeMap.get(pendingPlaceId) ?? null : null;
   const placeName = (id: string | null) => (id ? placeMap.get(id)?.name ?? '(不明)' : '(メモ)');
   // 経路端点名: place なら place 名、place でない端点 (出発/帰着地点) は leg のラベル。
@@ -173,9 +182,10 @@ export function Itinerary() {
 
   const load = async () => {
     if (!tripId) return;
-    const [detail, homeSetting] = await Promise.all([
+    const [detail, homeSetting, facilityRows] = await Promise.all([
       api.getTrip(tripId),
       api.getHome().catch(() => null),
+      api.listTripFacilities(tripId),
     ]);
     const sorted = [...detail.days].sort((a, b) => a.day_index - b.day_index);
     setTrip(detail.trip);
@@ -185,6 +195,7 @@ export function Itinerary() {
     setOLabel(detail.trip.origin_kind === 'meeting' ? detail.trip.origin_label ?? '' : '');
     setDays(sorted);
     setPlaces(detail.places);
+    setFacilities(facilityRows);
     const [lists, routes] = await Promise.all([
       Promise.all(sorted.map((d) => api.listItems(d.id))),
       Promise.all(sorted.map((d) => api.getRoute(d.id))),
@@ -219,6 +230,28 @@ export function Itinerary() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId]);
+
+  const toggleFacility = async (facility: PlaceFacility, wanted: boolean) => {
+    if (!tripId || facilityBusyId) return;
+    const previousWanted = facility.wanted;
+    setFacilityBusyId(facility.id);
+    setError('');
+    setFacilities((rows) => rows.map((row) => (
+      row.id === facility.id ? { ...row, wanted: wanted ? 1 : 0 } : row
+    )));
+    try {
+      const saved = await api.setFacilityWanted(tripId, facility.place_id, facility.id, wanted);
+      setFacilities((rows) => rows.map((row) => row.id === saved.id ? saved : row));
+      onFacilityChanged?.(saved);
+    } catch (cause) {
+      setFacilities((rows) => rows.map((row) => (
+        row.id === facility.id ? { ...row, wanted: previousWanted } : row
+      )));
+      setError(cause instanceof Error ? cause.message : '設備のチェックを保存できませんでした');
+    } finally {
+      setFacilityBusyId(null);
+    }
+  };
 
   /** その日の予定変更後に経路を自動再計算する。無理な経路 (区間が繋がらない) は警告を立てる。 */
   const recomputeRoute = async (dayId: string, items: ItineraryItem[], mode?: RouteMode, opts?: { originDay?: boolean }) => {
@@ -810,6 +843,13 @@ export function Itinerary() {
                             />
                           </div>
                         </div>
+                        {p && (
+                          <InlineFacilityChoices
+                            facilities={facilitiesByPlace.get(p.id) ?? []}
+                            busyFacilityId={facilityBusyId}
+                            onToggle={(facility, wanted) => void toggleFacility(facility, wanted)}
+                          />
+                        )}
                         {p && (
                           <PersistedNoteEditor
                             className="kanban-place-notes"

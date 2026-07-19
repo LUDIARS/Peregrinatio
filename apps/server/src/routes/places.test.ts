@@ -253,6 +253,31 @@ describe('places library + trip membership', () => {
     expect(otherTrip[0]?.wanted).toBe(0);
   });
 
+  it('旅の設備一覧は所属する場所だけを返し、旅ごとのチェック状態を含む', async () => {
+    const tripA = await createTrip('旅A');
+    const tripB = await createTrip('旅B');
+    const placeA = await json<{ id: string }>(await app.request(`/api/trips/${tripA.id}/places`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: '旅Aのホテル' }),
+    }));
+    const placeB = await json<{ id: string }>(await app.request(`/api/trips/${tripB.id}/places`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: '旅Bのホテル' }),
+    }));
+    await sql`INSERT INTO place_facilities (id, place_id, name, source, order_index)
+      VALUES (${'facility-a'}, ${placeA.id}, ${'温泉'}, ${'manual'}, ${0})`;
+    await sql`INSERT INTO place_facilities (id, place_id, name, source, order_index)
+      VALUES (${'facility-b'}, ${placeB.id}, ${'プール'}, ${'manual'}, ${0})`;
+    await app.request(`/api/trips/${tripA.id}/places/${placeA.id}/facilities/facility-a`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ wanted: true }),
+    });
+
+    const rows = await json<{ place_id: string; name: string; wanted: number }[]>(
+      await app.request(`/api/trips/${tripA.id}/facilities`),
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ place_id: placeA.id, name: '温泉', wanted: 1 });
+  });
+
   it('住所から緯度経度を取得して場所に反映できる', async () => {
     const trip = await createTrip('旅A');
     const created = await json<{ id: string }>(

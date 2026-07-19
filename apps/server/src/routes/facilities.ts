@@ -24,6 +24,20 @@ async function facilities(tripId: string, placeId: string): Promise<PlaceFacilit
     ORDER BY f.order_index, f.created_at`) as PlaceFacility[];
 }
 
+async function tripFacilities(tripId: string): Promise<PlaceFacility[]> {
+  return (await sql`
+    SELECT f.*, CASE WHEN w.facility_id IS NULL THEN 0 ELSE 1 END AS wanted
+    FROM place_facilities f
+    JOIN trip_places tp ON tp.place_id=f.place_id AND tp.trip_id=${tripId}
+    LEFT JOIN trip_place_facility_wants w
+      ON w.facility_id=f.id AND w.place_id=f.place_id AND w.trip_id=${tripId}
+    ORDER BY f.place_id, f.order_index, f.created_at`) as PlaceFacility[];
+}
+
+app.get('/api/trips/:tripId/facilities', async (c) => {
+  return c.json(await tripFacilities(c.req.param('tripId')));
+});
+
 app.get('/api/trips/:tripId/places/:placeId/facilities', async (c) => {
   const tripId = c.req.param('tripId');
   const placeId = c.req.param('placeId');
