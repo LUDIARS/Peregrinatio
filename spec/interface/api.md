@@ -35,6 +35,8 @@
 - `PATCH /api/trips/:id/places/:placeId` `{ is_base?, base_name?, checkin_time?, checkout_time?, postponed? }` → `TripPlace`
   - `base_name` は Unicode 文字単位で8文字以内。拠点設定時に未設定なら正式名から初期値を作る。
 - `GET /api/trips/:id/places/:placeId/facilities` → `PlaceFacility[]`
+- `GET /api/trips/:id/facilities` → `PlaceFacility[]`
+  - 旅に含まれる全場所の設備候補と、その旅での `wanted` 状態を一括で返す。
 - `POST /api/trips/:id/places/:placeId/facilities/suggest` → `{ place: TripPlace, facilities: PlaceFacility[] }`
   - Haiku が8文字以内の拠点名と、拠点・複合施設内の設備候補を提案する。
 - `PATCH /api/trips/:id/places/:placeId/facilities/:facilityId` `{ wanted: boolean }` → `PlaceFacility`
