@@ -1,13 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
-import type { PlaceImage, PlaceLink, PlaceStatus, TripPlace } from '../types.js';
+import type { PlaceFacility, PlaceImage, PlaceLink, PlaceStatus, TripPlace } from '../types.js';
+import { FacilityChecklist } from '../components/place/FacilityChecklist.js';
 
 const STATUS_OPTIONS: { key: PlaceStatus; label: string }[] = [
   { key: 'interested', label: '気になる' },
   { key: 'visited', label: '訪問済み' },
   { key: 'none', label: '通常' },
 ];
+
+function supportsFacilities(place: TripPlace): boolean {
+  return place.is_base === 1 || /(複合|モール|商業施設|テーマパーク|リゾート|ホテル|旅館|宿泊|道の駅|サービスエリア|駅ビル|アウトレット|shopping_mall|department_store|amusement_park|resort|hotel|lodging)/i
+    .test(`${place.category ?? ''} ${place.name}`);
+}
 
 interface PaneProps {
   tripId: string;
@@ -33,6 +39,13 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const [memoText, setMemoText] = useState('');
   const [memoBusy, setMemoBusy] = useState(false);
   const [memoMsg, setMemoMsg] = useState('');
+  const [baseNameText, setBaseNameText] = useState('');
+  const [baseNameBusy, setBaseNameBusy] = useState(false);
+  const [baseNameMsg, setBaseNameMsg] = useState('');
+  const [facilities, setFacilities] = useState<PlaceFacility[]>([]);
+  const [facilityBusy, setFacilityBusy] = useState(false);
+  const [facilityMsg, setFacilityMsg] = useState('');
+  const autoSuggestionKey = useRef('');
   // 自動検索 (情報の無い場所を Google で補完)。
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoMsg, setAutoMsg] = useState('');
@@ -55,15 +68,31 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     if (!p) { setError('この場所が見つかりません'); return null; }
     setPlace(p);
     if (syncMemo) setMemoText(p.notes ?? '');
+    setBaseNameText(p.base_name ?? '');
     return p;
   };
   const loadLinks = async () => { setLinks(await api.listLinks(placeId)); };
   // 取り込んだ画像 (Kindle 連番などの連結 composite + 元画像 source)。
   const loadImages = async () => { setImages(await api.listImages(placeId)); };
+  const loadFacilities = async () => { const rows = await api.listPlaceFacilities(tripId, placeId); setFacilities(rows); return rows; };
 
   useEffect(() => {
     (async () => {
-      try { await Promise.all([loadPlace(), loadLinks(), loadImages()]); }
+      try {
+        const [loadedPlace, , , loadedFacilities] = await Promise.all([loadPlace(), loadLinks(), loadImages(), loadFacilities()]);
+        const key = `${tripId}:${placeId}`;
+        if (loadedPlace && supportsFacilities(loadedPlace) && loadedFacilities.length === 0 && autoSuggestionKey.current !== key) {
+          autoSuggestionKey.current = key;
+          setFacilityBusy(true);
+          try {
+            const result = await api.suggestPlaceFacilities(tripId, placeId);
+            setPlace(result.place); setBaseNameText(result.place.base_name ?? ''); setFacilities(result.facilities);
+            setFacilityMsg(result.facilities.length > 0 ? 'Haikuが設備候補を設定しました。' : '設備候補は見つかりませんでした。');
+          } catch (e) {
+            setFacilityMsg(e instanceof Error ? `自動提案に失敗しました: ${e.message}` : '設備の自動提案に失敗しました');
+          } finally { setFacilityBusy(false); }
+        }
+      }
       catch (e) { setError(e instanceof Error ? e.message : '読み込みに失敗しました'); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,6 +128,40 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
       const p = await api.patchTripPlace(tripId, placeId, { [field]: value || null });
       setPlace((prev) => (prev ? { ...prev, ...p } : p)); await onChanged?.(); await loadPlace(false);
     } catch (e) { setHotelMsg(e instanceof Error ? e.message : '時刻の保存に失敗しました'); }
+  };
+
+  const saveBaseName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (Array.from(baseNameText.trim()).length > 8) { setBaseNameMsg('拠点名は8文字以内で入力してください。'); return; }
+    setBaseNameBusy(true); setBaseNameMsg('');
+    try {
+      const updated = await api.patchTripPlace(tripId, placeId, { base_name: baseNameText.trim() || null });
+      setPlace(updated); setBaseNameText(updated.base_name ?? ''); setBaseNameMsg('拠点名を保存しました。');
+      await onChanged?.();
+    } catch (e) { setBaseNameMsg(e instanceof Error ? e.message : '拠点名の保存に失敗しました'); }
+    finally { setBaseNameBusy(false); }
+  };
+
+  const suggestFacilities = async () => {
+    setFacilityBusy(true); setFacilityMsg('');
+    try {
+      const result = await api.suggestPlaceFacilities(tripId, placeId);
+      setPlace(result.place); setBaseNameText(result.place.base_name ?? ''); setFacilities(result.facilities);
+      setFacilityMsg(result.facilities.length > 0 ? '設備候補を更新しました。' : '設備候補は見つかりませんでした。');
+      await onChanged?.();
+    } catch (e) { setFacilityMsg(e instanceof Error ? e.message : '設備の提案に失敗しました'); }
+    finally { setFacilityBusy(false); }
+  };
+
+  const toggleFacility = async (facility: PlaceFacility, wanted: boolean) => {
+    setFacilities((rows) => rows.map((row) => row.id === facility.id ? { ...row, wanted: wanted ? 1 : 0 } : row));
+    try {
+      const updated = await api.setFacilityWanted(tripId, placeId, facility.id, wanted);
+      setFacilities((rows) => rows.map((row) => row.id === updated.id ? updated : row));
+    } catch (e) {
+      setFacilities((rows) => rows.map((row) => row.id === facility.id ? facility : row));
+      setFacilityMsg(e instanceof Error ? e.message : '設備の選択を保存できませんでした');
+    }
   };
 
   /** 拠点ホテルの IN/OUT 時刻を自動取得 (クロール→LLM)。 */
@@ -379,6 +442,19 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
           {/* 拠点ホテル: チェックイン/チェックアウト (自動取得 + 手動調整)。 */}
           {place.is_base === 1 && (
             <div className="place-section">
+              <h3 className="place-section-title">拠点名</h3>
+              <form className="foundation-form" onSubmit={saveBaseName}>
+                <label>
+                  <span className="muted" style={{ fontSize: 12 }}>8文字以内（この旅行だけの表示名）</span>
+                  <input type="text" value={baseNameText}
+                    onChange={(e) => { setBaseNameText(e.target.value); setBaseNameMsg(''); }} />
+                </label>
+                <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button type="submit" className="sm" disabled={baseNameBusy}>{baseNameBusy ? '保存中…' : '拠点名を保存'}</button>
+                  <span className="muted">{Array.from(baseNameText).length}/8</span>
+                  {baseNameMsg && <span className="muted">{baseNameMsg}</span>}
+                </div>
+              </form>
               <h3 className="place-section-title">🏨 チェックイン / チェックアウト</h3>
               <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
                 <label style={{ flex: 1, minWidth: 120 }}>
@@ -397,6 +473,15 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
                 {hotelBusy ? '取得中…' : '🔄 公式サイトから自動取得'}
               </button>
               {hotelMsg && <div className="muted" style={{ marginTop: 4 }}>{hotelMsg}</div>}
+            </div>
+          )}
+
+          {supportsFacilities(place) && (
+            <div className="place-section">
+              <h3 className="place-section-title">やりたい設備・施設</h3>
+              <FacilityChecklist facilities={facilities} busy={facilityBusy} message={facilityMsg}
+                onToggle={(facility, wanted) => void toggleFacility(facility, wanted)}
+                onSuggest={() => void suggestFacilities()} />
             </div>
           )}
 

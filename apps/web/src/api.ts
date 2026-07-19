@@ -40,6 +40,10 @@ import type {
   TripDay,
   TripDetail,
   TripPlace,
+  PlaceFacility,
+  SharedTripAccess,
+  SharedTripSummary,
+  TripShareConfig,
 } from './types.js';
 
 import { currentUserName } from './lib/prefs.js';
@@ -122,6 +126,14 @@ export const api = {
     input: Partial<Pick<Trip, 'title' | 'start_date' | 'end_date' | 'notes' | 'cover_image_path' | 'archived'>>,
   ) => req<Trip>(`/api/trips/${id}`, { method: 'PATCH', body: json(input) }),
   deleteTrip: (id: string) => req<{ ok: true }>(`/api/trips/${id}`, { method: 'DELETE' }),
+  getTripShare: (id: string) => req<TripShareConfig | null>(`/api/trips/${id}/share`),
+  configureTripShare: (id: string, password: string | null) =>
+    req<TripShareConfig>(`/api/trips/${id}/share`, { method: 'PUT', body: json({ password }) }),
+  inspectSharedTrip: (token: string) => req<SharedTripAccess>(`/api/shares/${encodeURIComponent(token)}`),
+  unlockSharedTrip: (token: string, password: string) =>
+    req<{ trip: SharedTripSummary }>(`/api/shares/${encodeURIComponent(token)}/unlock`, {
+      method: 'POST', body: json({ password }),
+    }),
   /** 出発地点 (自宅/集合地点) を設定。home は設定ページの自宅、meeting は住所をジオコーディング。 */
   setTripOrigin: (id: string, input: { kind: OriginKind; address?: string; label?: string }) =>
     req<Trip>(`/api/trips/${id}/origin`, { method: 'PUT', body: json(input) }),
@@ -172,8 +184,19 @@ export const api = {
   /** この旅でのメンバーシップ更新 (拠点ホテルの IN/OUT 時刻 / また今度フラグなど)。 */
   patchTripPlace: (
     tripId: string, placeId: string,
-    input: { is_base?: number; checkin_time?: string | null; checkout_time?: string | null; postponed?: number },
+    input: { is_base?: number; base_name?: string | null; checkin_time?: string | null; checkout_time?: string | null; postponed?: number },
   ) => req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json(input) }),
+  listPlaceFacilities: (tripId: string, placeId: string) =>
+    req<PlaceFacility[]>(`/api/trips/${tripId}/places/${placeId}/facilities`),
+  suggestPlaceFacilities: (tripId: string, placeId: string) =>
+    req<{ place: TripPlace; facilities: PlaceFacility[] }>(
+      `/api/trips/${tripId}/places/${placeId}/facilities/suggest`,
+      { method: 'POST', body: json({}) },
+    ),
+  setFacilityWanted: (tripId: string, placeId: string, facilityId: string, wanted: boolean) =>
+    req<PlaceFacility>(`/api/trips/${tripId}/places/${placeId}/facilities/${facilityId}`, {
+      method: 'PATCH', body: json({ wanted }),
+    }),
   /** 「また今度」フラグ切替 (旅ごと。場所リストから隔離する)。 */
   setPostponed: (tripId: string, placeId: string, postponed: boolean) =>
     req<TripPlace>(`/api/trips/${tripId}/places/${placeId}`, { method: 'PATCH', body: json({ postponed: postponed ? 1 : 0 }) }),

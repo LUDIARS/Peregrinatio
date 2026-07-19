@@ -24,6 +24,7 @@ import { MapSearchOverlay } from '../components/MapSearchOverlay.js';
 import { TransitPanel } from '../components/transit/TransitPanel.js';
 import { TripPrepPanel } from '../components/TripPrepPanel.js';
 import { GtfsTimetable } from '../components/GtfsTimetable.js';
+import { ShareTripButton } from '../components/ShareTripButton.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -268,7 +269,7 @@ export function TripDetail() {
     root.className = 'pin-info';
     const name = document.createElement('div');
     name.className = 'pin-info-name';
-    name.textContent = `${p.is_base === 1 ? '🏨 ' : ''}${p.name}`;
+    name.textContent = `${p.is_base === 1 ? '🏨 ' : ''}${p.is_base === 1 ? (p.base_name || p.name) : p.name}`;
     root.appendChild(name);
     if (p.category) {
       const cat = document.createElement('div');
@@ -479,8 +480,16 @@ export function TripDetail() {
   /** 選んだ場所をこの旅の拠点にする (拠点を追加ピッカーから)。 */
   const makeBase = async (placeId: string) => {
     if (!tripId) return;
-    try { await api.setTripBase(tripId, placeId, 1); setShowBasePicker(false); await reload(); }
-    catch (e) { setError(e instanceof Error ? e.message : '拠点の設定に失敗しました'); }
+    try {
+      await api.setTripBase(tripId, placeId, 1);
+      setShowBasePicker(false);
+      try {
+        await api.suggestPlaceFacilities(tripId, placeId);
+      } catch (e) {
+        setError(`拠点は設定しましたが、Haikuの自動設定に失敗しました: ${e instanceof Error ? e.message : '不明なエラー'}`);
+      }
+      await reload();
+    } catch (e) { setError(e instanceof Error ? e.message : '拠点の設定に失敗しました'); }
   };
 
   const places = data?.places ?? [];
@@ -520,16 +529,20 @@ export function TripDetail() {
       <div className="ws-topbar">
         <button type="button" className="drawer-toggle" onClick={() => setDrawerOpen((o) => !o)} aria-label="場所一覧">☰ 一覧</button>
         <span className="ws-trip-title">{trip.title}</span>
+        <ShareTripButton tripId={trip.id} className="icon-btn" />
         <button type="button" className="icon-btn" aria-label="旅のしおり" onClick={openItinerary}>🗓</button>
         <a href={pdfUrl(trip.id)} target="_blank" rel="noreferrer" className="icon-btn" aria-label="PDF">📄</a>
       </div>
 
       {/* 左: 場所一覧 (マスター)。PC=固定カラム / モバイル=ドロワー */}
       <aside className="ws-list">
-        <div className="crumb"><Link to="/">← 旅一覧</Link></div>
+        <div className="crumb"><Link to="/">← アクセス履歴</Link></div>
         <div className="spread">
           <h2 style={{ margin: 0 }}>{trip.title}</h2>
-          <a href={pdfUrl(trip.id)} target="_blank" rel="noreferrer"><button type="button" className="sm">📄 PDF</button></a>
+          <div className="row" style={{ gap: 6 }}>
+            <ShareTripButton tripId={trip.id} className="sm" />
+            <a href={pdfUrl(trip.id)} target="_blank" rel="noreferrer"><button type="button" className="sm">📄 PDF</button></a>
+          </div>
         </div>
         <p className="muted">{trip.start_date ?? '日付未定'}{trip.end_date ? ` 〜 ${trip.end_date}` : ''}</p>
 
@@ -618,7 +631,7 @@ export function TripDetail() {
                   )}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="spread">
-                      <strong>{p.is_base === 1 ? '🏨 ' : ''}{p.name}</strong>
+                      <strong>{p.is_base === 1 ? '🏨 ' : ''}{p.is_base === 1 ? (p.base_name || p.name) : p.name}</strong>
                       {/* 位置インジケータ (ピンの有無)。 */}
                       {p.lat != null && p.lng != null
                         ? <span className="chip pin-indicator">📍</span>
@@ -748,7 +761,7 @@ export function TripDetail() {
             {bases.map((b) => (
               <button key={b.id} type="button"
                 className={activeBaseId === b.id ? 'chip-btn active' : 'chip-btn'}
-                onClick={() => focusBase(b)}>🏨 {b.name}</button>
+                onClick={() => focusBase(b)}>🏨 {b.base_name || b.name}</button>
             ))}
             {visiblePlaces.some((p) => p.lat != null) && (
               <button type="button" className="chip-btn ghost" onClick={fitAll}>全体表示</button>

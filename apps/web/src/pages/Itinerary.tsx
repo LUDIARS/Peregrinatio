@@ -797,7 +797,7 @@ export function Itinerary() {
                           )}
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <strong className="kanban-card-name">
-                              {p ? `${p.is_base === 1 ? '🏨 ' : ''}${p.name}` : (it.note || '(メモ)')}
+                              {p ? `${p.is_base === 1 ? '🏨 ' : ''}${p.is_base === 1 ? (p.base_name || p.name) : p.name}` : (it.note || '(メモ)')}
                             </strong>
                             {p?.category && <div className="muted" style={{ fontSize: 12 }}>{p.category}</div>}
                             {it.edited_by && <div className="muted" style={{ fontSize: 11 }}>✎ {it.edited_by}</div>}
@@ -924,7 +924,7 @@ export function Itinerary() {
                     onClick={() => void addPlaceToDay(placePickerDay, p.id)} disabled={busy}>
                     {p.image_url && <img src={assetUrl(p.image_url)} alt="" />}
                     <span>
-                      <strong>{p.name}</strong>
+                      <strong>{p.is_base === 1 ? (p.base_name || p.name) : p.name}</strong>
                       <span className="muted">
                         {[p.is_base === 1 ? '拠点' : null, p.category, p.address].filter(Boolean).join(' ・ ')}
                       </span>

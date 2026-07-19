@@ -30,7 +30,7 @@ app.post('/api/trips/:id/recommend', async (c) => {
 
   // 拠点: is_base=1 かつ lat/lng のある先頭。
   const [base] = (await sql`
-    SELECT p.*, tp.is_base FROM places p
+    SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE tp.trip_id = ${trip_id} AND tp.is_base = 1 AND p.lat IS NOT NULL AND p.lng IS NOT NULL
     ORDER BY tp.added_at
@@ -78,7 +78,7 @@ app.post('/api/trips/:id/recommend', async (c) => {
       }
 
       const [tp] = (await sql`
-        SELECT p.*, tp.is_base FROM places p
+        SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
         JOIN trip_places tp ON tp.place_id = p.id
         WHERE p.id = ${placeId} AND tp.trip_id = ${trip_id}`) as TripPlace[];
       if (tp) added.push(tp);

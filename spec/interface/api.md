@@ -14,6 +14,11 @@
 - `GET /api/trips/:id` → `{ trip: Trip, days: TripDay[], places: Place[] }`
 - `PATCH /api/trips/:id` `{ title?, start_date?, end_date?, notes?, cover_image_path? }` → `Trip`
 - `DELETE /api/trips/:id` → `{ ok: true }`
+- `GET /api/trips/:id/share` → `{ token, password_protected } | null`
+- `PUT /api/trips/:id/share` `{ password: string | null }` → `{ token, password_protected }`
+- `GET /api/shares/:token` → 合言葉なしなら旅の最小概要、合言葉ありなら `{ password_protected: true }`
+- `POST /api/shares/:token/unlock` `{ password }` → `{ trip: SharedTripSummary }`
+  - 合言葉は scrypt ハッシュで保存し、照合前には旅ID・タイトルを返さない。
 - `GET /api/trips/:id/pdf` → application/pdf (しおり PDF。Puppeteer レンダリング)
 
 ## days
@@ -23,10 +28,17 @@
 - `DELETE /api/days/:id` → `{ ok: true }`
 
 ## places (= ピン)
-- `GET /api/trips/:id/places` → `Place[]`
+- `GET /api/trips/:id/places` → `TripPlace[]`
 - `POST /api/trips/:id/places` `{ name, address?, lat?, lng?, category?, source_url?, notes? }` → `Place`
 - `PATCH /api/places/:id` `{ ...部分 }` → `Place`
 - `DELETE /api/places/:id` → `{ ok: true }`
+- `PATCH /api/trips/:id/places/:placeId` `{ is_base?, base_name?, checkin_time?, checkout_time?, postponed? }` → `TripPlace`
+  - `base_name` は Unicode 文字単位で8文字以内。拠点設定時に未設定なら正式名から初期値を作る。
+- `GET /api/trips/:id/places/:placeId/facilities` → `PlaceFacility[]`
+- `POST /api/trips/:id/places/:placeId/facilities/suggest` → `{ place: TripPlace, facilities: PlaceFacility[] }`
+  - Haiku が8文字以内の拠点名と、拠点・複合施設内の設備候補を提案する。
+- `PATCH /api/trips/:id/places/:placeId/facilities/:facilityId` `{ wanted: boolean }` → `PlaceFacility`
+  - やりたいチェックは旅行単位で保存する。
 - `POST /api/places/:id/crawl` `{ url? }` → `Place`
   - source_url か name から候補URLを得て取得→本文抽出→LLM 要約。summary/category/address を更新。
     address が取れたら Geocoding して lat/lng をセット。

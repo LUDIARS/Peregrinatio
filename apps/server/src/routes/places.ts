@@ -4,8 +4,18 @@ import { newId, nowIso } from '../lib/ids.js';
 import { pick, userOf } from '../lib/http.js';
 import { geocodeCached, GeocodeNotConfiguredError } from '../lib/geocode.js';
 import type { Place, TripPlace } from '../types.js';
+import { defaultBaseName, unicodeLength } from '../place-enrichment/base-facilities.js';
 
 const app = new Hono();
+
+async function ensureBaseName(tripId: string, placeId: string): Promise<void> {
+  const [row] = (await sql`SELECT p.name, tp.base_name FROM places p JOIN trip_places tp ON tp.place_id=p.id
+    WHERE tp.trip_id=${tripId} AND tp.place_id=${placeId}`) as { name: string; base_name: string | null }[];
+  if (row && !row.base_name) {
+    await sql`UPDATE trip_places SET base_name=${defaultBaseName(row.name)}, base_name_source=${'fallback'}
+      WHERE trip_id=${tripId} AND place_id=${placeId}`;
+  }
+}
 
 // ---- ライブラリ (全旅共有) ----
 
@@ -78,7 +88,7 @@ app.delete('/api/places/:id', async (c) => {
 /** GET /api/trips/:id/places — この旅に紐づく場所 (is_base 付き)。 */
 app.get('/api/trips/:id/places', async (c) => {
   const rows = (await sql`
-    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
+    SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE tp.trip_id = ${c.req.param('id')}
       AND NOT EXISTS (
@@ -111,9 +121,12 @@ app.post('/api/trips/:id/places', async (c) => {
 
   await sql`INSERT OR IGNORE INTO trip_places (trip_id, place_id, is_base, added_at)
     VALUES (${trip_id}, ${placeId}, ${b.is_base ?? 0}, ${now})`;
+  if (b.is_base === 1) {
+    await ensureBaseName(trip_id, placeId);
+  }
 
   const [p] = (await sql`
-    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
+    SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE p.id = ${placeId} AND tp.trip_id = ${trip_id}`) as TripPlace[];
   return c.json(p);
@@ -124,10 +137,19 @@ app.patch('/api/trips/:id/places/:placeId', async (c) => {
   const trip_id = c.req.param('id');
   const placeId = c.req.param('placeId');
   const b = (await c.req.json().catch(() => ({}))) as {
-    is_base?: number; checkin_time?: string | null; checkout_time?: string | null; postponed?: number;
+    is_base?: number; base_name?: string | null; checkin_time?: string | null; checkout_time?: string | null; postponed?: number;
   };
   if (typeof b.is_base === 'number') {
     await sql`UPDATE trip_places SET is_base=${b.is_base} WHERE trip_id=${trip_id} AND place_id=${placeId}`;
+    if (b.is_base === 1) {
+      await ensureBaseName(trip_id, placeId);
+    }
+  }
+  if ('base_name' in b) {
+    const baseName = b.base_name?.trim() || null;
+    if (baseName && unicodeLength(baseName) > 8) return c.json({ error: '拠点名は8文字以内で入力してください' }, 400);
+    await sql`UPDATE trip_places SET base_name=${baseName}, base_name_source=${baseName ? 'manual' : null}
+      WHERE trip_id=${trip_id} AND place_id=${placeId}`;
   }
   if ('checkin_time' in b) {
     await sql`UPDATE trip_places SET checkin_time=${b.checkin_time ?? null} WHERE trip_id=${trip_id} AND place_id=${placeId}`;
@@ -139,7 +161,7 @@ app.patch('/api/trips/:id/places/:placeId', async (c) => {
     await sql`UPDATE trip_places SET postponed=${b.postponed} WHERE trip_id=${trip_id} AND place_id=${placeId}`;
   }
   const [p] = (await sql`
-    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
+    SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE p.id = ${placeId} AND tp.trip_id = ${trip_id}`) as TripPlace[];
   if (!p) return c.json({ error: 'not found' }, 404);

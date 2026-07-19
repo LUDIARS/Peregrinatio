@@ -17,7 +17,7 @@ const app = new Hono();
 /** 旅メンバーシップ付きの場所 1 件を取得する (レスポンス用)。 */
 async function getTripPlace(tripId: string, placeId: string): Promise<TripPlace | undefined> {
   const [tp] = (await sql`
-    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
+    SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE p.id = ${placeId} AND tp.trip_id = ${tripId}`) as TripPlace[];
   return tp;

@@ -8,6 +8,8 @@ import { PlaceDetail } from './pages/PlaceDetail.js';
 import { Itinerary } from './pages/Itinerary.js';
 import { AddInfo } from './pages/AddInfo.js';
 import { Settings } from './pages/Settings.js';
+import { AccessHistory } from './pages/AccessHistory.js';
+import { SharedTripGate } from './pages/SharedTripGate.js';
 import { lockPageZoom } from './lib/lock-page-zoom.js';
 import './styles.css';
 
@@ -31,7 +33,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />}>
-          <Route index element={<TripList />} />
+          <Route index element={<AccessHistory />} />
+          <Route path="trips" element={<TripList />} />
+          <Route path="s/:token" element={<SharedTripGate />} />
           <Route path="settings" element={<Settings />} />
           <Route path="trips/:tripId" element={<TripDetail />} />
           <Route path="trips/:tripId/itinerary" element={<Itinerary />} />

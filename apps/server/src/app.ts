@@ -30,6 +30,8 @@ import reservation from './routes/reservation.js';
 import autosearch from './routes/autosearch.js';
 import gtfs from './routes/gtfs.js';
 import checkItems from './routes/check-items.js';
+import facilities from './routes/facilities.js';
+import sharing from './routes/sharing.js';
 
 /** API ルートだけを束ねた Hono アプリ (静的配信なし)。 */
 export function buildApiApp(): Hono {
@@ -39,7 +41,7 @@ export function buildApiApp(): Hono {
   app.use('/api/*', cors());
   app.get('/healthz', (c) => c.json({ ok: true }));
 
-  for (const r of [map, trips, days, places, itinerary, crawl, links, search, images, routing, pdf, recommend, placeMedia, baseSummary, hotel, timetable, settings, jobs, reservation, autosearch, gtfs, checkItems]) {
+  for (const r of [map, trips, days, places, itinerary, crawl, links, search, images, routing, pdf, recommend, placeMedia, baseSummary, hotel, timetable, settings, jobs, reservation, autosearch, gtfs, checkItems, facilities, sharing]) {
     app.route('/', r);
   }
   return app;

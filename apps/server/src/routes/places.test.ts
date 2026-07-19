@@ -24,6 +24,8 @@ afterAll(async () => {
 // 各テストは独立させる: trip_places / places を空にする。
 beforeEach(async () => {
   await sql`DELETE FROM geocode_cache`;
+  await sql`DELETE FROM trip_place_facility_wants`;
+  await sql`DELETE FROM place_facilities`;
   await sql`DELETE FROM trip_places`;
   await sql`DELETE FROM places`;
   await sql`DELETE FROM trips`;
@@ -188,13 +190,67 @@ describe('places library + trip membership', () => {
         body: JSON.stringify({ name: 'ホテル' }),
       }),
     );
-    const patched = await json<{ is_base: number }>(
+    const patched = await json<{ is_base: number; base_name: string | null }>(
       await app.request(`/api/trips/${trip.id}/places/${created.id}`, {
         method: 'PATCH', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ is_base: 1 }),
       }),
     );
     expect(patched.is_base).toBe(1);
+    expect(patched.base_name).toBe('ホテル');
+  });
+
+  it('拠点名は8文字以内で編集でき、9文字以上は拒否する', async () => {
+    const trip = await createTrip('旅A');
+    const created = await json<{ id: string }>(
+      await app.request(`/api/trips/${trip.id}/places`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'とても長い正式名称の宿泊施設' }),
+      }),
+    );
+    const base = await json<{ base_name: string }>(await app.request(`/api/trips/${trip.id}/places/${created.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ is_base: 1 }),
+    }));
+    expect(Array.from(base.base_name)).toHaveLength(8);
+
+    const ok = await json<{ base_name: string }>(await app.request(`/api/trips/${trip.id}/places/${created.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ base_name: '駅前の宿' }),
+    }));
+    expect(ok.base_name).toBe('駅前の宿');
+
+    const tooLong = await app.request(`/api/trips/${trip.id}/places/${created.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ base_name: '123456789' }),
+    });
+    expect(tooLong.status).toBe(400);
+  });
+
+  it('設備候補は場所で共有し、やりたいチェックは旅ごとに保存する', async () => {
+    const tripA = await createTrip('旅A');
+    const tripB = await createTrip('旅B');
+    const place = await json<{ id: string }>(await app.request(`/api/trips/${tripA.id}/places`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: '複合リゾート' }),
+    }));
+    await app.request(`/api/trips/${tripB.id}/places`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ place_id: place.id }),
+    });
+    await sql`INSERT INTO place_facilities (id, place_id, name, source, order_index)
+      VALUES (${'facility-1'}, ${place.id}, ${'温泉'}, ${'haiku'}, ${0})`;
+
+    const initial = await json<{ id: string; wanted: number }[]>(
+      await app.request(`/api/trips/${tripA.id}/places/${place.id}/facilities`),
+    );
+    expect(initial[0]?.wanted).toBe(0);
+
+    const checked = await json<{ wanted: number }>(await app.request(
+      `/api/trips/${tripA.id}/places/${place.id}/facilities/facility-1`,
+      { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ wanted: true }) },
+    ));
+    expect(checked.wanted).toBe(1);
+
+    const otherTrip = await json<{ wanted: number }[]>(
+      await app.request(`/api/trips/${tripB.id}/places/${place.id}/facilities`),
+    );
+    expect(otherTrip[0]?.wanted).toBe(0);
   });
 
   it('住所から緯度経度を取得して場所に反映できる', async () => {

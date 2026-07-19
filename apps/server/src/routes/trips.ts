@@ -42,7 +42,7 @@ app.get('/api/trips/:id', async (c) => {
   if (!trip) return c.json({ error: 'not found' }, 404);
   const days = (await sql`SELECT * FROM trip_days WHERE trip_id=${id} ORDER BY day_index`) as TripDay[];
   const places = (await sql`
-    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
+    SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE tp.trip_id = ${id}
       AND NOT EXISTS (

@@ -21,7 +21,7 @@ app.get('/api/trips/:id/reservation-suggestions', async (c) => {
   if (!trip) return c.json({ error: 'not found' }, 404);
 
   const places = (await sql`
-    SELECT p.*, tp.is_base FROM places p
+    SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE tp.trip_id = ${id}`) as TripPlace[];
   const withCoords = places.filter((p) => p.lat != null && p.lng != null);

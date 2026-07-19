@@ -31,7 +31,7 @@ app.post('/api/trips/:tripId/places/:placeId/hotel-times', async (c) => {
   const placeId = c.req.param('placeId');
 
   const [member] = (await sql`
-    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time FROM places p
+    SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE p.id = ${placeId} AND tp.trip_id = ${tripId}`) as TripPlace[];
   if (!member) return c.json({ error: 'この旅に該当の場所がありません' }, 404);
@@ -101,7 +101,7 @@ app.post('/api/trips/:tripId/places/:placeId/hotel-times', async (c) => {
   }
 
   const [updated] = (await sql`
-    SELECT p.*, tp.is_base, tp.checkin_time, tp.checkout_time FROM places p
+    SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE p.id = ${placeId} AND tp.trip_id = ${tripId}`) as TripPlace[];
   return c.json(updated);

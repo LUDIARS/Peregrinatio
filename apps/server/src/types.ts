@@ -54,9 +54,20 @@ export interface Place {
 /** 旅に紐づいた場所 (メンバーシップの is_base / 拠点ホテルの IN・OUT を付与)。 */
 export interface TripPlace extends Place {
   is_base: number;               // 0/1 この旅での拠点
+  base_name: string | null;      // この旅で使う拠点名 (8文字以内)
+  base_name_source: string | null; // fallback / haiku / manual
   checkin_time: string | null;   // 拠点ホテルのチェックイン時刻 'HH:MM' (自動取得→調整可)
   checkout_time: string | null;  // 拠点ホテルのチェックアウト時刻 'HH:MM'
   postponed: number;             // 0/1 「また今度」(旅ごと。場所リストから隔離)
+}
+
+export interface PlaceFacility {
+  id: string;
+  place_id: string;
+  name: string;
+  source: string;
+  order_index: number;
+  wanted: number; // 0/1 この旅でやりたい設備
 }
 
 export interface PlaceLink {

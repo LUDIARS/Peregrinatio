@@ -236,6 +236,17 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 /* ---- 拠点バー (クリックでその拠点にズーム) ---- */
 .base-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 8px; }
 .base-bar-label { font-size: 13px; color: var(--c-muted); font-weight: 600; }
+.facility-checklist { display: grid; gap: 8px; }
+.facility-check { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid var(--c-border); border-radius: 8px; cursor: pointer; }
+.facility-check:has(input:checked) { background: #f0f7ef; border-color: #8db489; }
+.facility-check input { width: 18px; height: 18px; margin: 0; }
+.facility-message { margin-top: 2px; }
+.button-link { display: inline-flex; align-items: center; justify-content: center; min-height: 38px; padding: 8px 12px; border-radius: 12px; color: #fff; background: var(--c-accent); font-size: 13px; font-weight: 600; text-decoration: none; }
+.share-modal-backdrop { position: fixed; inset: 0; z-index: 1400; display: grid; place-items: center; padding: 16px; background: rgba(20, 24, 30, .52); }
+.share-modal { width: min(440px, 100%); display: grid; gap: 12px; }
+.share-modal input[readonly] { width: 100%; }
+.share-gate { width: min(440px, 100%); margin: 40px auto; }
+.access-home { max-width: 760px; margin: 0 auto; }
 .chip-btn {
   min-height: 32px; padding: 4px 12px; border-radius: 999px; font-size: 13px;
   background: var(--c-surface); color: var(--c-accent); border: 1px solid var(--c-border);

@@ -64,9 +64,37 @@ export interface Place {
 /** 旅に紐づいた場所 (is_base / 拠点ホテルの IN・OUT 付き)。TripDetail の places はこれ。 */
 export interface TripPlace extends Place {
   is_base: number;
+  base_name: string | null;     // この旅で使う拠点名 (8文字以内)
+  base_name_source: string | null; // fallback / haiku / manual
   checkin_time: string | null;  // 拠点ホテルのチェックイン 'HH:MM'
   checkout_time: string | null; // 拠点ホテルのチェックアウト 'HH:MM'
   postponed: number;            // 0/1 「また今度」(旅ごと。場所リストから隔離)
+}
+
+export interface TripShareConfig {
+  token: string;
+  password_protected: boolean;
+}
+
+export interface SharedTripSummary {
+  trip_id: string;
+  title: string;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+export interface SharedTripAccess {
+  password_protected?: boolean;
+  trip?: SharedTripSummary;
+}
+
+export interface PlaceFacility {
+  id: string;
+  place_id: string;
+  name: string;
+  source: string;
+  order_index: number;
+  wanted: number; // 0/1 この旅でやりたい設備
 }
 
 export interface PlaceLink {

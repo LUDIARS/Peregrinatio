@@ -38,7 +38,7 @@ export async function generateBaseSummary(basePlaceId: string): Promise<Generate
 
   // 旅に紐づく場所一覧 (base 自身も含む)。
   const tripPlaces = (await sql`
-    SELECT p.*, tp.is_base FROM places p
+    SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
     WHERE tp.trip_id = ${tripId}
     ORDER BY tp.added_at`) as TripPlace[];
