@@ -1,6 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
+import { DayNotesEditor } from '../components/itinerary/DayNotesEditor.js';
+import { MobileDayNotes } from '../components/itinerary/MobileDayNotes.js';
+import { PersistedNoteEditor } from '../components/itinerary/PersistedNoteEditor.js';
 import { getPrefs } from '../lib/prefs.js';
 import { gmapsDirUrl } from '../lib/gmaps.js';
 import { adjustOptionToTarget, hhmmToMin } from '../lib/transit-adjust.js';
@@ -31,6 +34,10 @@ const MODE_META: Record<RouteMode, { label: string; icon: string }> = {
   transit: { label: '公共交通', icon: '🚃' },
   bicycling: { label: '自転車', icon: '🚲' },
 };
+
+function isInteractiveControl(target: EventTarget | null): boolean {
+  return !!(target as HTMLElement | null)?.closest?.('a, button, input, select, textarea, label');
+}
 
 function fmtDuration(sec: number | null): string {
   if (sec == null) return '—';
@@ -455,6 +462,20 @@ export function Itinerary() {
     catch (e) { setError(e instanceof Error ? e.message : '日付の保存に失敗しました'); }
   };
 
+  /** Save the memo belonging to one calendar day and refresh every view of that memo. */
+  const saveDayNotes = async (dayId: string, notes: string | null) => {
+    const updated = await api.patchDay(dayId, { notes });
+    setDays((current) => current.map((day) => (day.id === dayId ? updated : day)));
+  };
+
+  /** Place notes are shared by every occurrence of that place in the itinerary. */
+  const savePlaceNotes = async (placeId: string, notes: string | null) => {
+    const updated = await api.patchPlace(placeId, { notes });
+    setPlaces((current) => current.map((place) => (
+      place.id === placeId ? { ...place, notes: updated.notes } : place
+    )));
+  };
+
   /** 出発地点を設定し、初日(往路)・最終日(復路)の経路を再計算する。 */
   const changeOrigin = async (kind: OriginKind, address?: string, label?: string) => {
     if (!tripId) return;
@@ -550,6 +571,10 @@ export function Itinerary() {
   if (!trip) return <p className="muted">読み込み中…</p>;
 
   const onCardDragStart = (e: React.DragEvent, itemId: string, fromDayId: string) => {
+    if (isInteractiveControl(e.target)) {
+      e.preventDefault();
+      return;
+    }
     drag.current = { itemId, fromDayId };
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -594,6 +619,7 @@ export function Itinerary() {
   };
   const onCardPointerDown = (e: React.PointerEvent, itemId: string, fromDayId: string) => {
     if (e.pointerType === 'mouse') return; // マウスは HTML5 DnD を使う
+    if (isInteractiveControl(e.target)) return;
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
     touchRef.current = {
       itemId, fromDayId, active: false, startX: e.clientX, startY: e.clientY,
@@ -707,14 +733,14 @@ export function Itinerary() {
               return items[placeIdxs[pos + 1]!]?.place_id ?? null;
             };
             return (
-              <section
-                key={d.id}
-                data-day-id={d.id}
-                className={`kanban-col${overDay === d.id ? ' over' : ''}`}
-                onDragOver={(e) => { e.preventDefault(); setOverDay(d.id); }}
-                onDragLeave={() => setOverDay((cur) => (cur === d.id ? null : cur))}
-                onDrop={(e) => onColDrop(e, d.id)}
-              >
+              <div className="kanban-day-group" key={d.id}>
+                <section
+                  data-day-id={d.id}
+                  className={`kanban-col${overDay === d.id ? ' over' : ''}`}
+                  onDragOver={(e) => { e.preventDefault(); setOverDay(d.id); }}
+                  onDragLeave={() => setOverDay((cur) => (cur === d.id ? null : cur))}
+                  onDrop={(e) => onColDrop(e, d.id)}
+                >
                 <header className="kanban-col-head">
                   <div className="spread">
                     <strong>{d.title || `${d.day_index + 1} 日目`}</strong>
@@ -784,6 +810,16 @@ export function Itinerary() {
                             />
                           </div>
                         </div>
+                        {p && (
+                          <PersistedNoteEditor
+                            className="kanban-place-notes"
+                            label="場所メモ"
+                            value={p.notes}
+                            placeholder={`${p.name}についてのメモ`}
+                            onSave={(notes) => savePlaceNotes(p.id, notes)}
+                            rows={3}
+                          />
+                        )}
                         <div className="kanban-card-ctrl">
                           <button type="button" className="kanban-mini" title="前の日へ"
                             disabled={busy || days.findIndex((x) => x.id === d.id) === 0}
@@ -821,11 +857,15 @@ export function Itinerary() {
                     <div className="kanban-route-total">合計 {fmtDuration(totalSec)} / {fmtDistance(totalM)}</div>
                   )}
                 </div>
-              </section>
+                </section>
+                <DayNotesEditor day={d} onSave={saveDayNotes} className="kanban-day-notes" />
+              </div>
             );
           })}
         </div>
       )}
+
+      {days.length > 0 && <MobileDayNotes days={days} onSave={saveDayNotes} />}
 
       {/* 場所ピッカー: 旅に追加済みの場所を、この日の訪問カードとして配置する。 */}
       {placePickerDay && (() => {

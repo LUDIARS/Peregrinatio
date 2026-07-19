@@ -59,6 +59,22 @@ describe('日程の自動決定', () => {
     const days = await json<TripDay[]>(await app.request(`/api/trips/${t.id}/days`));
     expect(days).toHaveLength(0);
   });
+
+  it('各日の日別メモを保存して旅の詳細から再取得できる', async () => {
+    const t = await json<{ id: string }>(
+      await post('/api/trips', { title: 'メモ旅', start_date: '2026-07-20', end_date: '2026-07-20' }),
+    );
+    const [day] = await json<TripDay[]>(await app.request(`/api/trips/${t.id}/days`));
+    expect(day).toBeDefined();
+
+    const updated = await json<TripDay>(
+      await patch(`/api/days/${day!.id}`, { notes: '集合は駅の南口' }),
+    );
+    expect(updated.notes).toBe('集合は駅の南口');
+
+    const detail = await json<{ days: TripDay[] }>(await app.request(`/api/trips/${t.id}`));
+    expect(detail.days[0]?.notes).toBe('集合は駅の南口');
+  });
 });
 
 describe('拠点ホテルの IN/OUT', () => {

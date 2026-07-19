@@ -523,6 +523,12 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   padding-bottom: 12px;
   width: max-content; min-width: 100%;
 }
+.kanban-day-group {
+  display: grid;
+  grid-template-columns: 280px 230px;
+  gap: 8px;
+  align-items: start;
+}
 .kanban-col {
   flex: 0 0 280px; max-width: 280px;
   background: #f0f0ec; border: 1px solid var(--c-border); border-radius: 14px;
@@ -548,8 +554,14 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
      中の入力 (時刻) は下で選択を戻す。 */
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
-/* カード内の入力だけは選択/編集できるよう戻す (時刻ピッカー等)。 */
-.kanban-card input { -webkit-user-select: auto; user-select: auto; }
+/* カード内の入力だけは選択/編集できるよう戻す (時刻・メモ等)。 */
+.kanban-card input,
+.kanban-card textarea,
+.kanban-card button {
+  -webkit-user-select: auto;
+  user-select: auto;
+  -webkit-touch-callout: default;
+}
 .kanban-card:active { cursor: grabbing; }
 /* 長押しで持ち上げ中 (Trello 風)。 */
 .kanban-card.lifting {
@@ -564,6 +576,34 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 }
 .kanban-card-name { display: block; word-break: break-word; line-height: 1.3; }
 .kanban-time { margin-top: 6px; padding: 6px 8px; font-size: 13px; min-height: 0; }
+
+.persisted-note-editor { display: grid; gap: 6px; }
+.persisted-note-editor label { display: grid; gap: 5px; }
+.persisted-note-label { font-size: 12px; font-weight: 700; color: var(--c-accent-d); }
+.persisted-note-editor textarea {
+  width: 100%;
+  min-height: 72px;
+  padding: 8px;
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.persisted-note-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.persisted-note-actions .sm { min-height: 32px; padding: 5px 10px; }
+.persisted-note-message { font-size: 11px; color: var(--c-muted); }
+.kanban-place-notes {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--c-border);
+}
+.day-notes-editor {
+  background: #fffdf6;
+  border: 1px solid #eadfb9;
+  border-radius: 12px;
+  padding: 10px;
+}
+.kanban-day-notes { width: 230px; }
 
 .kanban-card-ctrl { display: flex; gap: 4px; margin-top: 8px; }
 .kanban-mini {
@@ -637,6 +677,69 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   margin: 8px 0;
 }
 .itinerary-free-mode p { margin: 2px 0 0; }
+
+/* スマホの日別メモ一覧。通常表示は各日の予定直後、左下ボタンでは全日をまとめて確認できる。 */
+.mobile-day-notes-fab {
+  position: fixed;
+  left: 12px;
+  bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px);
+  z-index: 45;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid #eadfb9;
+  border-radius: 999px;
+  background: #fffdf6;
+  color: var(--c-text);
+  box-shadow: 0 5px 18px rgba(0,0,0,0.2);
+  font-weight: 700;
+}
+.mobile-day-notes-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: flex-end;
+  padding: 12px 12px calc(var(--safe-b) + 12px);
+  background: rgba(0,0,0,0.42);
+}
+.mobile-day-notes-dialog {
+  width: 100%;
+  max-height: min(82vh, 720px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--c-bg);
+  box-shadow: 0 12px 42px rgba(0,0,0,0.3);
+}
+.mobile-day-notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface);
+}
+.mobile-day-notes-list {
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+.mobile-day-notes-item { display: grid; gap: 3px; }
+.mobile-day-notes-item h3 { margin: 0; font-size: 15px; }
+.mobile-day-notes-item .day-notes-editor { margin-top: 4px; }
+.mobile-day-notes-date { font-size: 12px; }
+
+@media (max-width: 899px) {
+  .kanban-day-group { grid-template-columns: 280px; }
+  .kanban-day-notes { width: 280px; }
+}
+
+@media (min-width: 900px) {
+  .mobile-day-notes { display: none; }
+}
 
 /* 場所カードの間に挟む「移動」コネクタ (区間ごとの手段セレクタ+所要)。 */
 .kanban-connector {
