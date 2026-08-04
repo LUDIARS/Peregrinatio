@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, assetUrl } from '../api.js';
+import { placeTypeLabel } from '../lib/maps.js';
 import type { Place } from '../types.js';
 
 const STATUS_LABEL: Record<string, string> = { interested: '気になる', visited: '訪問済み' };
@@ -106,7 +107,7 @@ export function LibraryPicker({ tripId, existingIds, onAdded }: Props) {
                       {p.status !== 'none' && STATUS_LABEL[p.status] && (
                         <span className={`chip status-${p.status}`}>{STATUS_LABEL[p.status]}</span>
                       )}
-                      {p.category && <span className="chip">{p.category}</span>}
+                      {p.category && <span className="chip">{placeTypeLabel(p.category)}</span>}
                       {p.lat == null && <span className="muted">位置なし</span>}
                     </div>
                     {p.address && <div className="muted">{p.address}</div>}

@@ -1,0 +1,42 @@
+{
+  "name": "place-categories",
+  "description": "場所カテゴリの日本語表示・編集と、地図画面のタイプフィルタ。",
+  "role": "semantic",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)apps/web/src/lib/maps(?:\\.test)?\\.ts$",
+      "namePattern": "^(placeTypeLabel|normalizedPlaceCategory|.*place type helpers.*)$"
+    },
+    {
+      "pathPattern": "(^|/)apps/web/src/pages/PlaceDetail\\.tsx$",
+      "namePattern": "^PlaceDetailPane$"
+    },
+    {
+      "pathPattern": "(^|/)apps/web/src/pages/TripDetail\\.tsx$",
+      "namePattern": "^(TripDetail|placeMatchesFilters)$"
+    },
+    {
+      "pathPattern": "(^|/)apps/web/src/pages/LibraryPicker\\.tsx$",
+      "namePattern": "^LibraryPicker$"
+    },
+    {
+      "pathPattern": "(^|/)apps/web/src/pages/Itinerary\\.tsx$",
+      "namePattern": "^Itinerary$"
+    },
+    {
+      "pathPattern": "(^|/)apps/web/src/components/MapSearchOverlay\\.tsx$",
+      "namePattern": "^MapSearchOverlay$"
+    },
+    {
+      "pathPattern": "(^|/)apps/web/src/components/place/PlaceTypeFilter(?:\\.test)?\\.tsx$",
+      "namePattern": "^(PlaceTypeFilter|.*タイプフィルタ.*)$"
+    }
+  ],
+  "cardTemplate": "Summarise the place-categories domain: canonical display labels, user edits, search visibility, and map/list filtering by category.",
+  "source": "manual",
+  "lockedFields": ["*"],
+  "specRefs": ["spec/feature/place-categories.md"],
+  "rationale": "The feature spec owns the category lifecycle from raw provider values to displayed labels, persisted edits, and filtered presentation."
+}

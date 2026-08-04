@@ -67,6 +67,13 @@
   - その日の itinerary_items の place 列を順に Google Routes API へ。route_legs を再計算して返す。
 - `GET /api/days/:id/route` → `RouteLeg[]`
 
+## 静的配信 (`/api` 配下ではない)
+- `GET /build-meta.json` → `{ version: string, built_at: string | null }`
+  - 現在配信中の web ビルドの識別子。`Cache-Control: no-store`。
+  - 未ビルド/読み取り失敗時は `503` + `{ version: 'unknown', built_at: null }`。
+  - 参照: [`../feature/build-freshness.md`](../feature/build-freshness.md)
+- `GET /` および SPA フォールバックの `index.html` も `Cache-Control: no-store` で返す。
+
 ## 型 (TypeScript、apps/server/src/types.ts を正とする)
 Trip/TripDay/Place/PlaceImage/ImageAnalysis/ItineraryItem/RouteLeg は spec/data/schema.md のカラムに対応。
 PlaceSearchResult = `{ name, address, lat, lng, place_id, category? }`。

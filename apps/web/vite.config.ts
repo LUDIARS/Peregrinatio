@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
+import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { execSync } from 'node:child_process';
 
 const ludiarsHosts = (process.env.LUDIARS_ALLOWED_HOSTS ?? '')
   .split(',').map(s => s.trim()).filter(Boolean);
@@ -9,15 +11,46 @@ const ludiarsHosts = (process.env.LUDIARS_ALLOWED_HOSTS ?? '')
 // API はデフォルト http://127.0.0.1:8090 を直叩き (サーバ側 CORS 許可済)。
 // 別オリジン (Tunnel 等) からも使えるよう /api と /uploads を proxy できるようにしておく。
 const SERVER_TARGET = 'http://127.0.0.1:8090';
+const BUILD_VERSION = process.env.PE_BUILD_VERSION ?? gitBuildVersion();
+const BUILD_TIME = new Date().toISOString();
+
+function gitBuildVersion(): string {
+  try {
+    const hash = execSync('git rev-parse --short=12 HEAD', { encoding: 'utf8' }).trim();
+    const dirty = execSync('git status --porcelain', { encoding: 'utf8' }).trim();
+    return dirty ? `${hash}-dirty` : hash;
+  } catch {
+    return `unknown-${Date.now()}`;
+  }
+}
+
+function buildMetaPlugin(): Plugin {
+  return {
+    name: 'pe-build-meta',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'build-meta.json',
+        source: JSON.stringify({ version: BUILD_VERSION, built_at: BUILD_TIME }, null, 2),
+      });
+    },
+  };
+}
 
 export default defineConfig({
+  define: {
+    __PE_BUILD_VERSION__: JSON.stringify(BUILD_VERSION),
+    __PE_BUILD_BUILT_AT__: JSON.stringify(BUILD_TIME),
+  },
   plugins: [
     react(),
+    buildMetaPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       workbox: {
         cleanupOutdatedCaches: true,
+        globIgnores: ['**/build-meta.json'],
         // 地図タイル/JS・取り込み画像・API をオフラインや再訪時にキャッシュする。
         runtimeCaching: [
           {

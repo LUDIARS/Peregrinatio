@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server';
+import type { Context } from 'hono';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -29,18 +30,40 @@ async function main() {
   // res.json() で「Unexpected token '<'」になって原因が分かりにくくなる ([[feedback_no_silent_fallback]])。
   app.all('/api/*', (c) => c.json({ error: `Not Found: ${c.req.method} ${c.req.path}` }, 404));
 
-  // 本番 (単一オリジン): apps/web/dist を配信。dev は vite:5179 を使うのでこちらは未ビルドでも可。
-  // 実ファイルがあれば serveStatic が返し、無ければ SPA フォールバックで index.html を返す
-  // (BrowserRouter の deep link 用)。/api・/uploads は上で先にマッチするのでここには来ない。
-  app.use('*', serveStatic({ root: '../web/dist' }));
-  app.get('*', async (c) => {
+  // index.html と build-meta.json は「今どのビルドが配信されているか」の正本なので、
+  // 中間キャッシュ/ブラウザに残さない。ハッシュ付き JS/CSS は serveStatic 側の既定に任せる。
+  const NO_STORE = 'no-store, no-cache, must-revalidate, proxy-revalidate';
+
+  app.get('/build-meta.json', async (c) => {
+    c.header('Cache-Control', NO_STORE);
+    c.header('Pragma', 'no-cache');
+    c.header('Expires', '0');
+    try {
+      const meta = await readFile(join(PROJECT_ROOT, 'apps/web/dist/build-meta.json'), 'utf8');
+      return c.json(JSON.parse(meta) as Record<string, unknown>);
+    } catch {
+      return c.json({ version: 'unknown', built_at: null }, 503);
+    }
+  });
+
+  const sendIndexHtml = async (c: Context) => {
+    c.header('Cache-Control', NO_STORE);
     try {
       const html = await readFile(join(PROJECT_ROOT, 'apps/web/dist/index.html'), 'utf8');
       return c.html(html);
     } catch {
       return c.text('web not built — run `npm run build:web`', 404);
     }
-  });
+  };
+
+  // ルートは serveStatic より先に受ける (index.html を no-store で返すため)。
+  app.get('/', sendIndexHtml);
+
+  // 本番 (単一オリジン): apps/web/dist を配信。dev は vite:5179 を使うのでこちらは未ビルドでも可。
+  // 実ファイルがあれば serveStatic が返し、無ければ SPA フォールバックで index.html を返す
+  // (BrowserRouter の deep link 用)。/api・/uploads は上で先にマッチするのでここには来ない。
+  app.use('*', serveStatic({ root: '../web/dist' }));
+  app.get('*', sendIndexHtml);
 
   const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
     console.log(`Peregrinatio server on http://${config.host}:${info.port}`);

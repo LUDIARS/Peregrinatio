@@ -431,6 +431,16 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   border-radius: 8px;
   background: #fafafa;
 }
+.category-editor {
+  display: inline-grid;
+  gap: 3px;
+  min-width: 150px;
+}
+.category-editor select {
+  min-height: 34px;
+  padding: 6px 28px 6px 9px;
+  font-size: 13px;
+}
 .place-toolbar {
   margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--c-border);
 }
@@ -460,37 +470,132 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .chip.status-interested { background: #fff3cd; color: #8a6d3b; }
 .chip.status-visited { background: #e2f0e6; color: #2e7d32; }
 .place-type-filter {
-  display: grid;
-  gap: 6px;
+  position: relative;
+  z-index: 20;
   margin: 4px 0 10px;
 }
-.place-type-filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.place-type-btn,
-.place-type-clear {
+.place-type-trigger,
+.place-type-clear,
+.place-type-option {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text);
+}
+.place-type-trigger {
+  justify-content: space-between;
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 10px;
+  border-radius: 10px;
+}
+.place-type-trigger-label {
+  color: var(--c-accent-d);
+  font-size: 13px;
+  font-weight: 700;
+}
+.place-type-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  background: transparent;
+}
+.place-type-popover {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 45;
+  display: grid;
+  gap: 8px;
+  max-height: min(360px, 60vh);
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  background: var(--c-surface);
+  box-shadow: 0 14px 34px rgba(30, 35, 40, 0.18);
+}
+.place-type-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.place-type-options {
+  display: grid;
+  gap: 6px;
+}
+.place-type-option {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  text-align: left;
+}
+.place-type-clear {
   min-height: 32px;
   padding: 4px 9px;
   border-radius: 999px;
   font-size: 12px;
-  background: var(--c-surface);
-  color: var(--c-text);
-  border: 1px solid var(--c-border);
+  color: var(--c-muted);
+  background: transparent;
 }
-.place-type-btn.active {
+.place-type-option.active {
   background: #eef8f8;
   border-color: var(--c-accent);
   color: var(--c-accent-d);
   box-shadow: 0 0 0 2px rgba(14, 124, 134, 0.12);
 }
-.place-type-clear {
-  color: var(--c-muted);
-  background: transparent;
+.place-type-check {
+  margin-left: auto;
+  width: 16px;
+  color: var(--c-accent);
+  font-weight: 800;
+  text-align: right;
+}
+.map-base-bar {
+  position: relative;
+  z-index: 25;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.map-base-bar .place-type-filter {
+  flex: 0 0 188px;
+  max-width: 46vw;
+  margin: 0;
+}
+.map-base-bar .place-type-trigger {
+  min-height: 34px;
+  padding: 6px 9px;
+}
+.map-base-bar .place-type-popover {
+  right: auto;
+  width: min(280px, calc(100vw - 24px));
+}
+@media (max-width: 640px) {
+  /* 折り返しは維持する (nowrap にすると拠点チップが画面外に出て、スクロールもできず押せなくなる)。
+     ポップオーバーがはみ出せるよう overflow は visible のまま。 */
+  .map-base-bar {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  .map-base-bar .place-type-filter {
+    flex: 0 0 148px;
+    max-width: 44vw;
+  }
+  .map-base-bar .base-bar-label {
+    white-space: nowrap;
+  }
+  .map-base-bar .chip-btn {
+    min-width: 0;
+    padding-inline: 8px;
+  }
 }
 .type-swatch {
   display: inline-block;

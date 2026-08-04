@@ -48,6 +48,45 @@ export function transitRouteStyle(input: TransitRouteStyleInput): TransitRouteSt
 
 export const UNCATEGORIZED_PLACE_TYPE = '\u672a\u5206\u985e';
 
+export const PLACE_CATEGORY_OPTIONS = [
+  'リゾートホテル',
+  'ホテル',
+  'レストラン',
+  'カフェ',
+  '観光スポット',
+  '名所',
+  '美術館',
+  '博物館',
+  '動物園',
+  '牧場',
+  'アクティビティ・体験',
+  'お土産',
+  '菓子工場・カフェ',
+  '交通',
+  '駅',
+  '複合施設',
+];
+
+// prototype を持たないオブジェクトにして、'constructor' / 'toString' 等の継承プロパティを
+// ラベルとして拾わないようにする (拾うと関数が返り、描画側で落ちる)。
+const PLACE_CATEGORY_LABELS: Record<string, string> = Object.assign(Object.create(null) as Record<string, string>, {
+  resort_hotel: 'リゾートホテル',
+  lodging: 'ホテル',
+  hotel: 'ホテル',
+  restaurant: 'レストラン',
+  cafe: 'カフェ',
+  tourist_attraction: '観光スポット',
+  point_of_interest: '観光スポット',
+  landmark: '名所',
+  art_gallery: '美術館',
+  museum: '博物館',
+  zoo: '動物園',
+  farm: '牧場',
+  store: 'お土産',
+  transit_station: '交通',
+  train_station: '駅',
+});
+
 const PLACE_TYPE_COLORS = [
   '#0e7c86',
   '#7c3aed',
@@ -63,7 +102,13 @@ const PLACE_TYPE_COLORS = [
 
 export function placeTypeLabel(category: string | null | undefined): string {
   const label = category?.trim();
-  return label || UNCATEGORIZED_PLACE_TYPE;
+  if (!label) return UNCATEGORIZED_PLACE_TYPE;
+  return PLACE_CATEGORY_LABELS[label] ?? PLACE_CATEGORY_LABELS[label.toLowerCase()] ?? label;
+}
+
+export function normalizedPlaceCategory(category: string | null | undefined): string {
+  const label = placeTypeLabel(category);
+  return label === UNCATEGORIZED_PLACE_TYPE ? '' : label;
 }
 
 export function placeTypeColor(type: string): string {

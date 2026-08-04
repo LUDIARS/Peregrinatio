@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api.js';
+import { placeTypeLabel } from '../lib/maps.js';
 import type { PlaceSearchResult } from '../types.js';
 
 interface Props {
@@ -72,7 +73,7 @@ export function MapSearchOverlay({ tripId, center, onChanged }: Props) {
             <div key={c.place_id} className="map-search-row">
               <div style={{ minWidth: 0 }}>
                 <strong>{c.name}</strong>
-                {c.category && <span className="chip" style={{ marginLeft: 6 }}>{c.category}</span>}
+                {c.category && <span className="chip" style={{ marginLeft: 6 }}>{placeTypeLabel(c.category)}</span>}
                 {c.address && <div className="muted" style={{ fontSize: 12 }}>{c.address}</div>}
               </div>
               <button type="button" className="sm" onClick={() => void add(c)}>＋追加</button>

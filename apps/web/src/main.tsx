@@ -10,11 +10,13 @@ import { AddInfo } from './pages/AddInfo.js';
 import { Settings } from './pages/Settings.js';
 import { AccessHistory } from './pages/AccessHistory.js';
 import { SharedTripGate } from './pages/SharedTripGate.js';
+import { installBuildCacheBuster } from './lib/build-version.js';
 import { lockPageZoom } from './lib/lock-page-zoom.js';
 import './styles.css';
 
 // ページのピンチ/ダブルタップズームを抑止 (地図ズームは維持)。
 lockPageZoom();
+installBuildCacheBuster();
 
 /** 旧 per-day プランナー (/trips/:tripId/days/:dayId) は旅のしおり (カンバン) に統合済み。後方互換でリダイレクト。 */
 function DayRedirect() {

@@ -6,6 +6,7 @@ import { MobileDayNotes } from '../components/itinerary/MobileDayNotes.js';
 import { PersistedNoteEditor } from '../components/itinerary/PersistedNoteEditor.js';
 import { getPrefs } from '../lib/prefs.js';
 import { gmapsDirUrl } from '../lib/gmaps.js';
+import { placeTypeLabel } from '../lib/maps.js';
 import { adjustOptionToTarget, hhmmToMin } from '../lib/transit-adjust.js';
 import type {
   HomeLocation, ItineraryItem, OriginKind, RouteLeg, RouteMode, Timetable, TimetableDeparture,
@@ -799,7 +800,7 @@ export function Itinerary() {
                             <strong className="kanban-card-name">
                               {p ? `${p.is_base === 1 ? '🏨 ' : ''}${p.is_base === 1 ? (p.base_name || p.name) : p.name}` : (it.note || '(メモ)')}
                             </strong>
-                            {p?.category && <div className="muted" style={{ fontSize: 12 }}>{p.category}</div>}
+                            {p?.category && <div className="muted" style={{ fontSize: 12 }}>{placeTypeLabel(p.category)}</div>}
                             {it.edited_by && <div className="muted" style={{ fontSize: 11 }}>✎ {it.edited_by}</div>}
                             <input
                               type="time"
@@ -879,7 +880,7 @@ export function Itinerary() {
           .filter((p) => !isHomePlace(p))
           .filter((p) => {
             if (!q) return true;
-            return [p.name, p.category, p.address].filter(Boolean)
+            return [p.name, p.category ? placeTypeLabel(p.category) : null, p.address].filter(Boolean)
               .some((v) => v!.toLowerCase().includes(q));
           });
         return (
@@ -926,7 +927,7 @@ export function Itinerary() {
                     <span>
                       <strong>{p.is_base === 1 ? (p.base_name || p.name) : p.name}</strong>
                       <span className="muted">
-                        {[p.is_base === 1 ? '拠点' : null, p.category, p.address].filter(Boolean).join(' ・ ')}
+                        {[p.is_base === 1 ? '拠点' : null, p.category ? placeTypeLabel(p.category) : null, p.address].filter(Boolean).join(' ・ ')}
                       </span>
                     </span>
                   </button>

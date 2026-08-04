@@ -25,6 +25,7 @@ import { TransitPanel } from '../components/transit/TransitPanel.js';
 import { TripPrepPanel } from '../components/TripPrepPanel.js';
 import { GtfsTimetable } from '../components/GtfsTimetable.js';
 import { ShareTripButton } from '../components/ShareTripButton.js';
+import { PlaceTypeFilter } from '../components/place/PlaceTypeFilter.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -274,7 +275,7 @@ export function TripDetail() {
     if (p.category) {
       const cat = document.createElement('div');
       cat.className = 'pin-info-cat';
-      cat.textContent = p.category;
+      cat.textContent = placeTypeLabel(p.category);
       root.appendChild(cat);
     }
     const btn = document.createElement('button');
@@ -509,13 +510,22 @@ export function TripDetail() {
     () => Array.from(new Set(activePlaces.map((p) => placeTypeLabel(p.category)))).sort((a, b) => a.localeCompare(b, 'ja')),
     [activePlaces],
   );
+  const placeTypeSet = useMemo(() => new Set(placeTypes), [placeTypes]);
   const visiblePlaces = useMemo(
     () => activePlaces.filter((p) => placeMatchesFilters(p, statusFilter, placeTypeFilters)),
     [activePlaces, statusFilter, placeTypeFilters],
   );
+  // 場所の増減でタイプが消えたら、その選択も落とす (存在しないタイプで全件が隠れるのを防ぐ)。
+  useEffect(() => {
+    setPlaceTypeFilters((cur) => {
+      const next = cur.filter((type) => placeTypeSet.has(type));
+      return next.length === cur.length ? cur : next;
+    });
+  }, [placeTypeSet]);
   const togglePlaceTypeFilter = (type: string) => {
     setPlaceTypeFilters((cur) => (cur.includes(type) ? cur.filter((x) => x !== type) : [...cur, type]));
   };
+  const clearPlaceTypeFilters = () => setPlaceTypeFilters([]);
 
   if (!tripId) return null;
   if (error && !data) return <div className="card error">⚠ {error}</div>;
@@ -588,27 +598,15 @@ export function TripDetail() {
             ))}
           </div>
         )}
-        {placeTypes.length > 0 && (
-          <div className="place-type-filter" aria-label="場所タイプフィルタ">
-            <div className="base-bar-label">タイプ</div>
-            <div className="place-type-filter-row">
-              {placeTypes.map((type) => {
-                const active = placeTypeFilters.includes(type);
-                return (
-                  <button key={type} type="button"
-                    className={`place-type-btn${active ? ' active' : ''}`}
-                    onClick={() => togglePlaceTypeFilter(type)}
-                    aria-pressed={active}>
-                    <span className="type-swatch" style={{ background: placeTypeColor(type) }} />
-                    <span>{type}</span>
-                  </button>
-                );
-              })}
-              {placeTypeFilters.length > 0 && (
-                <button type="button" className="place-type-clear" onClick={() => setPlaceTypeFilters([])}>解除</button>
-              )}
-            </div>
-          </div>
+        {/* タイプフィルタの定位置は地図上部の拠点バー。地図が出ていない間 (キー未設定/読込中/エラー)
+            でも一覧を絞り込めるよう、ここにフォールバックを置く。 */}
+        {mapStatus !== 'ready' && (
+          <PlaceTypeFilter
+            types={placeTypes}
+            selected={placeTypeFilters}
+            onToggle={togglePlaceTypeFilter}
+            onClear={clearPlaceTypeFilters}
+          />
         )}
         {places.length === 0 && <p className="muted">まだ場所がありません。地図右の検索から追加してください。</p>}
         {places.length > 0 && visiblePlaces.length === 0 && (
@@ -755,7 +753,13 @@ export function TripDetail() {
       {/* 中央: 地図 + 拠点バー + 検索 */}
       <section className="ws-map">
         {mapStatus === 'ready' && (
-          <div className="base-bar">
+          <div className="base-bar map-base-bar">
+            <PlaceTypeFilter
+              types={placeTypes}
+              selected={placeTypeFilters}
+              onToggle={togglePlaceTypeFilter}
+              onClear={clearPlaceTypeFilters}
+            />
             <span className="base-bar-label">拠点:</span>
             {bases.length === 0 && <span className="muted">未設定 — 一覧で「拠点にする」</span>}
             {bases.map((b) => (

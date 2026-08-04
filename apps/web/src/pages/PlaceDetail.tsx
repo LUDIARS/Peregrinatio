@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
 import type { PlaceFacility, PlaceImage, PlaceLink, PlaceStatus, TripPlace } from '../types.js';
 import { FacilityChecklist } from '../components/place/FacilityChecklist.js';
+import { normalizedPlaceCategory, placeTypeLabel, PLACE_CATEGORY_OPTIONS } from '../lib/maps.js';
 
 const STATUS_OPTIONS: { key: PlaceStatus; label: string }[] = [
   { key: 'interested', label: '気になる' },
@@ -46,6 +47,9 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
   const [facilityBusy, setFacilityBusy] = useState(false);
   const [facilityMsg, setFacilityMsg] = useState('');
   const autoSuggestionKey = useRef('');
+  const [categoryValue, setCategoryValue] = useState('');
+  const [categoryBusy, setCategoryBusy] = useState(false);
+  const [categoryMsg, setCategoryMsg] = useState<{ text: string; error: boolean } | null>(null);
   // 自動検索 (情報の無い場所を Google で補完)。
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoMsg, setAutoMsg] = useState('');
@@ -69,6 +73,7 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     setPlace(p);
     if (syncMemo) setMemoText(p.notes ?? '');
     setBaseNameText(p.base_name ?? '');
+    setCategoryValue(normalizedPlaceCategory(p.category));
     return p;
   };
   const loadLinks = async () => { setLinks(await api.listLinks(placeId)); };
@@ -103,6 +108,26 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
       const p = await api.patchPlace(placeId, { status });
       setPlace((prev) => (prev ? { ...prev, ...p } : null)); await onChanged?.(); await loadPlace(false);
     } catch (e) { setError(e instanceof Error ? e.message : 'ステータス更新に失敗しました'); }
+  };
+
+  const saveCategory = async (category: string) => {
+    // 楽観的に select を動かすが、保存に失敗したら保存済みの値へ必ず戻す
+    // (失敗したまま新しい値が表示されていると、保存できたと誤解される)。
+    const previous = categoryValue;
+    setCategoryValue(category);
+    setCategoryBusy(true); setCategoryMsg(null); setError('');
+    try {
+      const p = await api.patchPlace(placeId, { category: category || null });
+      setPlace((prev) => (prev ? { ...prev, ...p } : null));
+      setCategoryMsg({ text: 'カテゴリを更新しました。', error: false });
+      await onChanged?.();
+      await loadPlace(false);
+    } catch (e) {
+      setCategoryValue(previous);
+      setCategoryMsg({ text: e instanceof Error ? e.message : 'カテゴリの更新に失敗しました', error: true });
+    } finally {
+      setCategoryBusy(false);
+    }
   };
 
   const toggleBase = async () => {
@@ -304,6 +329,10 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     catch (e) { setError(e instanceof Error ? e.message : '削除に失敗しました'); }
   };
 
+  const categoryOptions = categoryValue && !PLACE_CATEGORY_OPTIONS.includes(categoryValue)
+    ? [categoryValue, ...PLACE_CATEGORY_OPTIONS]
+    : PLACE_CATEGORY_OPTIONS;
+
   return (
     <div className="detail-pane">
       <div className="detail-head">
@@ -323,14 +352,30 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
             <h2 className="place-hero-name">{place.is_base === 1 ? '🏨 ' : ''}{place.name}</h2>
             {place.address && <div className="place-hero-addr">{place.address}</div>}
             <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-              {place.category && <span className="chip">{place.category}</span>}
+              {place.category && <span className="chip">{placeTypeLabel(place.category)}</span>}
               {place.lat != null && place.lng != null
                 ? <span className="chip">📍 {place.lat.toFixed(4)}, {place.lng.toFixed(4)}</span>
                 : <span className="chip" style={{ background: '#f3f3f1', color: 'var(--c-muted)' }}>位置なし</span>}
+              <label className="category-editor">
+                <span className="muted" style={{ fontSize: 12 }}>カテゴリ</span>
+                <select
+                  value={categoryValue}
+                  disabled={categoryBusy}
+                  onChange={(e) => void saveCategory(e.target.value)}
+                >
+                  <option value="">未分類</option>
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </label>
               <button type="button" className="sm ghost" onClick={openLocationEditor}>
                 位置を補正する
               </button>
             </div>
+            {categoryMsg && (
+              <div className={categoryMsg.error ? 'error' : 'muted'} style={{ marginTop: 4 }}>{categoryMsg.text}</div>
+            )}
             {locOpen && (
               <form className="location-corrector foundation-form" onSubmit={saveLocation}>
                 <label>
