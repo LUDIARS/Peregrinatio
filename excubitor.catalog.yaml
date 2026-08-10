@@ -1,0 +1,23 @@
+# Excubitor catalog fragment -- Peregrinatio owns this service definition.
+services:
+  - code: peregrinatio
+    name: Peregrinatio
+    tier: personal
+    project_code: Pe
+    component: backend
+    port: 8090
+    repo: LUDIARS/Peregrinatio
+    runtime: node
+    cwd: ${ARS_ROOT}/Peregrinatio
+    command: npm run dev:server
+    allow_hot_reload: true
+    autostart: false
+    restart_policy: "no"
+    max_restart: 5
+    health:
+      type: http
+      url: http://127.0.0.1:8090/healthz
+      interval_sec: 30
+      grace_period_sec: 10
+    provides:
+      PEREGRINATIO_URL: http://127.0.0.1:${port}
