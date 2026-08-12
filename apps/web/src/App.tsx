@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { NavMenu } from './components/NavMenu.js';
 import { api } from './api.js';
+import { currentBuildVersion } from './lib/build-version.js';
 import { recordTripAccess } from './lib/recentTripAccess.js';
 
 function TripAccessRecorder() {
@@ -21,6 +22,7 @@ export function App() {
         <Link to="/" className="brand-link" aria-label="アクセス履歴へ">
           <span className="brand">Peregrinatio</span>
           <span className="brand-sub">旅のしおり</span>
+          <span className="brand-version">v{currentBuildVersion}</span>
         </Link>
       </header>
 

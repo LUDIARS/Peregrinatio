@@ -1,0 +1,20 @@
+{
+  "name": "service-version-ui",
+  "description": "ヘッダで稼働中のビルド版数を表示し、キャッシュが古い画面を利用者が判別できるようにする。",
+  "role": "semantic",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)apps/web/src/App(?:\\.test)?\\.tsx$"
+    },
+    {
+      "pathPattern": "(^|/)apps/web/src/styles\\.css$"
+    }
+  ],
+  "cardTemplate": "Summarise the service-version-ui domain: rendering the build version beside the brand and preserving a visible runtime identity for stale-cache diagnosis.",
+  "source": "manual",
+  "lockedFields": ["*"],
+  "specRefs": ["spec/tasks/2026-08-11-service-version-ui.md"],
+  "rationale": "Build identity generation and cache recovery remain owned by build-freshness; this domain owns only the user-visible version presentation and its regression coverage."
+}

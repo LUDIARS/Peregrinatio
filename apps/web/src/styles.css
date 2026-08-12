@@ -48,6 +48,7 @@ html, body {
 }
 .brand { font-size: 18px; font-weight: 700; letter-spacing: 0.02em; }
 .brand-sub { font-size: 12px; opacity: 0.85; }
+.brand-version { font-size: 11px; opacity: 0.78; }
 /* タイトルロゴ = ホーム (旅一覧) リンク。フッターは廃止。 */
 .brand-link {
   display: flex;

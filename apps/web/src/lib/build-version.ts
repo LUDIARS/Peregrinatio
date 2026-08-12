@@ -9,6 +9,9 @@ interface BuildMeta {
 const CURRENT_BUILD_VERSION = __PE_BUILD_VERSION__;
 const CURRENT_BUILD_BUILT_AT = __PE_BUILD_BUILT_AT__;
 
+/** Version resolved from Excubitor at the time this Web UI was built. */
+export const currentBuildVersion = CURRENT_BUILD_VERSION;
+
 export function installBuildCacheBuster(): void {
   if (typeof window === 'undefined') return;
   // module script は通常 load 前に走るが、遅延 import 等で load 後に来ても取りこぼさない。

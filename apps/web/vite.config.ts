@@ -11,7 +11,11 @@ const ludiarsHosts = (process.env.LUDIARS_ALLOWED_HOSTS ?? '')
 // API はデフォルト http://127.0.0.1:8090 を直叩き (サーバ側 CORS 許可済)。
 // 別オリジン (Tunnel 等) からも使えるよう /api と /uploads を proxy できるようにしておく。
 const SERVER_TARGET = 'http://127.0.0.1:8090';
-const BUILD_VERSION = process.env.PE_BUILD_VERSION ?? gitBuildVersion();
+// Excubitor publishes the authoritative runtime identity to every service.
+// Keep the legacy build override and Git value as local-development fallbacks.
+const BUILD_VERSION = process.env.EXCUBITOR_SERVICE_VERSION?.trim()
+  || process.env.PE_BUILD_VERSION
+  || gitBuildVersion();
 const BUILD_TIME = new Date().toISOString();
 
 function gitBuildVersion(): string {

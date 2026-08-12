@@ -17,6 +17,9 @@ export async function setupTestDb(): Promise<void> {
   // 絶対パスなので sqlitePath() の resolve(PROJECT_ROOT, p) はそのまま p を返す。
   config.databaseUrl = join(dir, 'test.sqlite');
   initSql();
+  // 使い捨て DB の migration に本番用の fsync 耐久性は不要。並列 suite の初期化を
+  // hook timeout 内に収めつつ、本番接続の synchronous=FULL は変更しない。
+  await sql.unsafe('PRAGMA synchronous = OFF');
   await runMigrations();
 }
 
