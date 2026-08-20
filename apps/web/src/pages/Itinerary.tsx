@@ -4,6 +4,7 @@ import { api, assetUrl } from '../api.js';
 import { DayNotesEditor } from '../components/itinerary/DayNotesEditor.js';
 import { MobileDayNotes } from '../components/itinerary/MobileDayNotes.js';
 import { PersistedNoteEditor } from '../components/itinerary/PersistedNoteEditor.js';
+import { PlanSuggestPanel } from '../components/plan/PlanSuggestPanel.js';
 import { getPrefs } from '../lib/prefs.js';
 import { gmapsDirUrl } from '../lib/gmaps.js';
 import { placeTypeLabel } from '../lib/maps.js';
@@ -69,6 +70,8 @@ export function Itinerary() {
   const [home, setHome] = useState<HomeLocation | null>(null);
   const [itemsByDay, setItemsByDay] = useState<ItemsByDay>({});
   const [error, setError] = useState('');
+  // プランの自動決定パネルの開閉 (既定は閉じる。しおりの編集を邪魔しないため)。
+  const [showPlanSuggest, setShowPlanSuggest] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // 出発地点フォーム (自宅/集合地点)。trip ロード時に同期する。
@@ -688,6 +691,14 @@ export function Itinerary() {
             </p>
           )}
         </div>
+      </div>
+
+      {/* プランの自動決定。案は提案のみで、採用したときだけ日程を上書きする。 */}
+      <div className="kanban-plan-suggest">
+        <button type="button" className="sm ghost" onClick={() => setShowPlanSuggest((v) => !v)}>
+          {showPlanSuggest ? '▲ プランの自動決定を閉じる' : '🤖 プランを自動で決める'}
+        </button>
+        {showPlanSuggest && tripId && <PlanSuggestPanel tripId={tripId} onAdopted={load} />}
       </div>
 
       {pendingPlace && (

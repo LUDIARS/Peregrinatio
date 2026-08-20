@@ -439,3 +439,98 @@ export interface GtfsRouteTimetable {
   date: string; // 絞り込んだ運行日 YYYYMMDD
   patterns: GtfsTimetablePattern[];
 }
+
+// --- 提案 (荷物 / 季節 / プラン) --------------------------------------------
+// server の suggest/types.ts と対。提案は DB を変えず、採用で初めて反映される。
+
+export type SuggestSource = 'baseline' | 'facility' | 'season' | 'llm';
+
+export interface PackingSuggestion {
+  key: string;
+  title: string;
+  quantity: number | null;
+  category: string | null;
+  reason: string;
+  origins: string[];
+  source: SuggestSource;
+  already_listed: boolean;
+}
+
+export interface PackingDrop {
+  title: string;
+  reason: string;
+  origins: string[];
+  existing_item_id: string | null;
+}
+
+export interface SeasonalHint {
+  key: string;
+  label: string;
+  detail: string;
+}
+
+export interface PackingSuggestResult {
+  trip_id: string;
+  nights: number | null;
+  season_label: string | null;
+  facilities: string[];
+  suggestions: PackingSuggestion[];
+  drops: PackingDrop[];
+  hints: SeasonalHint[];
+  warnings: string[];
+}
+
+export interface PackingAdoptResult {
+  created: TripCheckItem[];
+  skipped: number;
+  removed: number;
+}
+
+export type PlanPace = 'relaxed' | 'standard' | 'packed';
+
+export interface PlanSuggestInput {
+  primary_mode: RouteMode;
+  day_start: string;
+  day_end: string;
+  pace: PlanPace;
+  must_place_ids: string[];
+  exclude_place_ids: string[];
+  use_routes_api: boolean;
+}
+
+export interface PlanItem {
+  kind: 'visit' | 'move' | 'note';
+  place_id: string | null;
+  label: string;
+  planned_time: string | null;
+  note: string | null;
+  mode: RouteMode | null;
+  duration_sec: number | null;
+  distance_m: number | null;
+  duration_source: 'routes' | 'estimate' | null;
+}
+
+export interface PlanDay {
+  day_index: number;
+  date: string | null;
+  title: string;
+  note: string | null;
+  items: PlanItem[];
+  travel_sec: number;
+  stay_sec: number;
+}
+
+export interface PlanSuggestResult {
+  trip_id: string;
+  input: PlanSuggestInput;
+  days: PlanDay[];
+  leftovers: Array<{ place_id: string; name: string; reason: string }>;
+  hints: SeasonalHint[];
+  warnings: string[];
+}
+
+export interface PlanAdoptResult {
+  days: TripDay[];
+  items: number;
+  replaced: number;
+}

@@ -1324,3 +1324,14 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   cursor: move; user-select: none; touch-action: none; /* バーをドラッグして移動 */
 }
 .itinerary-overlay-body { flex: 1; overflow: auto; padding: 16px; }
+
+/* プランの自動決定パネル (旅のしおり上部)。既定は折りたたみ。 */
+.kanban-plan-suggest {
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kanban-plan-suggest > .card {
+  max-width: 720px;
+}

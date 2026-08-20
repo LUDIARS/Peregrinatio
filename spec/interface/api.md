@@ -67,6 +67,32 @@
   - その日の itinerary_items の place 列を順に Google Routes API へ。route_legs を再計算して返す。
 - `GET /api/days/:id/route` → `RouteLeg[]`
 
+## 提案 (荷物 / 季節 / プラン)
+`/suggest` と `/season-hints` は **DB を変えない** (プレビュー)。書き込むのは `/adopt` だけ。
+参照: [`../feature/trip-suggestions.md`](../feature/trip-suggestions.md)
+
+- `POST /api/trips/:id/packing/suggest` `{ use_llm?: boolean }` → `PackingSuggestResult`
+  - 拠点の設備・行き先・季節から持ち物を提案する。`suggestions[]` (追加候補)、`drops[]` (現地にあるので
+    持参不要)、`hints[]` (季節の見どころ)、`warnings[]` (LLM 失敗等で縮退した理由)。
+  - `use_llm=false` でルール由来のみ (LLM を呼ばない)。
+- `POST /api/trips/:id/packing/adopt` `{ items: [{ title, quantity?, category?, reason? }], remove_item_ids?: string[] }`
+  → `{ created: TripCheckItem[], skipped: number, removed: number }`
+  - 選ばれた分だけを `trip_check_items(list_type='packing')` に入れる。同名は `skipped`。
+  - `remove_item_ids` は「持参不要」で明示的に外す既存行。
+  - 全入力を更新前に検証し、追加と削除は単一トランザクションで反映する。不正なら 400 で変更しない。
+- `GET /api/trips/:id/season-hints` → `{ season_label: string | null, hints: SeasonalHint[] }`
+- `POST /api/trips/:id/plan/suggest`
+  `{ primary_mode?, day_start?, day_end?, pace?, must_place_ids?, exclude_place_ids?, use_routes_api?, use_llm? }`
+  → `PlanSuggestResult`
+  - 交通手段を軸に日割り案を作る。`days[].items[]` の move には `mode` / `duration_sec` /
+    `duration_source` ('routes'=実所要 | 'estimate'=概算) が入る。
+  - 載せきれなかった場所は `leftovers[]` に理由付きで落ちる。
+- `POST /api/trips/:id/plan/adopt` `{ days: PlanDay[], confirm: true }`
+  → `{ days: TripDay[], items: number, replaced: number }`
+  - **上書き**。案に含まれる日の `itinerary_items` と `route_legs` を消してから入れ直す。
+    `confirm` が無ければ 400。他の旅の place_id はメモ行に落として黙って捨てない。
+  - 全 `days` を更新前に検証し、置換は単一トランザクションで反映する。不正なら 400 で既存予定を変更しない。
+
 ## 静的配信 (`/api` 配下ではない)
 - `GET /build-meta.json` → `{ version: string, built_at: string | null }`
   - 現在配信中の web ビルドの識別子。`Cache-Control: no-store`。
@@ -77,3 +103,4 @@
 ## 型 (TypeScript、apps/server/src/types.ts を正とする)
 Trip/TripDay/Place/PlaceImage/ImageAnalysis/ItineraryItem/RouteLeg は spec/data/schema.md のカラムに対応。
 PlaceSearchResult = `{ name, address, lat, lng, place_id, category? }`。
+提案の型 (PackingSuggestResult / PlanSuggestResult / SeasonalHint 等) は `apps/server/src/suggest/types.ts` を正とする。

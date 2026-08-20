@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
+import { PackingSuggestPanel } from './prep/PackingSuggestPanel.js';
 import type { TripCheckItem, TripCheckListType, TripCheckStatus } from '../types.js';
 
 const STATUS_LABEL: Record<TripCheckStatus, string> = {
@@ -181,6 +182,7 @@ export function TripPrepPanel({ tripId }: { tripId: string }) {
   return (
     <div className="prep-panel">
       {error && <div className="card error">⚠ {error}</div>}
+      <PackingSuggestPanel tripId={tripId} onAdopted={load} />
       <ListEditor
         tripId={tripId}
         listType="packing"

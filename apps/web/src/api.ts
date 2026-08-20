@@ -26,6 +26,13 @@ import type {
   TimetableKind,
   TripCheckItem,
   TripCheckListType,
+  PackingSuggestResult,
+  PackingAdoptResult,
+  PlanSuggestInput,
+  PlanSuggestResult,
+  PlanAdoptResult,
+  PlanDay,
+  SeasonalHint,
   TransitOption,
   TransitProviderKind,
   GtfsFeed,
@@ -423,4 +430,22 @@ export const api = {
     input: Partial<Pick<TripCheckItem, 'title' | 'details' | 'status' | 'quantity' | 'category' | 'due_at' | 'order_index'>>,
   ) => req<TripCheckItem>(`/api/check-items/${id}`, { method: 'PATCH', body: json(input) }),
   deleteCheckItem: (id: string) => req<{ ok: true }>(`/api/check-items/${id}`, { method: 'DELETE' }),
+
+  // --- 提案 (荷物 / 季節 / プラン)。suggest は DB を変えず、adopt で初めて反映される ---
+  suggestPacking: (tripId: string, opts: { use_llm?: boolean } = {}) =>
+    req<PackingSuggestResult>(`/api/trips/${tripId}/packing/suggest`, { method: 'POST', body: json(opts) }),
+  adoptPacking: (
+    tripId: string,
+    input: {
+      items: Array<{ title: string; quantity?: number | null; category?: string | null; reason?: string | null }>;
+      remove_item_ids?: string[];
+    },
+  ) => req<PackingAdoptResult>(`/api/trips/${tripId}/packing/adopt`, { method: 'POST', body: json(input) }),
+  seasonHints: (tripId: string) =>
+    req<{ season_label: string | null; hints: SeasonalHint[] }>(`/api/trips/${tripId}/season-hints`),
+  suggestPlan: (tripId: string, input: Partial<PlanSuggestInput> & { use_llm?: boolean }) =>
+    req<PlanSuggestResult>(`/api/trips/${tripId}/plan/suggest`, { method: 'POST', body: json(input) }),
+  /** 案を旅に反映する (対象の日を上書きする)。 */
+  adoptPlan: (tripId: string, days: PlanDay[]) =>
+    req<PlanAdoptResult>(`/api/trips/${tripId}/plan/adopt`, { method: 'POST', body: json({ days, confirm: true }) }),
 };

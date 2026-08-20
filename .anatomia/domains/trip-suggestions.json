@@ -1,0 +1,30 @@
+{
+  "name": "trip-suggestions",
+  "description": "旅の材料 (拠点設備・行き先・日付・出発地点) から荷物・季節・プランを提案し、採用したときだけ旅へ反映する。",
+  "role": "semantic",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)apps/server/src/suggest/"
+    },
+    {
+      "pathPattern": "(^|/)apps/server/src/routes/suggest\\.ts$"
+    },
+    {
+      "pathPattern": "(^|/)apps/web/src/components/prep/"
+    },
+    {
+      "pathPattern": "(^|/)apps/web/src/components/plan/"
+    },
+    {
+      "pathPattern": "(^|/)apps/web/src/api\\.ts$",
+      "namePattern": "^(suggestPacking|adoptPacking|seasonHints|suggestPlan|adoptPlan)$"
+    }
+  ],
+  "cardTemplate": "Summarise the trip-suggestions domain: read-only proposal generation from trip context (facilities, destinations, season windows, transport mode), the deterministic rule layer versus the optional LLM layer, and the single adopt path that writes to trip_check_items and itinerary_items.",
+  "source": "manual",
+  "lockedFields": ["*"],
+  "specRefs": ["spec/feature/trip-suggestions.md"],
+  "rationale": "提案 (読み取りのみ) と採用 (唯一の書き込み) が 1 つのライフサイクル境界を作る。荷物・季節・プランは同じ旅コンテキストを共有し、季節ウィンドウは荷物とプランの両方に効くため分割できない。"
+}
