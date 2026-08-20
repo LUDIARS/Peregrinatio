@@ -1,0 +1,11 @@
+{
+  "name": "llm-assist",
+  "description": "LLM による支援。 提案文や要約の生成をモデル呼び出しの層として切り出す。",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)packages/llm/(?:.*/)?[^/]+$"
+    }
+  ]
+}

@@ -9,17 +9,21 @@
       "pathPattern": "(^|/)apps/web/src/lib/build-version\\.ts$"
     },
     {
-      "pathPattern": "(^|/)apps/web/vite\\.config\\.ts$",
+      "pathPattern": "(^|/)apps/web/vite\\.config\\.ts$"
+    },
+    {
+      "pathPattern": "(^|/)apps/server/src/index\\.ts$"
+    },
+    {
       "namePattern": "^(gitBuildVersion|buildMetaPlugin)$"
     },
     {
-      "pathPattern": "(^|/)apps/server/src/index\\.ts$",
       "namePattern": "^(main|sendIndexHtml)$"
     }
   ],
   "cardTemplate": "Summarise the build-freshness domain: build identity emission, no-store metadata delivery, stale-cache detection, and bounded PWA reload recovery.",
-  "source": "manual",
-  "lockedFields": ["*"],
-  "specRefs": ["spec/feature/build-freshness.md"],
+  "specRefs": [
+    "spec/feature/build-freshness.md"
+  ],
   "rationale": "The feature spec defines one lifecycle boundary from build identity generation through runtime freshness detection and cache recovery."
 }

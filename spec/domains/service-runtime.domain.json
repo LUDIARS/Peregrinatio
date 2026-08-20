@@ -1,0 +1,20 @@
+{
+  "name": "service-runtime",
+  "description": "プロセスとしての Peregrinatio。 起動と設定、 共有ユーティリティ、 運用スクリプト。",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)apps/server/src/lib/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)apps/server/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)scripts/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)packages/(?:.*/)?[^/]+$"
+    }
+  ]
+}

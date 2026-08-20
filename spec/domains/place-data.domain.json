@@ -1,0 +1,17 @@
+{
+  "name": "place-data",
+  "description": "場所のデータ。 地点情報の取得・正規化・保管と、 画像の取り扱い。",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)packages/places/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)packages/crawl/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)packages/image/(?:.*/)?[^/]+$"
+    }
+  ]
+}

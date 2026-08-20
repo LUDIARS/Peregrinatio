@@ -33,15 +33,18 @@ export async function runMigrations(): Promise<number> {
   await sql.unsafe('PRAGMA foreign_keys = OFF');
   let count = 0;
   try {
-    for (const file of pending) {
-      const text = await readFile(join(MIGRATIONS_DIR, file), 'utf8');
-      console.log(`applying ${file}`);
-      await sql.begin(async (tx) => {
+    // A fresh test database can have the whole migration history pending.  Apply
+    // that batch atomically so setup does not pay a disk-commit cost for every
+    // individual migration.
+    await sql.begin(async (tx) => {
+      for (const file of pending) {
+        const text = await readFile(join(MIGRATIONS_DIR, file), 'utf8');
+        console.log(`applying ${file}`);
         await tx.unsafe(text);
         await tx`INSERT INTO _peregrinatio_migrations (name) VALUES (${file})`;
-      });
-      count++;
-    }
+        count++;
+      }
+    });
   } finally {
     await sql.unsafe('PRAGMA foreign_keys = ON');
   }

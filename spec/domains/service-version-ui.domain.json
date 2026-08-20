@@ -13,8 +13,8 @@
     }
   ],
   "cardTemplate": "Summarise the service-version-ui domain: rendering the build version beside the brand and preserving a visible runtime identity for stale-cache diagnosis.",
-  "source": "manual",
-  "lockedFields": ["*"],
-  "specRefs": ["spec/tasks/2026-08-11-service-version-ui.md"],
+  "specRefs": [
+    "spec/tasks/2026-08-11-service-version-ui.md"
+  ],
   "rationale": "Build identity generation and cache recovery remain owned by build-freshness; this domain owns only the user-visible version presentation and its regression coverage."
 }

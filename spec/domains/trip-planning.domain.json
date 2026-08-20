@@ -1,0 +1,14 @@
+{
+  "name": "trip-planning",
+  "description": "旅そのものの正本。 旅程・拠点・行き先・日付の保持と、 旅としての一貫性を所有する。 提案の生成は trip-suggestions が担う。",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)apps/server/src/(?:trips?|itinerary|plan)/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)apps/server/src/routes/(?:.*/)?[^/]+$"
+    }
+  ]
+}

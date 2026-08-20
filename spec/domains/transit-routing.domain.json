@@ -1,0 +1,17 @@
+{
+  "name": "transit-routing",
+  "description": "移動の経路。 交通手段ごとの経路探索と所要時間、 乗換の表現。",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)apps/server/src/transit/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)packages/routing/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)apps/web/src/components/transit/(?:.*/)?[^/]+$"
+    }
+  ]
+}

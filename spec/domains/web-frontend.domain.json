@@ -1,0 +1,11 @@
+{
+  "name": "web-frontend",
+  "description": "ブラウザ側の画面。 地図・旅程・提案の表示と操作、 PWA としての振る舞い。",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)apps/web/(?:.*/)?[^/]+$"
+    }
+  ]
+}
