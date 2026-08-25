@@ -13,8 +13,9 @@ import {
 } from '../lib/transit-parse.js';
 import { fetchGmapsTransitText } from '../lib/transit-fetch.js';
 import { getCachedTransit, putCachedTransit } from '../lib/transit-cache.js';
+import { FixedRouteInputError, saveFixedRoute } from '../routing/fixed-route.js';
 import { computeRoute } from '@peregrinatio/routing';
-import type { RouteLeg, RouteMode, Trip } from '../types.js';
+import type { RouteLeg, RouteMode, TransitKind, Trip } from '../types.js';
 
 const app = new Hono();
 
@@ -36,6 +37,8 @@ interface SegmentOverride {
   depart_time: string | null;
   arrive_time: string | null;
   note: string | null;
+  transit_kind: TransitKind | null;
+  is_fixed: number;
 }
 
 app.post('/api/days/:id/route', async (c) => {
@@ -78,7 +81,8 @@ app.post('/api/days/:id/route', async (c) => {
   // 区間ごとのユーザ選択 (override) を読み込む。並べ替えで route_legs を作り直しても保持される。
   // duration_sec/fare_text/note は Google マップ結果の貼り付け解析 (transit) 由来 (暫定)。
   const overrides = (await sql`
-    SELECT from_key, to_key, mode, duration_sec, fare_text, depart_time, arrive_time, note
+    SELECT from_key, to_key, mode, duration_sec, fare_text, depart_time, arrive_time, note,
+           transit_kind, is_fixed
     FROM route_segment_modes WHERE day_id = ${day_id}`) as SegmentOverride[];
   const ovMap = new Map(overrides.map((o) => [`${o.from_key}|${o.to_key}`, o]));
 
@@ -98,16 +102,29 @@ app.post('/api/days/:id/route', async (c) => {
       ov?.mode ?? (autoPerSegment ? suggestSegmentMode(haversineMeters(from, to), mode) : mode);
 
     // Google マップで選んだ経路の保持値があれば、それを使う (Google を呼ばない。日本の transit 対策)。
-    const hasPicked = !!ov && (ov.duration_sec != null || ov.fare_text != null || ov.note != null || ov.depart_time != null);
+    const hasPicked = !!ov && (
+      ov.is_fixed === 1 || ov.duration_sec != null || ov.fare_text != null || ov.note != null
+      || ov.depart_time != null || ov.arrive_time != null || ov.transit_kind != null
+    );
     let r: { duration_sec: number | null; distance_m: number | null; fare_text: string | null; polyline: string | null; raw: unknown };
     let note: string | null = null;
     let depart_time: string | null = null;
     let arrive_time: string | null = null;
+    let transit_kind: TransitKind | null = null;
+    let is_fixed = 0;
     if (hasPicked) {
-      r = { duration_sec: ov!.duration_sec ?? null, distance_m: null, fare_text: ov!.fare_text ?? null, polyline: null, raw: { source: 'gmaps' } };
+      r = {
+        duration_sec: ov!.duration_sec ?? null,
+        distance_m: null,
+        fare_text: ov!.fare_text ?? null,
+        polyline: null,
+        raw: { source: 'segment-override' },
+      };
       note = ov!.note ?? null;
       depart_time = ov!.depart_time ?? null;
       arrive_time = ov!.arrive_time ?? null;
+      transit_kind = ov!.transit_kind ?? null;
+      is_fixed = ov!.is_fixed;
     } else {
       r = await computeRoute(
         { from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng }, mode: legMode },
@@ -124,6 +141,8 @@ app.post('/api/days/:id/route', async (c) => {
       from_label: from.label,
       to_label: to.label,
       mode: legMode,
+      transit_kind,
+      is_fixed,
       duration_sec: r.duration_sec,
       distance_m: r.distance_m,
       fare_text: r.fare_text,
@@ -135,9 +154,12 @@ app.post('/api/days/:id/route', async (c) => {
       computed_at,
     };
     await sql`INSERT INTO route_legs
-      (id, day_id, from_place_id, to_place_id, from_label, to_label, mode, duration_sec, distance_m, fare_text, polyline, raw_json, note, depart_time, arrive_time, computed_at)
+      (id, day_id, from_place_id, to_place_id, from_label, to_label, mode, transit_kind, is_fixed,
+       duration_sec, distance_m, fare_text, polyline, raw_json, note, depart_time, arrive_time, computed_at)
       VALUES (${leg.id}, ${leg.day_id}, ${leg.from_place_id}, ${leg.to_place_id}, ${leg.from_label}, ${leg.to_label},
-              ${leg.mode}, ${leg.duration_sec}, ${leg.distance_m}, ${leg.fare_text}, ${leg.polyline}, ${leg.raw_json}, ${leg.note}, ${leg.depart_time}, ${leg.arrive_time}, ${leg.computed_at})`;
+              ${leg.mode}, ${leg.transit_kind}, ${leg.is_fixed}, ${leg.duration_sec}, ${leg.distance_m},
+              ${leg.fare_text}, ${leg.polyline}, ${leg.raw_json}, ${leg.note}, ${leg.depart_time},
+              ${leg.arrive_time}, ${leg.computed_at})`;
     legs.push(leg);
   }
 
@@ -221,20 +243,37 @@ app.patch('/api/legs/:id', async (c) => {
   // 手段を選び直した = Google で計算し直すので、選んだ経路の保持値 (note/時刻) はクリアする。
   await sql`UPDATE route_legs SET mode=${mode}, duration_sec=${r.duration_sec}, distance_m=${r.distance_m},
     fare_text=${r.fare_text}, polyline=${r.polyline}, raw_json=${JSON.stringify(r.raw)},
-    note=${null}, depart_time=${null}, arrive_time=${null} WHERE id=${id}`;
+    note=${null}, depart_time=${null}, arrive_time=${null}, transit_kind=${null}, is_fixed=${0} WHERE id=${id}`;
 
   // この区間の選択を保存 (場所ペアをキーに)。並べ替えで route_legs を作り直しても復元される。
   const fromKey = leg.from_place_id ?? '@origin';
   const toKey = leg.to_place_id ?? '@origin';
   await sql`
-    INSERT INTO route_segment_modes (id, day_id, from_key, to_key, mode, duration_sec, fare_text, depart_time, arrive_time, note, updated_at)
-    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${mode}, ${null}, ${null}, ${null}, ${null}, ${null}, ${now})
+    INSERT INTO route_segment_modes
+      (id, day_id, from_key, to_key, mode, duration_sec, fare_text, depart_time, arrive_time,
+       note, transit_kind, is_fixed, updated_at)
+    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${mode}, ${null}, ${null}, ${null},
+            ${null}, ${null}, ${null}, ${0}, ${now})
     ON CONFLICT(day_id, from_key, to_key) DO UPDATE SET
       mode = excluded.mode, duration_sec = NULL, fare_text = NULL, depart_time = NULL, arrive_time = NULL,
-      note = NULL, updated_at = excluded.updated_at`;
+      note = NULL, transit_kind = NULL, is_fixed = 0, updated_at = excluded.updated_at`;
 
   const [updated] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
   return c.json(updated);
+});
+
+/** Register or clear manually confirmed details for exactly one route leg. */
+app.put('/api/legs/:id/fixed', async (c) => {
+  const id = c.req.param('id');
+  const [leg] = (await sql`SELECT * FROM route_legs WHERE id=${id}`) as RouteLeg[];
+  if (!leg) return c.json({ error: 'leg not found' }, 404);
+  const input: unknown = await c.req.json().catch(() => ({}));
+  try {
+    return c.json(await saveFixedRoute(leg, input));
+  } catch (error) {
+    if (error instanceof FixedRouteInputError) return c.json({ error: error.message }, 400);
+    throw error;
+  }
 });
 
 /** 選んだ transit 経路をこの区間に保存する (route_legs + route_segment_modes、source 注記)。 */
@@ -244,17 +283,22 @@ async function storeTransitOnLeg(leg: RouteLeg, parsed: ParsedTransit, source: s
   await sql`UPDATE route_legs SET mode=${'transit'}, duration_sec=${parsed.duration_sec},
     distance_m=${null}, fare_text=${parsed.fare_text}, polyline=${null},
     raw_json=${JSON.stringify({ source })}, note=${parsed.note},
-    depart_time=${parsed.depart_time}, arrive_time=${parsed.arrive_time} WHERE id=${leg.id}`;
+    depart_time=${parsed.depart_time}, arrive_time=${parsed.arrive_time},
+    transit_kind=${null}, is_fixed=${0} WHERE id=${leg.id}`;
 
   const fromKey = leg.from_place_id ?? '@origin';
   const toKey = leg.to_place_id ?? '@origin';
   await sql`
-    INSERT INTO route_segment_modes (id, day_id, from_key, to_key, mode, duration_sec, fare_text, depart_time, arrive_time, note, updated_at)
-    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${'transit'}, ${parsed.duration_sec}, ${parsed.fare_text}, ${parsed.depart_time}, ${parsed.arrive_time}, ${parsed.note}, ${now})
+    INSERT INTO route_segment_modes
+      (id, day_id, from_key, to_key, mode, duration_sec, fare_text, depart_time, arrive_time,
+       note, transit_kind, is_fixed, updated_at)
+    VALUES (${newId()}, ${leg.day_id}, ${fromKey}, ${toKey}, ${'transit'}, ${parsed.duration_sec},
+            ${parsed.fare_text}, ${parsed.depart_time}, ${parsed.arrive_time}, ${parsed.note},
+            ${null}, ${0}, ${now})
     ON CONFLICT(day_id, from_key, to_key) DO UPDATE SET
       mode = 'transit', duration_sec = excluded.duration_sec, fare_text = excluded.fare_text,
       depart_time = excluded.depart_time, arrive_time = excluded.arrive_time,
-      note = excluded.note, updated_at = excluded.updated_at`;
+      note = excluded.note, transit_kind = NULL, is_fixed = 0, updated_at = excluded.updated_at`;
 
   const [updated] = (await sql`SELECT * FROM route_legs WHERE id=${leg.id}`) as RouteLeg[];
   return updated ?? leg;

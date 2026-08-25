@@ -66,6 +66,12 @@
 - `POST /api/days/:id/route` `{ mode?: 'driving'|'walking'|'transit'|'bicycling' }` → `RouteLeg[]`
   - その日の itinerary_items の place 列を順に Google Routes API へ。route_legs を再計算して返す。
 - `GET /api/days/:id/route` → `RouteLeg[]`
+- `PUT /api/legs/:id/fixed`
+  `{ mode, transit_kind?, depart_time?, arrive_time?, note?, is_fixed }` → `RouteLeg`
+  - 1 区間の確定情報だけを更新し、`route_segment_modes` にも保存する。
+  - `transit_kind` は `mode='transit'` のときだけ指定でき、
+    `shinkansen | train | bus | airplane | taxi` のいずれか。
+  - 時刻は `HH:MM`、メモは最大 4000 文字。`http/https` URL をプレーンテキストで保存する。
 
 ## 提案 (荷物 / 季節 / プラン)
 `/suggest` と `/season-hints` は **DB を変えない** (プレビュー)。書き込むのは `/adopt` だけ。

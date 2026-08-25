@@ -23,6 +23,9 @@ const MODE_LABEL: Record<string, string> = {
 const MODE_ICON: Record<string, string> = {
   walking: '🚶', driving: '🚗', transit: '🚆', bicycling: '🚲',
 };
+const TRANSIT_KIND_LABEL: Record<string, string> = {
+  shinkansen: '新幹線', train: '電車', bus: 'バス', airplane: '飛行機', taxi: 'タクシー',
+};
 const KIND_ICON: Record<string, string> = { visit: '📍', move: '🚃', note: '📝' };
 
 const esc = (s: unknown): string =>
@@ -31,6 +34,24 @@ const esc = (s: unknown): string =>
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+
+/** @implements SPEC-FIXED-ROUTE-URLS */
+function trimUrlPunctuation(value: string): { url: string; suffix: string } {
+  let url = value.replace(/[,\.!?、。]+$/, '');
+  while (url.endsWith(')') && url.split(')').length > url.split('(').length) {
+    url = url.slice(0, -1);
+  }
+  return { url, suffix: value.slice(url.length) };
+}
+
+/** @implements SPEC-FIXED-ROUTE-URLS */
+function linkify(s: string): string {
+  return s.split(/(https?:\/\/[^\s]+)/gi).map((part) => {
+    if (!/^https?:\/\//i.test(part)) return esc(part);
+    const { url, suffix } = trimUrlPunctuation(part);
+    return `<a href="${esc(url)}">${esc(url)}</a>${esc(suffix)}`;
+  }).join('');
+}
 
 function resolveImg(path: string | null | undefined, assetBase: string): string {
   if (!path) return '';
@@ -110,11 +131,15 @@ function moveConnector(leg: RouteLeg): string {
     .filter(Boolean)
     .join(' ・ ');
   const icon = MODE_ICON[leg.mode] ?? '➡️';
-  const label = MODE_LABEL[leg.mode] ?? leg.mode;
+  const label = leg.transit_kind ? TRANSIT_KIND_LABEL[leg.transit_kind] ?? MODE_LABEL[leg.mode] : MODE_LABEL[leg.mode] ?? leg.mode;
+  const times = leg.depart_time || leg.arrive_time
+    ? [leg.depart_time ?? '—', leg.arrive_time ?? '—'].join(' → ')
+    : '';
+  const fixed = leg.is_fixed === 1 ? ' ✓確定' : '';
   return `
     <div class="tl-move">
       <div class="tl-rail"><div class="move-dot">${icon}</div></div>
-      <div class="move-text">${esc(label)}${meta ? ` <span class="move-meta">${esc(meta)}</span>` : ''}</div>
+      <div class="move-text">${esc(label)}${fixed}${times ? ` <strong>${esc(times)}</strong>` : ''}${meta ? ` <span class="move-meta">${esc(meta)}</span>` : ''}${leg.note ? `<div class="move-note">${linkify(leg.note)}</div>` : ''}</div>
     </div>`;
 }
 
@@ -294,6 +319,8 @@ export function buildBrochureHtml(input: BrochureInput): string {
   .tl-move { align-items: center; }
   .move-text { font-size: 12.5px; color: var(--muted); font-weight: 600; }
   .move-meta { color: var(--accent-2); font-weight: 700; margin-left: 4px; }
+  .move-note { margin-top: 3px; color: #444; font-weight: 400; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .move-note a { color: var(--accent); }
 
   .legs-extra { margin: 6px 0 12px 72px; padding: 10px 12px; background: #fff; border: 1px dashed var(--line); border-radius: 8px; }
   .legs-extra-title { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }

@@ -19,6 +19,7 @@ import type {
   PlaceStatus,
   RouteLeg,
   RouteMode,
+  TransitKind,
   ServiceAlert,
   ShinkansenBusSuggestionsResult,
   Timetable,
@@ -265,6 +266,18 @@ export const api = {
   /** 1 区間 (leg) の移動手段だけを変更し、その区間のみ再計算する (他区間に連動しない)。 */
   patchLegMode: (legId: string, mode: RouteMode) =>
     req<RouteLeg>(`/api/legs/${legId}`, { method: 'PATCH', body: json({ mode }) }),
+  /** Register or clear the confirmed details that survive itinerary reordering. */
+  saveFixedRoute: (
+    legId: string,
+    input: {
+      mode: RouteMode;
+      transit_kind: TransitKind | null;
+      depart_time: string | null;
+      arrive_time: string | null;
+      note: string | null;
+      is_fixed: boolean;
+    },
+  ) => req<RouteLeg>(`/api/legs/${legId}/fixed`, { method: 'PUT', body: json(input) }),
   /** サーバが Google マップの乗換経路を自動取得(ヘッドレス)→解析し、経路候補の配列を返す (暫定)。 */
   transitFetch: (legId: string) =>
     req<{ options: TransitOption[] }>(`/api/legs/${legId}/transit-fetch`, { method: 'POST', body: json({}) }),

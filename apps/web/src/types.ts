@@ -145,6 +145,7 @@ export interface ItineraryItem {
 }
 
 export type RouteMode = 'driving' | 'walking' | 'transit' | 'bicycling';
+export type TransitKind = 'shinkansen' | 'train' | 'bus' | 'airplane' | 'taxi';
 
 export interface RouteLeg {
   id: string;
@@ -154,6 +155,8 @@ export interface RouteLeg {
   from_label: string | null; // place でない端点 (出発/帰着地点) のラベル
   to_label: string | null;
   mode: RouteMode;
+  transit_kind: TransitKind | null;
+  is_fixed: number;
   duration_sec: number | null;
   distance_m: number | null;
   fare_text: string | null;

@@ -709,6 +709,13 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .persisted-note-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .persisted-note-actions .sm { min-height: 32px; padding: 5px 10px; }
 .persisted-note-message { font-size: 11px; color: var(--c-muted); }
+.persisted-note-preview {
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  padding: 7px 8px; border-radius: 8px; background: #f7faf9;
+  color: var(--c-text); font-size: 12px; line-height: 1.45;
+}
+.persisted-note-preview a,
+.kanban-connector-note a { color: var(--c-accent-d); text-decoration: underline; }
 .kanban-place-notes {
   margin-top: 9px;
   padding-top: 8px;
@@ -868,6 +875,20 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .kanban-connector-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .kanban-connector-note { font-size: 11px; color: var(--c-text); line-height: 1.4; }
 .kanban-connector-err { font-size: 11px; color: #a15c00; line-height: 1.4; }
+.route-transit-kind { font-size: 10px; }
+.route-fixed-time { color: var(--c-text); font-size: 11px; }
+.route-fixed-badge { color: #17673a; background: #e8f7ee; border-color: #b8dfc7; font-size: 10px; }
+
+.fixed-route-editor { display: grid; gap: 12px; }
+.fixed-route-editor label { display: grid; gap: 5px; font-weight: 700; font-size: 13px; }
+.fixed-route-editor label span { color: var(--c-text); }
+.fixed-route-endpoints { margin: -4px 0 0; }
+.fixed-route-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fixed-route-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+
+@media (max-width: 520px) {
+  .fixed-route-times { grid-template-columns: 1fr; }
+}
 
 /* ---- 左パネル 場所/経路 切替 (マップ画面) ---- */
 .ws-mode-bar { margin: 4px 0 10px; flex-wrap: nowrap; }

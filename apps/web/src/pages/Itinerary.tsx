@@ -4,6 +4,12 @@ import { api, assetUrl } from '../api.js';
 import { DayNotesEditor } from '../components/itinerary/DayNotesEditor.js';
 import { MobileDayNotes } from '../components/itinerary/MobileDayNotes.js';
 import { PersistedNoteEditor } from '../components/itinerary/PersistedNoteEditor.js';
+import {
+  FixedRouteEditor,
+  TRANSIT_KIND_LABEL,
+  type FixedRouteDraft,
+} from '../components/itinerary/FixedRouteEditor.js';
+import { LinkifiedText } from '../components/LinkifiedText.js';
 import { PlanSuggestPanel } from '../components/plan/PlanSuggestPanel.js';
 import { getPrefs } from '../lib/prefs.js';
 import { gmapsDirUrl } from '../lib/gmaps.js';
@@ -112,6 +118,8 @@ export function Itinerary() {
   const [pasteText, setPasteText] = useState('');
   const [pasteBusy, setPasteBusy] = useState(false);
   const [pasteMsg, setPasteMsg] = useState('');
+  const [fixedTarget, setFixedTarget] = useState<{ dayId: string; leg: RouteLeg } | null>(null);
+  const [fixedSaving, setFixedSaving] = useState(false);
 
   const placeMap = useMemo(() => new Map(places.map((p) => [p.id, p])), [places]);
   const pendingPlace = pendingPlaceId ? placeMap.get(pendingPlaceId) ?? null : null;
@@ -136,6 +144,10 @@ export function Itinerary() {
     if (!leg) return null;
     const meta = MODE_META[leg.mode];
     const detail = [fmtDuration(leg.duration_sec), fmtDistance(leg.distance_m), leg.fare_text].filter(Boolean).join(' / ');
+    const fixedTime = leg.depart_time
+      ? `${leg.depart_time}${leg.arrive_time ? ` → ${leg.arrive_time}` : ''}`
+      : leg.arrive_time ? `到着 ${leg.arrive_time}` : null;
+    const transitLabel = leg.transit_kind ? TRANSIT_KIND_LABEL[leg.transit_kind] : null;
     const from = legEndpointCoord(leg.from_place_id);
     const to = legEndpointCoord(leg.to_place_id);
     const mapUrl = from && to ? gmapsDirUrl(from, to, leg.mode) : null;
@@ -148,6 +160,9 @@ export function Itinerary() {
             {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           <span className="muted">{detail || '—'}</span>
+          {transitLabel && <span className="chip route-transit-kind">{transitLabel}</span>}
+          {fixedTime && <strong className="route-fixed-time">{fixedTime}</strong>}
+          {leg.is_fixed === 1 && <span className="chip route-fixed-badge">確定済み</span>}
           {mapUrl && (
             <a className="kanban-connector-link" href={mapUrl} target="_blank" rel="noreferrer"
               title="Google マップで経路を開く（公共交通の乗換もこちら）">🗺️ 経路</a>
@@ -160,8 +175,12 @@ export function Itinerary() {
               {fetchingLegId === leg.id ? '取得中…' : '🚉 経路を取得'}
             </button>
           )}
+          <button type="button" className="kanban-connector-link"
+            onClick={() => setFixedTarget({ dayId, leg })}>
+            ✎ 確定情報
+          </button>
         </div>
-        {leg.note && <div className="kanban-connector-note">🚉 {leg.note}</div>}
+        {leg.note && <div className="kanban-connector-note">📝 <LinkifiedText text={leg.note} /></div>}
         {leg.mode === 'transit' && legMsg[leg.id] && (
           <div className="kanban-connector-err">
             ⚠ {legMsg[leg.id]}{' '}
@@ -384,6 +403,26 @@ export function Itinerary() {
     } catch (e) {
       setError(e instanceof Error ? e.message : '区間の移動手段の変更に失敗しました');
       void recomputeRoute(dayId, itemsByDay[dayId] ?? []); // 失敗時は再計算で実体に戻す
+    }
+  };
+
+  /** Save the user-confirmed facts for one segment without changing any other segment. */
+  const saveFixedLeg = async (draft: FixedRouteDraft) => {
+    if (!fixedTarget) return;
+    setFixedSaving(true);
+    setError('');
+    try {
+      const updated = await api.saveFixedRoute(fixedTarget.leg.id, draft);
+      const dayId = fixedTarget.dayId;
+      setLegsByDay((current) => ({
+        ...current,
+        [dayId]: (current[dayId] ?? []).map((leg) => leg.id === updated.id ? updated : leg),
+      }));
+      setFixedTarget(null);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '確定情報の保存に失敗しました');
+    } finally {
+      setFixedSaving(false);
     }
   };
 
@@ -878,6 +917,17 @@ export function Itinerary() {
       )}
 
       {days.length > 0 && <MobileDayNotes days={days} onSave={saveDayNotes} />}
+
+      {fixedTarget && (
+        <FixedRouteEditor
+          leg={fixedTarget.leg}
+          fromLabel={endpointName(fixedTarget.leg.from_place_id, fixedTarget.leg.from_label)}
+          toLabel={endpointName(fixedTarget.leg.to_place_id, fixedTarget.leg.to_label)}
+          saving={fixedSaving}
+          onClose={() => setFixedTarget(null)}
+          onSave={saveFixedLeg}
+        />
+      )}
 
       {/* 場所ピッカー: 旅に追加済みの場所を、この日の訪問カードとして配置する。 */}
       {placePickerDay && (() => {

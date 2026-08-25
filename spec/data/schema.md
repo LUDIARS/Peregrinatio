@@ -131,13 +131,37 @@ kind='composite' で保存する。
 | day_id | TEXT NOT NULL FK trip_days(id) | |
 | from_place_id | TEXT FK places(id) | |
 | to_place_id | TEXT FK places(id) | |
+| from_label | TEXT | place でない出発端点 |
+| to_label | TEXT | place でない到着端点 |
 | mode | TEXT NOT NULL | 'driving' | 'walking' | 'transit' | 'bicycling' |
+| transit_kind | TEXT | 'shinkansen' | 'train' | 'bus' | 'airplane' | 'taxi' |
+| is_fixed | INTEGER NOT NULL | 0/1、ユーザ確認済み |
 | duration_sec | INTEGER | |
 | distance_m | INTEGER | |
 | fare_text | TEXT | |
 | polyline | TEXT | encoded polyline |
 | raw_json | TEXT | API 生レスポンス |
+| note | TEXT | URLを含められる確定メモ / 乗換要約 |
+| depart_time | TEXT | HH:MM |
+| arrive_time | TEXT | HH:MM |
 | computed_at | TEXT NOT NULL | |
+
+## route_segment_modes — 並べ替え後も保持する区間情報
+| col | type | 備考 |
+|---|---|---|
+| id | TEXT PK | |
+| day_id | TEXT NOT NULL FK trip_days(id) | |
+| from_key | TEXT NOT NULL | place_id または '@origin' |
+| to_key | TEXT NOT NULL | place_id または '@origin' |
+| mode | TEXT NOT NULL | RouteMode |
+| transit_kind | TEXT | 公共交通の内訳 |
+| is_fixed | INTEGER NOT NULL | 0/1、ユーザ確認済み |
+| duration_sec | INTEGER | |
+| fare_text | TEXT | |
+| depart_time | TEXT | HH:MM |
+| arrive_time | TEXT | HH:MM |
+| note | TEXT | URLを含められる確定メモ / 乗換要約 |
+| updated_at | TEXT NOT NULL | |
 
 ## geocode_cache — ジオコーディングキャッシュ (Tr 踏襲)
 | col | type | 備考 |

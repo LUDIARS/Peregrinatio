@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { LinkifiedText } from '../LinkifiedText.js';
 
 interface PersistedNoteEditorProps {
   label: string;
@@ -67,6 +68,12 @@ export function PersistedNoteEditor({
           }}
         />
       </label>
+      {/* @implements SPEC-FIXED-ROUTE-URLS */}
+      {nextValue && (
+        <div className="persisted-note-preview">
+          <LinkifiedText text={nextValue} />
+        </div>
+      )}
       <div className="persisted-note-actions">
         <button type="submit" className="sm" disabled={saving || isUnchanged}>
           {saving ? '保存中…' : '保存'}

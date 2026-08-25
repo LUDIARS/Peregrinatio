@@ -25,7 +25,7 @@ function baseInput(over: Partial<BrochureInput> = {}): BrochureInput {
     { id: 'i2', day_id: 'd1', place_id: 'p2', order_index: 1, planned_time: '11:30', kind: 'visit', note: null, edited_by: null },
   ];
   const legs: RouteLeg[] = [
-    { id: 'l1', day_id: 'd1', from_place_id: 'p1', to_place_id: 'p2', from_label: null, to_label: null, mode: 'walking', duration_sec: 720, distance_m: 850, fare_text: null, polyline: null, raw_json: null, note: null, depart_time: null, arrive_time: null, computed_at: '' },
+    { id: 'l1', day_id: 'd1', from_place_id: 'p1', to_place_id: 'p2', from_label: null, to_label: null, mode: 'walking', transit_kind: null, is_fixed: 0, duration_sec: 720, distance_m: 850, fare_text: null, polyline: null, raw_json: null, note: null, depart_time: null, arrive_time: null, computed_at: '' },
   ];
   return {
     trip,
@@ -55,6 +55,26 @@ describe('buildBrochureHtml', () => {
     expect(html).not.toContain('金沢の旅 <test>');
   });
 
+  it('区間メモは HTML を解釈せず HTTP(S) URL だけをリンクにする', () => {
+    const input = baseInput();
+    input.legsByDay.get('d1')![0]!.note = '<script>alert(1)</script> https://example.com/book).';
+
+    const html = buildBrochureHtml(input);
+
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('<a href="https://example.com/book">https://example.com/book</a>).');
+  });
+
+  it('区間メモのURLに含まれる対応済みの閉じ括弧を保持する', () => {
+    const input = baseInput();
+    input.legsByDay.get('d1')![0]!.note = 'https://example.com/wiki/Function_(mathematics).';
+
+    const html = buildBrochureHtml(input);
+
+    expect(html).toContain('href="https://example.com/wiki/Function_(mathematics)"');
+  });
+
   it('連続スポット間に移動コネクタ (徒歩 + 時間/距離) を差し込む', () => {
     const html = buildBrochureHtml(baseInput());
     expect(html).toContain('徒歩');
@@ -67,7 +87,7 @@ describe('buildBrochureHtml', () => {
     const input = baseInput();
     input.legsByDay = new Map([[
       'd1',
-      [{ id: 'lx', day_id: 'd1', from_place_id: 'p2', to_place_id: 'p1', from_label: null, to_label: null, mode: 'driving', duration_sec: 300, distance_m: 1200, fare_text: null, polyline: null, raw_json: null, note: null, depart_time: null, arrive_time: null, computed_at: '' }],
+      [{ id: 'lx', day_id: 'd1', from_place_id: 'p2', to_place_id: 'p1', from_label: null, to_label: null, mode: 'driving', transit_kind: null, is_fixed: 0, duration_sec: 300, distance_m: 1200, fare_text: null, polyline: null, raw_json: null, note: null, depart_time: null, arrive_time: null, computed_at: '' }],
     ]]);
     const html = buildBrochureHtml(input);
     expect(html).toContain('そのほかの移動');
