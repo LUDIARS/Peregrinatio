@@ -137,11 +137,11 @@ export function Itinerary() {
       ? { lat: trip.origin_lat, lng: trip.origin_lng } : null;
   };
 
-  /** 区間 (移動) コネクタ: 場所カードと場所カードの間に手段セレクタ+所要+Googleマップ経路を表示する。
-   *  手段セレクタは区間ごとに独立 (この区間だけ再計算し、他区間に連動しない)。
-   *  公共交通(乗換)は API で取れないため、Google マップで経路を開けるリンクを併設する。 */
+  /** 区間 (移動) コネクタ: 場所カード間に手段と所要情報を表示する。
+   *  未確定区間だけ手段の変更・経路表示・公共交通の再取得を許可する。 */
   const renderConnector = (dayId: string, leg: RouteLeg | undefined, key: string) => {
     if (!leg) return null;
+    const isFixed = leg.is_fixed === 1;
     const meta = MODE_META[leg.mode];
     const detail = [fmtDuration(leg.duration_sec), fmtDistance(leg.distance_m), leg.fare_text].filter(Boolean).join(' / ');
     const fixedTime = leg.depart_time
@@ -155,20 +155,24 @@ export function Itinerary() {
       <div key={key} className="kanban-connector" aria-label={`移動 ${meta.label}`}>
         <div className="kanban-connector-row">
           <span className="kanban-connector-ico" aria-hidden="true">{meta.icon}</span>
-          <select className="kanban-connector-mode" value={leg.mode}
-            onChange={(e) => void setLegMode(dayId, leg, e.target.value as RouteMode)} aria-label="この区間の移動手段">
-            {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
+          {isFixed ? (
+            <span>{meta.label}</span>
+          ) : (
+            <select className="kanban-connector-mode" value={leg.mode}
+              onChange={(e) => void setLegMode(dayId, leg, e.target.value as RouteMode)} aria-label="この区間の移動手段">
+              {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          )}
           <span className="muted">{detail || '—'}</span>
           {transitLabel && <span className="chip route-transit-kind">{transitLabel}</span>}
           {fixedTime && <strong className="route-fixed-time">{fixedTime}</strong>}
-          {leg.is_fixed === 1 && <span className="chip route-fixed-badge">確定済み</span>}
-          {mapUrl && (
+          {isFixed && <span className="chip route-fixed-badge">確定済み</span>}
+          {!isFixed && mapUrl && (
             <a className="kanban-connector-link" href={mapUrl} target="_blank" rel="noreferrer"
               title="Google マップで経路を開く（公共交通の乗換もこちら）">🗺️ 経路</a>
           )}
           {/* 公共交通は API で取れないので、サーバが Google マップを開いて経路を自動取得する (暫定)。 */}
-          {leg.mode === 'transit' && (
+          {!isFixed && leg.mode === 'transit' && (
             <button type="button" className="kanban-connector-link"
               onClick={() => void fetchTransit(dayId, leg)} disabled={fetchingLegId === leg.id}
               title="Google マップの乗換経路を自動取得して取り込む">
@@ -177,11 +181,11 @@ export function Itinerary() {
           )}
           <button type="button" className="kanban-connector-link"
             onClick={() => setFixedTarget({ dayId, leg })}>
-            ✎ 確定情報
+            {isFixed ? '✎ 編集' : '✎ 確定情報'}
           </button>
         </div>
         {leg.note && <div className="kanban-connector-note">📝 <LinkifiedText text={leg.note} /></div>}
-        {leg.mode === 'transit' && legMsg[leg.id] && (
+        {!isFixed && leg.mode === 'transit' && legMsg[leg.id] && (
           <div className="kanban-connector-err">
             ⚠ {legMsg[leg.id]}{' '}
             <button type="button" className="kanban-connector-link"
@@ -418,6 +422,11 @@ export function Itinerary() {
         ...current,
         [dayId]: (current[dayId] ?? []).map((leg) => leg.id === updated.id ? updated : leg),
       }));
+      setLegMsg((current) => {
+        const next = { ...current };
+        delete next[updated.id];
+        return next;
+      });
       setFixedTarget(null);
     } catch (error) {
       setError(error instanceof Error ? error.message : '確定情報の保存に失敗しました');
