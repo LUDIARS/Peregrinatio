@@ -21,7 +21,10 @@ const footerTemplate = `
     <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
   </div>`;
 
-/** GET /api/trips/:id/pdf — しおり PDF を Puppeteer でレンダリングして返す。 */
+/**
+ * GET /api/trips/:id/pdf — しおり PDF を Puppeteer でレンダリングして返す。
+ * @implements SPEC-FIXED-ROUTE-PDF
+ */
 app.get('/api/trips/:id/pdf', async (c) => {
   const tripId = c.req.param('id');
   const [trip] = (await sql`SELECT * FROM trips WHERE id=${tripId}`) as Trip[];
@@ -50,7 +53,9 @@ app.get('/api/trips/:id/pdf', async (c) => {
       ORDER BY planned_time IS NULL, planned_time, order_index`) as ItineraryItem[];
     itemsByDay.set(d.id, items);
     const legs = (await sql`
-      SELECT * FROM route_legs WHERE day_id=${d.id} ORDER BY computed_at`) as RouteLeg[];
+      SELECT * FROM route_legs
+      WHERE day_id=${d.id} AND is_fixed=1
+      ORDER BY computed_at`) as RouteLeg[];
     legsByDay.set(d.id, legs);
   }
 

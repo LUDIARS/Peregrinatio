@@ -86,6 +86,11 @@ function fmtDistance(m: number | null): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`;
 }
 
+/** @implements SPEC-FIXED-ROUTE-PDF */
+function isFixedRouteLeg(leg: RouteLeg): boolean {
+  return leg.is_fixed === 1;
+}
+
 /** スポット 1 件のカード (写真 + 名称 + カテゴリ + 住所 + 概要)。 */
 function spotCard(p: Place, time: string | null, assetBase: string, note: string | null): string {
   const img = resolveImg(p.image_url, assetBase);
@@ -155,6 +160,7 @@ function dayHero(trip: Trip, input: BrochureInput): string {
   return url ? `<div class="cover-hero" style="background-image:url('${esc(url)}')"></div>` : '';
 }
 
+/** @implements SPEC-FIXED-ROUTE-PDF */
 export function buildBrochureHtml(input: BrochureInput): string {
   const { trip, days, itemsByDay, legsByDay, placeMap, assetBase } = input;
 
@@ -180,7 +186,8 @@ export function buildBrochureHtml(input: BrochureInput): string {
     .map((d) => {
       const items = itemsByDay.get(d.id) ?? [];
       // 連続するスポット間の移動は leg を突合して間に差し込む。
-      const legs = legsByDay.get(d.id) ?? [];
+      // PDF は確定版のしおりなので、自動計算中の区間や未確定候補を出力しない。
+      const legs = (legsByDay.get(d.id) ?? []).filter(isFixedRouteLeg);
       const legByPair = new Map<string, RouteLeg>();
       for (const l of legs) {
         if (l.from_place_id && l.to_place_id) legByPair.set(`${l.from_place_id}|${l.to_place_id}`, l);
