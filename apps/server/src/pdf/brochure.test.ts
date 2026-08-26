@@ -116,6 +116,7 @@ describe('buildBrochureHtml', () => {
     const html = buildBrochureHtml(input);
     expect(html).toContain('http://127.0.0.1:8090/uploads/places/p1/a.jpg');
     expect(html).toContain('https://example.com/b.jpg');
+    expect(html.match(/onerror="this\.parentElement\.remove\(\)"/g)).toHaveLength(2);
   });
 
   it('日程ゼロでも落ちない', () => {

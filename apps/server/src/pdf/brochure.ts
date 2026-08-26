@@ -94,7 +94,10 @@ function isFixedRouteLeg(leg: RouteLeg): boolean {
 /** スポット 1 件のカード (写真 + 名称 + カテゴリ + 住所 + 概要)。 */
 function spotCard(p: Place, time: string | null, assetBase: string, note: string | null): string {
   const img = resolveImg(p.image_url, assetBase);
-  const photo = img ? `<div class="spot-photo"><img src="${esc(img)}" alt=""></div>` : '';
+  // 外部画像の期限切れや削除済み upload は、PDF上に破損アイコンや空枠を残さない。
+  const photo = img
+    ? `<div class="spot-photo"><img src="${esc(img)}" alt="" onerror="this.parentElement.remove()"></div>`
+    : '';
   const timeBubble = time
     ? `<div class="time-bubble">${esc(time)}</div>`
     : `<div class="time-bubble icon">📍</div>`;
