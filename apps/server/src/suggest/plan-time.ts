@@ -20,3 +20,29 @@ export function formatHhmm(minutes: number): string {
   const m = clamped % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
+
+/**
+ * GTFS の時刻 ('HH:MM' / 'HH:MM:SS'、24 時超あり) を 0 時からの分に直す。
+ * 深夜便は 25:10 のように 24 時を超えて表記されるため、上限で丸めない。
+ */
+export function gtfsTimeToMinutes(time: string | null | undefined): number | null {
+  if (typeof time !== 'string') return null;
+  const m = /^(\d{1,3}):(\d{2})(?::(\d{2}))?$/.exec(time.trim());
+  if (!m) return null;
+  const minutes = Number(m[2]);
+  if (minutes > 59) return null;
+  return Number(m[1]) * 60 + minutes;
+}
+
+/** 0 時からの分を GTFS 検索へ渡す 'HH:MM' にする (24 時超はそのまま伸ばす)。 */
+export function minutesToSearchTime(minutes: number): string {
+  const clamped = Math.max(0, Math.round(minutes));
+  return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`;
+}
+
+/** 'YYYY-MM-DD' → GTFS 検索の 'YYYYMMDD'。日付でなければ null。 */
+export function toGtfsDate(date: string | null): string | null {
+  if (!date) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
+  return m ? `${m[1]}${m[2]}${m[3]}` : null;
+}

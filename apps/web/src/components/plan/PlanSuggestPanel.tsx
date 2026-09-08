@@ -14,6 +14,8 @@ const INITIAL: FormValue = {
   must_place_ids: [],
   exclude_place_ids: [],
   use_routes_api: false,
+  max_station_hops: 3,
+  reach_radius_m: null,
   use_llm: true,
 };
 
@@ -74,6 +76,39 @@ export function PlanSuggestPanel({ tripId, onAdopted }: { tripId: string; onAdop
                   <strong>{h.label}</strong> — {h.detail}
                 </p>
               ))}
+            </div>
+          )}
+          <div className="prep-meta">
+            <span className="chip">
+              {result.strategy === 'transit_timetable' ? '時刻表の実便で作成' : '距離からの概算で作成'}
+            </span>
+          </div>
+
+          {result.new_places.length > 0 && (
+            <div className="card">
+              <h4 style={{ margin: '0 0 4px' }}>沿線で見つけた候補 (旅にはまだありません)</h4>
+              {result.new_places.map((p) => (
+                <p key={p.google_place_id} className="muted" style={{ margin: '2px 0' }}>
+                  {p.name}{p.address ? ` — ${p.address}` : ''}（{p.found_by}）
+                </p>
+              ))}
+            </div>
+          )}
+
+          {result.reach && (
+            <div className="card">
+              <strong>回る範囲</strong>
+              <p className="muted" style={{ margin: '4px 0' }}>
+                拠点から半径 約 {Math.round(result.reach.radius_m / 1000)}km
+                {result.reach.source === 'default' && '（駅が見つからず既定値）'}
+                {result.reach.source === 'manual' && '（手動指定）'}
+              </p>
+              {result.reach.stations.length > 0 && (
+                <p className="muted" style={{ margin: 0 }}>
+                  基準にした駅: {result.reach.stations
+                    .map((s) => `${s.name} (${(s.distance_m / 1000).toFixed(1)}km)`).join(' / ')}
+                </p>
+              )}
             </div>
           )}
           {result.warnings.map((w) => <div key={w} className="muted">⚠ {w}</div>)}

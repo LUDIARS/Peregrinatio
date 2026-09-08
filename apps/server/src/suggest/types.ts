@@ -58,6 +58,23 @@ export interface PackingSuggestResult {
 /** 1 日の活動ペース。滞在時間と 1 日に詰める件数に効く。 */
 export type PlanPace = 'relaxed' | 'standard' | 'packed';
 
+/** 到達範囲の根拠にした駅。 */
+export interface ReachStation {
+  name: string;
+  distance_m: number;
+}
+
+/**
+ * プランの到達範囲 (拠点周辺のどこまでを候補にするか)。
+ * source は半径の出所: 鉄道 GTFS の実測 / Places の駅検索 / 既定 / ユーザ指定。
+ */
+export interface PlanReach {
+  radius_m: number;
+  source: 'gtfs_rail' | 'places_station' | 'default' | 'manual';
+  stations: ReachStation[];
+  warnings: string[];
+}
+
 /** プラン提案の入力 (ユーザが渡す情報)。 */
 export interface PlanSuggestInput {
   /** 主たる交通手段。日割りの移動時間はこれを基準に見積もる。 */
@@ -73,6 +90,26 @@ export interface PlanSuggestInput {
   exclude_place_ids: string[];
   /** Routes API で実所要時間を引く (キー必須)。false なら直線距離からの概算。 */
   use_routes_api: boolean;
+  /**
+   * 拠点の最寄り駅から何駅ぶんまでを候補にするか。
+   * km ではなく駅数で持つのは、駅の間隔が土地によって桁違いだから。
+   */
+  max_station_hops: number;
+  /** 半径を直接指定する場合 (m)。指定すると駅の探索をせずこの値を使う。 */
+  reach_radius_m: number | null;
+}
+
+/** 実便で組んだ移動の内訳 (概算で組んだ移動では null)。 */
+export interface PlanTransitLeg {
+  /** 「〇〇線 △△行」のような 1 行要約。 */
+  summary: string;
+  departure_time: string;
+  arrival_time: string;
+  transfer_count: number;
+  /** 乗車停留所までの徒歩 (m)。 */
+  walk_from_m: number;
+  /** 降車停留所から目的地までの徒歩 (m)。 */
+  walk_to_m: number;
 }
 
 /** 提案されたプランの 1 予定。 */
@@ -87,8 +124,10 @@ export interface PlanItem {
   mode: RouteMode | null;
   duration_sec: number | null;
   distance_m: number | null;
-  /** 所要の出所。'routes'=Routes API 実測 / 'estimate'=直線距離からの概算。 */
-  duration_source: 'routes' | 'estimate' | null;
+  /** 所要の出所。'routes'=Routes API 実測 / 'estimate'=直線距離からの概算 / 'gtfs'=時刻表の実便。 */
+  duration_source: 'routes' | 'estimate' | 'gtfs' | null;
+  /** 実便で組んだ場合の便情報。 */
+  transit: PlanTransitLeg | null;
 }
 
 /** 提案されたプランの 1 日。 */
@@ -105,13 +144,33 @@ export interface PlanDay {
   stay_sec: number;
 }
 
+/** 日割りをどう組んだか。UI と説明責任のために必ず返す。 */
+export type PlanStrategy = 'transit_timetable' | 'estimate';
+
 /** プラン提案 API のレスポンス。DB は書き換わっていない。 */
 export interface PlanSuggestResult {
   trip_id: string;
   input: PlanSuggestInput;
+  /** 実際に使われた到達範囲。拠点が無く絞れなかった場合は null。 */
+  /** 'transit_timetable'=時刻表の実便で組んだ / 'estimate'=距離からの概算で組んだ。 */
+  strategy: PlanStrategy;
+  reach: PlanReach | null;
   days: PlanDay[];
   /** 日程に載せきれなかった場所 (次の旅 / 予備)。 */
   leftovers: Array<{ place_id: string; name: string; reason: string }>;
+  /**
+   * 沿線で新しく見つけた、旅にまだ無い候補。案には入っているが places には保存していない。
+   * UI から「旅に追加」して初めて場所になる。
+   */
+  new_places: Array<{
+    name: string;
+    address: string | null;
+    lat: number;
+    lng: number;
+    google_place_id: string;
+    category: string | null;
+    found_by: string;
+  }>;
   hints: SeasonalHint[];
   warnings: string[];
 }

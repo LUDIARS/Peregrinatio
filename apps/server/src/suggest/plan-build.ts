@@ -57,6 +57,7 @@ function moveItem(travel: TravelEstimate, label: string, at: number): PlanItem {
     duration_sec: travel.duration_sec,
     distance_m: travel.distance_m,
     duration_source: travel.source,
+    transit: null,
   };
 }
 
@@ -71,6 +72,7 @@ function anchorItem(anchor: PlanAnchor, at: number, note: string | null): PlanIt
     duration_sec: null,
     distance_m: null,
     duration_source: null,
+    transit: null,
   };
 }
 
@@ -193,6 +195,7 @@ export async function buildPlanDays(
         duration_sec: best.stayMin * 60,
         distance_m: null,
         duration_source: null,
+        transit: null,
       });
       cursorTime += best.stayMin;
       staySec += best.stayMin * 60;

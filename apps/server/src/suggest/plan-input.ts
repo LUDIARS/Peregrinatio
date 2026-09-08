@@ -10,6 +10,13 @@ const PACES: readonly PlanPace[] = ['relaxed', 'standard', 'packed'];
 const MAX_PLACE_IDS = 200;
 const MAX_PLACE_ID_LENGTH = 200;
 
+/** 拠点の最寄り駅から何駅ぶんまでを候補にするか。既定 3 (= 2〜3 駅の上限側)。 */
+export const DEFAULT_STATION_HOPS = 3;
+export const MAX_STATION_HOPS = 10;
+/** 半径の直接指定を受け付ける範囲 (m)。 */
+export const MIN_MANUAL_RADIUS_M = 500;
+export const MAX_MANUAL_RADIUS_M = 100_000;
+
 export const DEFAULT_PLAN_INPUT: PlanSuggestInput = {
   primary_mode: 'transit',
   day_start: '09:00',
@@ -18,6 +25,8 @@ export const DEFAULT_PLAN_INPUT: PlanSuggestInput = {
   must_place_ids: [],
   exclude_place_ids: [],
   use_routes_api: false,
+  max_station_hops: DEFAULT_STATION_HOPS,
+  reach_radius_m: null,
 };
 
 function stringArray(value: unknown): string[] {
@@ -58,5 +67,21 @@ export function normalizePlanInput(body: unknown): PlanSuggestInput {
     must_place_ids: stringArray(raw.must_place_ids),
     exclude_place_ids: stringArray(raw.exclude_place_ids),
     use_routes_api: raw.use_routes_api === true,
+    max_station_hops: stationHops(raw.max_station_hops),
+    reach_radius_m: manualRadius(raw.reach_radius_m),
   };
+}
+
+/** 駅数。1 未満・上限超・非整数は既定へ戻す。 */
+function stationHops(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) return DEFAULT_STATION_HOPS;
+  if (value < 1 || value > MAX_STATION_HOPS) return DEFAULT_STATION_HOPS;
+  return value;
+}
+
+/** 半径の直接指定。範囲外・非数は「指定なし」(= 駅から自動算出) にする。 */
+function manualRadius(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  if (value < MIN_MANUAL_RADIUS_M || value > MAX_MANUAL_RADIUS_M) return null;
+  return Math.round(value);
 }

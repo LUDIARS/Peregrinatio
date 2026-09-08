@@ -88,11 +88,18 @@
   - 全入力を更新前に検証し、追加と削除は単一トランザクションで反映する。不正なら 400 で変更しない。
 - `GET /api/trips/:id/season-hints` → `{ season_label: string | null, hints: SeasonalHint[] }`
 - `POST /api/trips/:id/plan/suggest`
-  `{ primary_mode?, day_start?, day_end?, pace?, must_place_ids?, exclude_place_ids?, use_routes_api?, use_llm? }`
+  `{ primary_mode?, day_start?, day_end?, pace?, must_place_ids?, exclude_place_ids?, use_routes_api?,
+     max_station_hops?, reach_radius_m?, use_llm? }`
   → `PlanSuggestResult`
   - 交通手段を軸に日割り案を作る。`days[].items[]` の move には `mode` / `duration_sec` /
     `duration_source` ('routes'=実所要 | 'estimate'=概算) が入る。
-  - 載せきれなかった場所は `leftovers[]` に理由付きで落ちる。
+  - 候補は拠点の最寄り駅から `max_station_hops` 駅ぶん (既定 3) の範囲だけ。実際に使った範囲は
+    `reach` (`radius_m` / `source` / `stations[]`) で返す。`reach_radius_m` を渡すと駅探索をせず
+    その半径を使う。
+  - 載せきれなかった場所と範囲外の場所は `leftovers[]` に理由付きで落ちる。
+  - `strategy` が `'transit_timetable'` なら時刻表の実便で組んだ案 (move に `transit` と
+    `duration_source='gtfs'` が入る)、`'estimate'` なら距離からの概算。
+  - `new_places[]` は沿線で見つけた、旅にまだ無い候補 (places には保存していない)。
 - `POST /api/trips/:id/plan/adopt` `{ days: PlanDay[], confirm: true }`
   → `{ days: TripDay[], items: number, replaced: number }`
   - **上書き**。案に含まれる日の `itinerary_items` と `route_legs` を消してから入れ直す。

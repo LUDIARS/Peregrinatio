@@ -57,6 +57,22 @@ export function PlanSuggestForm({
         </select>
       </label>
 
+      <label>
+        拠点から回る範囲
+        <select
+          value={value.max_station_hops}
+          onChange={(e) => set('max_station_hops', Number(e.target.value))}
+        >
+          <option value={1}>最寄り駅の隣まで (1 駅)</option>
+          <option value={2}>2 駅ぶんまで</option>
+          <option value={3}>3 駅ぶんまで</option>
+          <option value={5}>5 駅ぶんまで</option>
+        </select>
+      </label>
+      <p className="muted" style={{ margin: 0 }}>
+        駅の間隔から半径を決めます。遠くの場所は「範囲外」として案から外れます。
+      </p>
+
       <label className="prep-check">
         <input
           type="checkbox"

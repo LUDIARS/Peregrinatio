@@ -13,7 +13,8 @@ const MAX_ID_LENGTH = 200;
 
 const KINDS: readonly PlanItem['kind'][] = ['visit', 'move', 'note'];
 const MODES = ['driving', 'walking', 'transit', 'bicycling'] as const;
-const DURATION_SOURCES = ['routes', 'estimate'] as const;
+const DURATION_SOURCES = ['routes', 'estimate', 'gtfs'] as const;
+const MAX_TRANSIT_SUMMARY_LENGTH = 200;
 
 type PlanAdoptInputResult =
   | { ok: true; days: PlanDay[] }
@@ -72,6 +73,10 @@ function parseItem(value: unknown): PlanItem | null {
   if (kind === 'move' ? mode === null || durationSource === null : mode !== null || durationSource !== null) {
     return null;
   }
+  const transit = parseTransit(raw.transit);
+  if (transit === undefined) return null;
+  // 便情報は移動にしか付かない。
+  if (kind !== 'move' && transit !== null) return null;
 
   return {
     kind,
@@ -83,6 +88,30 @@ function parseItem(value: unknown): PlanItem | null {
     duration_sec: durationSec,
     distance_m: distanceM,
     duration_source: durationSource,
+    transit,
+  };
+}
+
+/** 便情報。無ければ null、形が違えば undefined (= 不正として弾く)。 */
+function parseTransit(value: unknown): PlanItem['transit'] | undefined {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  const summary = text(raw.summary, MAX_TRANSIT_SUMMARY_LENGTH);
+  const departure = text(raw.departure_time, 16);
+  const arrival = text(raw.arrival_time, 16);
+  const transfers = nullableNonNegativeInteger(raw.transfer_count);
+  const walkFrom = nullableNonNegativeInteger(raw.walk_from_m);
+  const walkTo = nullableNonNegativeInteger(raw.walk_to_m);
+  if (!summary || !departure || !arrival
+    || transfers == null || walkFrom == null || walkTo == null) return undefined;
+  return {
+    summary,
+    departure_time: departure,
+    arrival_time: arrival,
+    transfer_count: transfers,
+    walk_from_m: walkFrom,
+    walk_to_m: walkTo,
   };
 }
 

@@ -4,6 +4,13 @@ const MODE_ICON: Record<RouteMode, string> = {
   driving: '🚗', walking: '🚶', transit: '🚃', bicycling: '🚲',
 };
 
+/** 所要の出所ラベル。概算を実測のように見せない。 */
+const DURATION_SOURCE_LABEL: Record<'routes' | 'estimate' | 'gtfs', string> = {
+  routes: '実所要',
+  estimate: '概算',
+  gtfs: '時刻表',
+};
+
 function fmtDuration(sec: number | null): string {
   if (sec == null) return '—';
   const m = Math.round(sec / 60);
@@ -18,7 +25,14 @@ function ItemRow({ item }: { item: PlanItem }) {
         <span>{item.mode ? MODE_ICON[item.mode] : '→'}</span>{' '}
         <span>{item.label}</span>{' '}
         <span>{fmtDuration(item.duration_sec)}</span>{' '}
-        <span className="chip">{item.duration_source === 'routes' ? '実所要' : '概算'}</span>
+        <span className="chip">{DURATION_SOURCE_LABEL[item.duration_source ?? 'estimate']}</span>
+        {item.transit && (
+          <div style={{ paddingLeft: 16 }}>
+            {item.transit.summary} — {item.transit.departure_time} 発 → {item.transit.arrival_time} 着
+            {item.transit.transfer_count > 0 && ` / 乗換 ${item.transit.transfer_count} 回`}
+            {item.transit.walk_from_m > 0 && ` / 徒歩 ${item.transit.walk_from_m}m + ${item.transit.walk_to_m}m`}
+          </div>
+        )}
       </li>
     );
   }

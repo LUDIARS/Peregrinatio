@@ -491,6 +491,19 @@ export interface PackingAdoptResult {
 
 export type PlanPace = 'relaxed' | 'standard' | 'packed';
 
+export interface ReachStation {
+  name: string;
+  distance_m: number;
+}
+
+/** プランの到達範囲 (拠点周辺のどこまでを候補にするか)。 */
+export interface PlanReach {
+  radius_m: number;
+  source: 'gtfs_rail' | 'places_station' | 'default' | 'manual';
+  stations: ReachStation[];
+  warnings: string[];
+}
+
 export interface PlanSuggestInput {
   primary_mode: RouteMode;
   day_start: string;
@@ -499,7 +512,23 @@ export interface PlanSuggestInput {
   must_place_ids: string[];
   exclude_place_ids: string[];
   use_routes_api: boolean;
+  /** 拠点の最寄り駅から何駅ぶんまでを候補にするか。 */
+  max_station_hops: number;
+  /** 半径の直接指定 (m)。null なら駅から自動算出。 */
+  reach_radius_m: number | null;
 }
+
+/** 実便で組んだ移動の内訳 (概算で組んだ移動では null)。 */
+export interface PlanTransitLeg {
+  summary: string;
+  departure_time: string;
+  arrival_time: string;
+  transfer_count: number;
+  walk_from_m: number;
+  walk_to_m: number;
+}
+
+export type PlanStrategy = 'transit_timetable' | 'estimate';
 
 export interface PlanItem {
   kind: 'visit' | 'move' | 'note';
@@ -510,7 +539,8 @@ export interface PlanItem {
   mode: RouteMode | null;
   duration_sec: number | null;
   distance_m: number | null;
-  duration_source: 'routes' | 'estimate' | null;
+  duration_source: 'routes' | 'estimate' | 'gtfs' | null;
+  transit: PlanTransitLeg | null;
 }
 
 export interface PlanDay {
@@ -523,11 +553,25 @@ export interface PlanDay {
   stay_sec: number;
 }
 
+export interface NewPlaceCandidate {
+  name: string;
+  address: string | null;
+  lat: number;
+  lng: number;
+  google_place_id: string;
+  category: string | null;
+  found_by: string;
+}
+
 export interface PlanSuggestResult {
   trip_id: string;
   input: PlanSuggestInput;
+  strategy: PlanStrategy;
+  reach: PlanReach | null;
   days: PlanDay[];
   leftovers: Array<{ place_id: string; name: string; reason: string }>;
+  /** 沿線で見つけた、旅にまだ無い候補。 */
+  new_places: NewPlaceCandidate[];
   hints: SeasonalHint[];
   warnings: string[];
 }
