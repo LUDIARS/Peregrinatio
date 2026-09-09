@@ -32,7 +32,7 @@ function TransitRedirect() {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={document.querySelector<HTMLScriptElement>('script[data-excubitor-viewer]')?.dataset.prefix}>
       <Routes>
         <Route path="/" element={<App />}>
           <Route index element={<AccessHistory />} />
