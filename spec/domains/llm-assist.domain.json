@@ -3,6 +3,7 @@
   "description": "LLM による支援。 提案文や要約の生成をモデル呼び出しの層として切り出す。",
   "presetRules": [],
   "templateRules": [],
+  "specRefs": ["spec/setup/llm-vision.md", "spec/feature/shared-one-shot.md"],
   "membership": [
     {
       "pathPattern": "(^|/)packages/llm/(?:.*/)?[^/]+$"

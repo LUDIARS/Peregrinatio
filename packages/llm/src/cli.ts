@@ -9,7 +9,7 @@
 // CLI 未ログイン / 未インストールは silent fallback せず、非 0 終了の stderr を載せて例外にする
 // ([[feedback_no_silent_fallback]])。
 
-import { spawn } from 'node:child_process';
+import { spawnOneShot as spawn } from '@ludiars/one-shot';
 
 export interface RunClaudeOpts {
   /** --model に渡す値。エイリアス ('haiku'|'sonnet'|'opus') でもフルモデル ID でも可。 */
@@ -26,14 +26,9 @@ export interface RunClaudeOpts {
   timeoutMs?: number;
 }
 
-/** shell:true で起動するため、空白や " を含む引数を防御的にクオートする。 */
-function quoteArg(a: string): string {
-  return /[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a;
-}
-
 /**
  * claude CLI を print mode で 1 回呼び、応答テキスト全体 (trim 済) を返す。
- * env はそのまま継承する。
+ * モデル解決と購読認証用の環境分離は Lapilli が所有する。
  */
 export function runClaudeCli(prompt: string, opts: RunClaudeOpts = {}): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -44,10 +39,9 @@ export function runClaudeCli(prompt: string, opts: RunClaudeOpts = {}): Promise<
     }
     for (const d of opts.addDirs ?? []) rawArgs.push('--add-dir', d);
 
-    const args = rawArgs.map(quoteArg);
     const cli = opts.cliPath ?? 'claude';
 
-    const child = spawn(cli, args, { shell: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(cli, rawArgs, { cwd: process.cwd(), stdio: ['pipe', 'pipe', 'pipe'] });
 
     let out = '';
     let err = '';
