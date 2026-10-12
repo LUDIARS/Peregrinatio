@@ -12,7 +12,7 @@ const _dir = dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = resolve(_dir, '../../..');
 
 export const config = {
-  port: 8090,
+  port: 8091,
   host: '127.0.0.1',
   // 空 = SQLite (data/peregrinatio.sqlite)。db/index.ts 参照。
   databaseUrl: '',

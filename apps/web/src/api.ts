@@ -1,5 +1,5 @@
 // spec/interface/api.md に厳密一致する薄い HTTP クライアント。
-// API ベースは VITE_API_BASE (未設定なら 127.0.0.1:8090 を直叩き / dev は proxy も可)。
+// API ベースは VITE_API_BASE (未設定なら同一オリジン。dev は proxy で server:8091 へ中継)。
 // @implements SPEC-EXPRESS-UI
 // @implements SPEC-ACCESS-UI
 
@@ -67,7 +67,7 @@ import type {
 
 import { currentUserName } from './lib/prefs.js';
 
-// 既定は同一オリジン (相対)。dev は vite proxy が /api・/uploads を server:8090 へ中継し、
+// 既定は同一オリジン (相対)。dev は vite proxy が /api・/uploads を server:8091 へ中継し、
 // 本番は server 自身が web/dist を配信するため、どちらも相対で通る。
 // 別オリジンの server を叩く場合のみ VITE_API_BASE に絶対 URL を入れる。
 export const API_BASE: string = import.meta.env.VITE_API_BASE ?? '';

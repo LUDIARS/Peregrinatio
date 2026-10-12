@@ -3,7 +3,7 @@
 旅行用の「気になる場所」と「日程(旅のしおり)」を作る **iOS メイン PWA**。ラテン語 peregrinatio=旅。
 
 - リポ: https://github.com/LUDIARS/Peregrinatio （ローカル `E:\Document\Ars\Peregrinatio`）
-- 公開URL: **https://peregrinatio.vtn-game.com** （Cloudflare Tunnel → ローカル server:8090）
+- 公開URL: **https://pe.ai-run-do.com** （LOCAL Tunnel → ローカル server:8091、Cloudflare Access で本人だけ）
 - 下敷き: Tirocinium(Tr) の Map ビュー/サマリー処理を流用
 
 ## 起動・開発
@@ -14,7 +14,7 @@ npm install                 # @ludiars/encrypted-config 取得に .npmrc + NODE_
 # 秘密: Google Maps APIキーは暗号化configに格納 (平文env不可)
 npm run config-set GOOGLE_MAPS_API_KEY <値 or @ファイル>
 npm run migrate             # SQLite (data/peregrinatio.sqlite) にマイグレーション適用
-npm run dev                 # server:8090 + web:5179 を同時起動
+npm run dev                 # server:8091 + web:5179 を同時起動
 ```
 
 - **本番(単一オリジン)**: `npm run build:web` 後、server が `apps/web/dist` を `/` 配信(SPAフォールバック)。server は `npm start`(= `cd apps/server && tsx src/index.ts`) で起動。packages が `"type":"module"` で exports が src 指しのため `node dist/index.js` は使わない(tsx 経由が正)。
@@ -28,7 +28,7 @@ apps/web      React + Vite + vite-plugin-pwa
 packages/     llm(claude CLI), crawl(PoliteFetcher+抽出), places(Places/Geocode/Photo),
               image(連番右→左連結 sharp), routing(Routes API)
 ```
-port: server=8090 / web(dev)=5179 / docker Postgres=15433。
+port: server=8091 (2026-10-13 に Cernere テスト用 8090 との衝突で移動) / web(dev)=5179 / docker Postgres=15433。
 
 ## データモデル (migration 001-008)
 
@@ -74,4 +74,4 @@ port: server=8090 / web(dev)=5179 / docker Postgres=15433。
 11. 保留: リゾナーレ那須(49件)再シード要否は未回答。
 12. ~~**時刻表/運行情報のデータ源未配線**~~ ✅ 対応済 — `apps/server/src/transit/` に provider 抽象 (`crawl-llm`/`ekispert`) を実装。`crawl-llm` は URL クロール→LLM 抽出で**契約不要・即利用可**。`ekispert` (駅すぱあと) は `npm run config-set EKISPERT_API_KEY <値>` 登録で有効化 (※実応答 JSON 形は契約キーでの実走で要検証。写像 `mapEkispertDepartures` を純関数分離+単体テスト済)。運行情報 refresh は crawl-llm のみ対応 (ekispert は別契約 API のため未対応=501 明示)。
 14. **新幹線・特急 / アクセス印 / CF Access の反映** — migration 022 (時刻表ライブラリ + なすの seed) / 023 (place_access_cache) とサーバコードを含む。反映には `npm run migrate` + server 再起動が要る。Cloudflare Access を有効にするには Excubitor の runtime-config に `cloudflareAccess.{teamDomain,audience}` を登録し、Access アプリ / Tunnel route を CF ブローカーで設定する (アプリ側だけでは鍵は閉じない)。
-13. **server 再起動が必要** — 今回の改修は server コード + migration (006/007) を含む。稼働 server (8090) はフロント (build:web) は即反映だが、新ルート/日程自動生成/IN/OUT/時刻表を有効にするには `npm run migrate` 済 + server 再起動が必要。
+13. **server 再起動が必要** — 今回の改修は server コード + migration (006/007) を含む。稼働 server (8091) はフロント (build:web) は即反映だが、新ルート/日程自動生成/IN/OUT/時刻表を有効にするには `npm run migrate` 済 + server 再起動が必要。

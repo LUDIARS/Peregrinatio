@@ -1,6 +1,6 @@
 # HTTP API 契約 (spec/interface)
 
-ベース: `http://127.0.0.1:8090/api` (server config.port = 8090)。
+ベース: `http://127.0.0.1:8091/api` (server config.port = 8091)。
 すべて JSON (画像アップロードのみ multipart/form-data)。エラーは `{ error: string }` + 4xx/5xx。
 認証は単独利用では dev 固定ユーザ。将来 Cernere 連携 (Authorization: Bearer <PASETO>)。
 

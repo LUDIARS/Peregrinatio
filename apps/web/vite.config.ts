@@ -8,9 +8,9 @@ const ludiarsHosts = (process.env.LUDIARS_ALLOWED_HOSTS ?? '')
   .split(',').map(s => s.trim()).filter(Boolean);
 
 // 旅のしおり PWA (iOS Safari 主戦場)。dev port は 5179 固定。
-// API はデフォルト http://127.0.0.1:8090 を直叩き (サーバ側 CORS 許可済)。
-// 別オリジン (Tunnel 等) からも使えるよう /api と /uploads を proxy できるようにしておく。
-const SERVER_TARGET = 'http://127.0.0.1:8090';
+// API は /api と /uploads を http://127.0.0.1:8091 へ proxy する。
+// 別オリジンの server を使う場合は、クライアント側の VITE_API_BASE で指定する。
+const SERVER_TARGET = 'http://127.0.0.1:8091';
 // Excubitor publishes the authoritative runtime identity to every service.
 // Keep the legacy build override and Git value as local-development fallbacks.
 const BUILD_VERSION = process.env.EXCUBITOR_SERVICE_VERSION?.trim()

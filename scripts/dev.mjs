@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
-const SERVER_PORT = 8090;
+const SERVER_PORT = 8091;
 const WEB_PORT = 5179;
 const DEV_PORTS = [SERVER_PORT, WEB_PORT];
 

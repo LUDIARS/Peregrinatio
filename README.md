@@ -46,7 +46,7 @@ spec/            AIFormat 規約の仕様 (data/feature/interface/setup/test)
 
 ## 公開入口と Cloudflare Access
 
-公開入口 (`pe.ai-run-do.com`、LOCAL Tunnel → 127.0.0.1:8090) は Cloudflare Access で本人だけに絞る。
+公開入口 (`pe.ai-run-do.com`、LOCAL Tunnel → 127.0.0.1:8091) は Cloudflare Access で本人だけに絞る。
 共有リンク (`/s/:token`) も鍵の内側 (例外パスなし)。Cloudflare 側の設定は Excubitor の CF ブローカーで行い、
 アプリは runtime-config (`EXCUBITOR_SERVICE_CONFIG_JSON.cloudflareAccess.{teamDomain,audience}`) があるとき、
 ループバック以外から来た要求の `Cf-Access-Jwt-Assertion` を検証する (失敗は 403 + 理由コード)。

@@ -5,7 +5,7 @@ services:
     tier: personal
     project_code: Pe
     component: backend
-    port: 8090
+    port: 8091
     repo: LUDIARS/Peregrinatio
     runtime: node
     cwd: ${ARS_ROOT}/Peregrinatio
@@ -16,7 +16,7 @@ services:
     max_restart: 5
     health:
       type: http
-      url: http://127.0.0.1:8090/healthz
+      url: http://127.0.0.1:8091/healthz
       interval_sec: 30
       grace_period_sec: 10
     provides:

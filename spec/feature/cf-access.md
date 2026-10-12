@@ -2,7 +2,7 @@
 
 ## 目的
 
-公開入口 (`pe.ai-run-do.com`、LOCAL Tunnel → 127.0.0.1:8090) を Cloudflare Access で許可した人だけに絞る。
+公開入口 (`pe.ai-run-do.com`、LOCAL Tunnel → 127.0.0.1:8091) を Cloudflare Access で許可した人だけに絞る。
 
 ## 構成
 
