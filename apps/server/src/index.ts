@@ -1,3 +1,4 @@
+// @implements SPEC-CF-ACCESS-CONFIG
 import { serve } from '@hono/node-server';
 import type { Context } from 'hono';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -11,6 +12,8 @@ import { buildApiApp } from './app.js';
 import { startBaseSummaryQueue } from './base-summary/queue.js';
 import { startJobQueue } from './jobs/queue.js';
 import { initVestigium, shutdownVestigium } from './observability/vestigium.js';
+import { cfAccessConfigFromEnv } from './security/cf-access-config.js';
+import { CfAccessVerifier } from './security/cf-access-verifier.js';
 
 async function main() {
   // 横断ログを最初に立ち上げる (以降の console.* も JSONL に流れる)。
@@ -21,7 +24,14 @@ async function main() {
   mkdirSync(config.uploadsDir, { recursive: true });
   mkdirSync(config.exportsDir, { recursive: true });
 
-  const app = buildApiApp();
+  // 設定が壊れていれば起動を止める (半端な設定で鍵なしのまま公開しない)。
+  const cfAccessConfig = cfAccessConfigFromEnv(process.env);
+  if (cfAccessConfig) {
+    console.log(`[security] Access 検証: 有効 (team=${cfAccessConfig.teamDomain}, aud=${cfAccessConfig.audience.slice(0, 8)}…)`);
+  } else {
+    console.log('[security] Access 検証: 無効 (runtime-config に cloudflareAccess なし)');
+  }
+  const app = buildApiApp({ cfAccess: cfAccessConfig ? new CfAccessVerifier(cfAccessConfig) : undefined });
   // アップロード/合成画像の静的配信 (cwd=apps/server で uploads/ を指す)
   app.use('/uploads/*', serveStatic({ root: './', }));
 

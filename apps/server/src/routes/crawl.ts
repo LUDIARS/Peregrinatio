@@ -2,6 +2,7 @@
 // スパインの CRUD とは別レイヤで、@peregrinatio/crawl・@peregrinatio/llm を束ねる。
 //   POST /api/places/:id/crawl    URL → 本文抽出 → LLM 要約 → places 更新 (+geocode)
 //   POST /api/images/:id/analyze  画像 → vision 読取 → image_analyses (+geocode で place 補完)
+// @implements SPEC-ACCESS-SHUTTLE
 
 import { Hono } from 'hono';
 import { resolve } from 'node:path';
@@ -13,6 +14,7 @@ import { PoliteFetcher, htmlToText, extractPlaceInfo } from '@peregrinatio/crawl
 import { searchPlaces, resolvePhotoUrl } from '@peregrinatio/places';
 import { analyzeImage, extractJsonBlock } from '@peregrinatio/llm';
 import type { Place, PlaceImage, ImageAnalysis } from '../types.js';
+import { saveShuttleExtraction } from '../access-marks/shuttle-store.js';
 
 const app = new Hono();
 
@@ -63,6 +65,7 @@ async function enrichPlaceFromWeb(placeId: string): Promise<void> {
     const res = await fetcher.fetch(websiteUri);
     if (res.ok) {
       const info = await extractPlaceInfo(htmlToText(res.html), place.name, config.llm.summaryModel);
+      await saveShuttleExtraction(placeId, info, websiteUri);
       if (info.summary) {
         await sql`UPDATE places SET summary=${info.summary}, updated_at=${nowIso()} WHERE id=${placeId}`;
       }
@@ -97,6 +100,7 @@ export async function runPlaceCrawl(placeId: string, url: string): Promise<{ pla
 
   const text = htmlToText(res.html);
   const info = await extractPlaceInfo(text, place.name, config.llm.summaryModel);
+  await saveShuttleExtraction(placeId, info, url);
 
   const summary = info.summary;
   const category = info.category ?? place.category;

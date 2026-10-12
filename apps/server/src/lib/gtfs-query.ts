@@ -1,5 +1,6 @@
 // 取り込んだ GTFS から「近くの停留所」「停留所の発車時刻ボード」を引く。
 // 運行日(曜日 + calendar_dates 例外)を考慮して、その日に走る便だけを返す。
+// @implements SPEC-ACCESS-BUS
 
 import { sql } from '../db/index.js';
 import { haversineMeters } from './segment-mode.js';
@@ -158,6 +159,38 @@ export async function nearbyStops(
       AND s.lng BETWEEN ${lng - dLng} AND ${lng + dLng}`) as Array<{
     feed_id: string; feed_name: string; stop_id: string; stop_name: string | null; lat: number | null; lng: number | null;
   }>;
+  const hits: GtfsStopHit[] = [];
+  for (const r of rows) {
+    if (r.lat == null || r.lng == null) continue;
+    const d = haversineMeters({ lat, lng }, { lat: r.lat, lng: r.lng });
+    if (d <= radiusM) hits.push({ ...r, distance_m: Math.round(d) });
+  }
+  hits.sort((a, b) => a.distance_m - b.distance_m);
+  return hits.slice(0, limit);
+}
+
+/**
+ * lat/lng 近傍で、指定 route_type の便が停まる停留所を距離順に返す (例 バス=[3] / 鉄道=[0,1,2])。
+ * route_type の無いフィードの停留所は種別が分からないので含めない (バス停と駅を取り違えない)。
+ */
+export async function nearbyStopsServing(
+  lat: number, lng: number, radiusM: number, limit: number, routeTypes: readonly number[],
+): Promise<GtfsStopHit[]> {
+  if (routeTypes.length === 0) return [];
+  const dLat = radiusM / 111_000;
+  const dLng = radiusM / (111_000 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
+  const rows = (await sql.unsafe(
+    `SELECT DISTINCT s.feed_id AS feed_id, f.name AS feed_name, s.stop_id AS stop_id, s.stop_name AS stop_name,
+            s.lat AS lat, s.lng AS lng
+     FROM gtfs_stops s
+     JOIN gtfs_feeds f ON f.id = s.feed_id
+     JOIN gtfs_stop_times st ON st.feed_id = s.feed_id AND st.stop_id = s.stop_id
+     JOIN gtfs_trips t ON t.feed_id = st.feed_id AND t.trip_id = st.trip_id
+     JOIN gtfs_routes r ON r.feed_id = t.feed_id AND r.route_id = t.route_id
+     WHERE s.lat BETWEEN ? AND ? AND s.lng BETWEEN ? AND ?
+       AND r.route_type IN (${placeholders(routeTypes)})`,
+    [lat - dLat, lat + dLat, lng - dLng, lng + dLng, ...routeTypes],
+  )) as Array<{ feed_id: string; feed_name: string; stop_id: string; stop_name: string | null; lat: number | null; lng: number | null }>;
   const hits: GtfsStopHit[] = [];
   for (const r of rows) {
     if (r.lat == null || r.lng == null) continue;

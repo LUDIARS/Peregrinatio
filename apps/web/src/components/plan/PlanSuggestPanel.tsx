@@ -1,7 +1,11 @@
+// @implements SPEC-EXPRESS-PLAN
+// @implements SPEC-ACCESS-UI
 import { useState } from 'react';
 import { api } from '../../api.js';
 import { PlanSuggestForm } from './PlanSuggestForm.js';
 import { PlanDayPreview } from './PlanDayPreview.js';
+import { switchExpressChoice } from './plan-express-switch.js';
+import { AccessMarkChips } from '../place/AccessMarkChips.js';
 import type { PlanSuggestInput, PlanSuggestResult } from '../../types.js';
 
 type FormValue = PlanSuggestInput & { use_llm: boolean };
@@ -88,9 +92,10 @@ export function PlanSuggestPanel({ tripId, onAdopted }: { tripId: string; onAdop
             <div className="card">
               <h4 style={{ margin: '0 0 4px' }}>沿線で見つけた候補 (旅にはまだありません)</h4>
               {result.new_places.map((p) => (
-                <p key={p.google_place_id} className="muted" style={{ margin: '2px 0' }}>
-                  {p.name}{p.address ? ` — ${p.address}` : ''}（{p.found_by}）
-                </p>
+                <div key={p.google_place_id} style={{ margin: '2px 0' }}>
+                  <span className="muted">{p.name}{p.address ? ` — ${p.address}` : ''}（{p.found_by}）</span>{' '}
+                  <AccessMarkChips marks={p.access_marks} />
+                </div>
               ))}
             </div>
           )}
@@ -114,7 +119,19 @@ export function PlanSuggestPanel({ tripId, onAdopted }: { tripId: string; onAdop
           {result.warnings.map((w) => <div key={w} className="muted">⚠ {w}</div>)}
 
           <div className="stack">
-            {result.days.map((day) => <PlanDayPreview key={day.day_index} day={day} />)}
+            {result.days.map((day) => (
+              <PlanDayPreview
+                key={day.day_index}
+                day={day}
+                express={result.express}
+                onSwitchExpress={(direction, index) => setResult((r) => (r ? switchExpressChoice(r, direction, index) : r))}
+              />
+            ))}
+            {result.express && (result.express.outbound.length > 1 || result.express.inbound.length > 1) && (
+              <p className="muted" style={{ margin: 0 }}>
+                往復の便を切り替えても日中の予定の時刻は動きません。拠点に着く時刻が大きく変わるときは案を作り直してください。
+              </p>
+            )}
           </div>
 
           {result.leftovers.length > 0 && (

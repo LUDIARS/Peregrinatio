@@ -1,3 +1,4 @@
+// @implements SPEC-ACCESS-ATTACH
 import { Hono } from 'hono';
 import { sql } from '../db/index.js';
 import { newId, nowIso } from '../lib/ids.js';
@@ -5,6 +6,8 @@ import { pick, userOf } from '../lib/http.js';
 import { geocodeCached, GeocodeNotConfiguredError } from '../lib/geocode.js';
 import type { Place, TripPlace } from '../types.js';
 import { defaultBaseName, unicodeLength } from '../place-enrichment/base-facilities.js';
+import { attachAccessMarks, tripBaseOrigin } from '../access-marks/attach.js';
+import { placeCandidateFactory } from '../access-marks/candidates.js';
 
 const app = new Hono();
 
@@ -85,8 +88,9 @@ app.delete('/api/places/:id', async (c) => {
 
 // ---- 旅 ↔ 場所 メンバーシップ ----
 
-/** GET /api/trips/:id/places — この旅に紐づく場所 (is_base 付き)。 */
+/** GET /api/trips/:id/places — この旅に紐づく場所 (is_base 付き・拠点以外はアクセス印 access_marks 付き)。 */
 app.get('/api/trips/:id/places', async (c) => {
+  const tripId = c.req.param('id');
   const rows = (await sql`
     SELECT p.*, tp.is_base, tp.base_name, tp.base_name_source, tp.checkin_time, tp.checkout_time, tp.postponed FROM places p
     JOIN trip_places tp ON tp.place_id = p.id
@@ -97,7 +101,10 @@ app.get('/api/trips/:id/places', async (c) => {
           AND j.status IN ('pending','processing','needs_info','failed')
       )
     ORDER BY CASE WHEN p.status='interested' THEN 0 ELSE 1 END, tp.added_at DESC`) as TripPlace[];
-  return c.json(rows);
+  const candidate = await placeCandidateFactory(rows);
+  return c.json(await attachAccessMarks(rows, (r) => (r.is_base === 1 ? null : candidate(r)), {
+    base: await tripBaseOrigin(tripId),
+  }));
 });
 
 /**

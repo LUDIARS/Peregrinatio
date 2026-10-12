@@ -16,6 +16,14 @@ describe('parsePlaceExtraction', () => {
     });
   });
 
+  it('shuttle_bus は available が真偽値のときだけ返す', () => {
+    const yes = '{"summary":"宿","shuttle_bus":{"available":true,"evidence":"那須塩原駅から無料送迎バスあり"}}';
+    expect(parsePlaceExtraction(yes).shuttle_bus).toEqual({ available: true, evidence: '那須塩原駅から無料送迎バスあり' });
+    const no = '{"summary":"宿","shuttle_bus":{"available":false,"evidence":""}}';
+    expect(parsePlaceExtraction(no).shuttle_bus).toEqual({ available: false, evidence: '' });
+    expect(parsePlaceExtraction('{"summary":"宿","shuttle_bus":{}}').shuttle_bus).toBeUndefined();
+  });
+
   it('throws on non-JSON output', () => {
     expect(() => parsePlaceExtraction('すみません、抽出できませんでした')).toThrow();
   });

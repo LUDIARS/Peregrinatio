@@ -1,8 +1,10 @@
 // 提案 (サジェスト) ドメインの共有型。
 // 荷物・季節・プランの 3 提案はすべて「プレビュー → 採用」の 2 段で、
 // 提案 API は DB を書き換えない。書き込みは採用 API のみが行う。
+// @implements SPEC-EXPRESS-PLAN
 
 import type { RouteMode } from '../types.js';
+import type { ExpressOption } from '../express/types.js';
 
 /** 提案の由来。ルール由来か LLM 由来かを UI で区別するために持つ。 */
 export type SuggestSource = 'baseline' | 'facility' | 'season' | 'llm';
@@ -124,10 +126,35 @@ export interface PlanItem {
   mode: RouteMode | null;
   duration_sec: number | null;
   distance_m: number | null;
-  /** 所要の出所。'routes'=Routes API 実測 / 'estimate'=直線距離からの概算 / 'gtfs'=時刻表の実便。 */
-  duration_source: 'routes' | 'estimate' | 'gtfs' | null;
+  /**
+   * 所要の出所。'routes'=Routes API 実測 / 'estimate'=直線距離からの概算 / 'gtfs'=時刻表の実便 /
+   * 'express_timetable'=取り込んだ新幹線・特急の時刻表の便。
+   */
+  duration_source: 'routes' | 'estimate' | 'gtfs' | 'express_timetable' | null;
   /** 実便で組んだ場合の便情報。 */
   transit: PlanTransitLeg | null;
+  /** 往復の新幹線・特急の行なら、どの候補便から作った行か (画面で別の候補へ差し替えるため)。 */
+  express_ref?: PlanExpressRef;
+}
+
+/** 往復便の行がどの候補から来たか。 */
+export interface PlanExpressRef {
+  direction: 'outbound' | 'inbound';
+  option_index: number;
+}
+
+/** 往復便の候補 1 本と、その候補で置き換えるときの行。 */
+export interface PlanExpressChoice {
+  option: ExpressOption;
+  items: PlanItem[];
+}
+
+/** プランに使った往復便と、差し替え用の候補。 */
+export interface PlanExpressSummary {
+  outbound: PlanExpressChoice[];
+  inbound: PlanExpressChoice[];
+  selected_outbound: number | null;
+  selected_inbound: number | null;
 }
 
 /** 提案されたプランの 1 日。 */
@@ -172,5 +199,7 @@ export interface PlanSuggestResult {
     found_by: string;
   }>;
   hints: SeasonalHint[];
+  /** 新幹線・特急の往復便。出発地点や時刻表が無く提案できなかった場合は null。 */
+  express: PlanExpressSummary | null;
   warnings: string[];
 }

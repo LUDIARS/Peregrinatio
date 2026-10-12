@@ -1,5 +1,6 @@
 // 提案 API。荷物・季節・プランの 3 提案と、その採用。
 // 提案エンドポイントは DB を書き換えない。書き込みは /adopt だけが行う。
+// @implements SPEC-ACCESS-ATTACH
 
 import { Hono } from 'hono';
 import { loadTripContext } from '../suggest/trip-context.js';
@@ -11,6 +12,8 @@ import { adoptPlan } from '../suggest/plan-adopt.js';
 import { parsePlanAdoptDays } from '../suggest/plan-adopt-input.js';
 import { normalizePlanInput } from '../suggest/plan-input.js';
 import { climateWindowsOfTrip, seasonalHints, seasonLabelOfTrip } from '../suggest/season.js';
+import { attachAccessMarks, tripBaseOrigin } from '../access-marks/attach.js';
+import { unsavedCandidate } from '../access-marks/candidates.js';
 
 const app = new Hono();
 
@@ -60,7 +63,10 @@ app.post('/api/trips/:id/plan/suggest', async (c) => {
   const ctx = await loadTripContext(c.req.param('id'));
   if (!ctx) return c.json({ error: '旅が見つかりません' }, 404);
   const body = await readBody(c);
-  return c.json(await suggestPlan(ctx, normalizePlanInput(body), { useLlm: useLlmOf(body) }));
+  const plan = await suggestPlan(ctx, normalizePlanInput(body), { useLlm: useLlmOf(body) });
+  // 旅に未追加の候補にも「車が無くても行けるか」の印を付ける (旅の場所一覧と同じ判定)。
+  const newPlaces = await attachAccessMarks(plan.new_places, unsavedCandidate, { base: await tripBaseOrigin(ctx.trip.id) });
+  return c.json({ ...plan, new_places: newPlaces });
 });
 
 /** POST /api/trips/:id/plan/adopt — 案を旅に反映する (対象の日を上書きする)。 */

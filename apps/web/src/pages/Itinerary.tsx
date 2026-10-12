@@ -1,8 +1,10 @@
+// @implements SPEC-EXPRESS-ITINERARY
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
 import { DayNotesEditor } from '../components/itinerary/DayNotesEditor.js';
 import { MobileDayNotes } from '../components/itinerary/MobileDayNotes.js';
+import { ExpressMovePicker } from '../components/itinerary/ExpressMovePicker.js';
 import { PersistedNoteEditor } from '../components/itinerary/PersistedNoteEditor.js';
 import {
   FixedRouteEditor,
@@ -1080,6 +1082,20 @@ export function Itinerary() {
                   </button>
                 ))}
               </div>
+
+              <p className="muted" style={{ margin: '12px 0 4px' }}>新幹線・特急の時刻表から選ぶ</p>
+              <ExpressMovePicker
+                tripId={tripId}
+                date={days.find((x) => x.id === movePickerDay)?.date ?? null}
+                after={ref}
+                busy={busy}
+                onError={setError}
+                onPicked={async ({ timetable, departure }) => {
+                  // 区間ボードへ写した便を、既存の便と同じ流れで移動カードにする。
+                  setDepartureOpts((cur) => (cur.some((o) => o.dep.id === departure.id) ? cur : [...cur, { timetable, dep: departure }]));
+                  await addMoveFromDeparture(movePickerDay, { timetable, dep: departure });
+                }}
+              />
             </div>
           </div>
         );

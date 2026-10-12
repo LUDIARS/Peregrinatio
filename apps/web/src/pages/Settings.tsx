@@ -1,8 +1,10 @@
+// @implements SPEC-ACCESS-SETTINGS
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { getPrefs, setPrefs, USER_NAME_MAX, type Prefs, type StatusFilterPref } from '../lib/prefs.js';
 import { getLastTripId } from '../lib/currentTrip.js';
+import { AccessMarkSettingsCard } from '../components/place/AccessMarkSettingsCard.js';
 import type { HomeLocation, MapConfig, RouteMode, Trip } from '../types.js';
 
 const STATUS_OPTS: { v: StatusFilterPref; label: string }[] = [
@@ -260,6 +262,9 @@ export function Settings() {
         </div>
         <p className="muted" style={{ margin: 0 }}>現在地または住所から座標化し、最寄り駅を自動取得します。</p>
       </div>
+
+      {/* アクセス印 (🚕 初乗り圏) の判定距離 */}
+      <AccessMarkSettingsCard />
 
       {/* 旅の管理 */}
       <div className="card">

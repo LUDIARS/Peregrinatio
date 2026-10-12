@@ -14,6 +14,8 @@
 - **経路探索** — 何日に何処から何処へ移動するかを Google Routes API で探索する(徒歩/車/公共交通)。
 - **持ち物を提案する** — 宿の設備と行き先・季節から持ち物を提案する (乾燥機あり→着替えは少なめ、プール/海→水着、秋→紅葉の支度、夏→日避け)。
 - **プランを自動で決める** — 交通手段を軸に、拠点の最寄り駅から数駅ぶんの範囲で、移動時間と滞在時間が 1 日に収まる日割り案を作る。
+- **新幹線・特急の時刻表** — 時刻表 (縦に駅・横に列車の表の貼り付け / URL・PDF からの LLM 抽出) を旅をまたいだライブラリに取り込み、出発地点 ↔ 拠点の往路・復路で実際に乗れる便を提案する。プラン提案の「別手配」行もこの便に置き換わる。
+- **周辺候補のアクセス印** — 場所一覧・詳細・プランの新しい候補・場所検索の結果に 🚕 タクシー初乗り圏 / 🚏 バス停近い / 🚌 シャトルあり を付け、車が無くても行けるかを一目で分かるようにする。
 - **PDF しおり出力** — しおりを PDF にエクスポートして印刷できる。
 
 ## 使い方の主戦場
@@ -29,6 +31,9 @@ npm workspaces monorepo (Tirocinium の構成を下敷き)。
 apps/
   server/        Hono + (SQLite 既定 / Postgres 切替) API
     src/suggest/ 荷物・季節・プランの提案 (提案は読むだけ / 採用だけが書く)
+    src/express/ 新幹線・特急の時刻表ライブラリ (取り込み・往復便の提案)
+    src/access-marks/ 周辺候補のアクセス印 (🚕/🚏/🚌 の判定)
+    src/security/ Cloudflare Access の JWT 検証 (公開入口の多重防御)
   web/           React + Vite PWA フロントエンド
 packages/
   places/        Google Places 検索 + Geocoding
@@ -38,6 +43,14 @@ packages/
   routing/       Google Routes API クライアント
 spec/            AIFormat 規約の仕様 (data/feature/interface/setup/test)
 ```
+
+## 公開入口と Cloudflare Access
+
+公開入口 (`pe.ai-run-do.com`、LOCAL Tunnel → 127.0.0.1:8090) は Cloudflare Access で本人だけに絞る。
+共有リンク (`/s/:token`) も鍵の内側 (例外パスなし)。Cloudflare 側の設定は Excubitor の CF ブローカーで行い、
+アプリは runtime-config (`EXCUBITOR_SERVICE_CONFIG_JSON.cloudflareAccess.{teamDomain,audience}`) があるとき、
+ループバック以外から来た要求の `Cf-Access-Jwt-Assertion` を検証する (失敗は 403 + 理由コード)。
+設定が無ければ検証せず、起動ログに「Access 検証: 無効」と出る。詳細: `spec/feature/cf-access.md`。
 
 ## 開発
 

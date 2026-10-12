@@ -6,8 +6,9 @@
 //   3. 両方満たすものだけを置き、時計を実便の到着時刻まで進める
 // 拠点へ戻れない候補はその日から外す — 戻れない予定は予定ではない。
 //
-// 長距離の往路・復路 (出発地点↔拠点) はここでは組まない。ローカルの GTFS では
-// 新幹線・高速バスまでは追えないため、別手配のメモ行として置く。
+// 長距離の往路・復路 (出発地点↔拠点) はローカルの GTFS では追えない。取り込んだ新幹線・特急の
+// 時刻表から便が引けていればその行 (express) を置き、無ければ別手配のメモ行として置く。
+// @implements SPEC-EXPRESS-PLAN
 
 import { visitMinutes } from './plan-visit.js';
 import { dayWindow, type PlanAnchor } from './plan-build.js';
@@ -16,6 +17,7 @@ import type { TransitConnector } from './transit-connect.js';
 import type { GeoPoint } from './plan-travel.js';
 import type { AnchorScore, NewPlaceCandidate } from './plan-anchors.js';
 import type { PlanDay, PlanItem, PlanSuggestInput } from './types.js';
+import type { PlanExpressBookends } from './plan-express.js';
 import { MAX_STOPS_PER_DAY } from './plan-visit.js';
 
 /** 停留所までの徒歩と待ちの余裕 (分)。前の予定が終わってすぐ発車には乗れない。 */
@@ -44,6 +46,8 @@ export interface TransitPlanInput {
   origin: PlanAnchor | null;
   pool: PoolEntry[];
   mustIds: Set<string>;
+  /** 新幹線・特急の往復便。無い方向は別手配のメモ行になる。 */
+  express?: PlanExpressBookends | null;
 }
 
 export interface TransitPlanOutput {
@@ -132,6 +136,10 @@ function moveItem(label: string, departMin: number, arriveMin: number, leg: Plan
   };
 }
 
+function sumDuration(items: readonly PlanItem[]): number {
+  return items.reduce((sum, item) => sum + (item.duration_sec ?? 0), 0);
+}
+
 /**
  * 実便で日割りを組む。1 本も便が引けなければ unusable=true を返し、
  * 呼び側が概算方式へ切り替える (黙って概算に落ちない)。
@@ -141,6 +149,7 @@ export async function buildTransitPlanDays(
   connectorFor: (gtfsDate: string) => TransitConnector,
 ): Promise<TransitPlanOutput> {
   const { input, dates, base, origin, pool, mustIds } = build;
+  const express = build.express ?? null;
   const dayCount = Math.max(1, dates.length);
   const maxStops = Math.max(MAX_STOPS_PER_DAY[input.pace], mustIds.size);
 
@@ -157,8 +166,13 @@ export async function buildTransitPlanDays(
     let travelSec = 0;
     let staySec = 0;
 
-    // 長距離の往路・復路は別手配。日中の行動だけをここで組む。
-    if (dayIndex === 0 && origin) {
+    // 長距離の往路は時刻表の便があればそれを置き、拠点に着いてから動き出す。無ければ別手配のメモ行。
+    let dayStart = window.start;
+    if (dayIndex === 0 && express?.outbound) {
+      items.push(...express.outbound.items);
+      travelSec += sumDuration(express.outbound.items);
+      dayStart = Math.max(window.start, express.outbound.ready_min);
+    } else if (dayIndex === 0 && origin) {
       items.push({
         kind: 'note', place_id: null, label: `${origin.label} から ${base.label} へ`,
         planned_time: null, note: '長距離の往路は別手配 (新幹線・高速バス等)',
@@ -167,7 +181,7 @@ export async function buildTransitPlanDays(
     }
 
     let cursor: GeoPoint = base.point;
-    let t = window.start;
+    let t = dayStart;
     items.push(anchorItem(base, t, 'ここから出発 (拠点)'));
 
     if (gtfsDate) {
@@ -225,9 +239,14 @@ export async function buildTransitPlanDays(
       }
     }
 
-    items.push(anchorItem(base, t, dayIndex === dayCount - 1 ? 'ここで解散 (復路は別手配)' : 'ここに戻る (拠点)'));
+    const isLast = dayIndex === dayCount - 1;
+    const inbound = isLast ? express?.inbound ?? null : null;
+    items.push(anchorItem(base, t, !isLast ? 'ここに戻る (拠点)' : inbound ? 'ここから復路' : 'ここで解散 (復路は別手配)'));
 
-    if (dayIndex === dayCount - 1 && origin) {
+    if (inbound) {
+      items.push(...inbound.items);
+      travelSec += sumDuration(inbound.items);
+    } else if (isLast && origin) {
       items.push({
         kind: 'note', place_id: null, label: `${base.label} から ${origin.label} へ`,
         planned_time: null, note: '長距離の復路は別手配 (新幹線・高速バス等)',

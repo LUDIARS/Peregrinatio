@@ -2,6 +2,7 @@
 // この package は server 非依存 (型はローカル定義)。API キー無しは silent fallback せず即 throw する
 // ([[feedback_no_silent_fallback]] / [[feedback_no_env_fallback_for_secrets]])。
 // fetch は Node22 グローバル fetch を使う。
+// @implements SPEC-ACCESS-BUS
 
 /** 検索結果 1 件。apps/server/src/types.ts の PlaceSearchResult と同形 (server 非依存のためローカル定義)。 */
 export type PlaceSearchResult = {
@@ -94,6 +95,63 @@ export async function searchPlaces(
     category: p.primaryType ?? null,
     websiteUri: p.websiteUri ?? null,
     photoName: p.photos?.[0]?.name ?? null,
+  }));
+}
+
+export interface SearchNearbyOptions {
+  lat: number;
+  lng: number;
+  /** 検索半径 (m)。Nearby Search の locationRestriction.circle に使う。 */
+  radius: number;
+  /** Places の type (例 ['bus_stop', 'bus_station'])。 */
+  includedTypes: string[];
+  /** 最大件数 (1〜20)。 */
+  maxResults?: number;
+}
+
+const PLACES_NEARBY_URL = 'https://places.googleapis.com/v1/places:searchNearby';
+
+/**
+ * Google Places API (New) Nearby Search で、指定種別の施設を距離順に返す。
+ * Text Search と違い円の外は返さない (locationRestriction)。
+ * @throws apiKey が空のとき / HTTP エラー
+ */
+export async function searchNearbyByTypes(
+  opts: SearchNearbyOptions,
+  apiKey: string,
+): Promise<PlaceSearchResult[]> {
+  if (!apiKey) {
+    throw new Error('searchNearbyByTypes: Google Maps API キーが未設定です (apiKey が空)');
+  }
+  const res = await fetch(PLACES_NEARBY_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.primaryType',
+    },
+    body: JSON.stringify({
+      includedTypes: opts.includedTypes,
+      maxResultCount: Math.min(20, Math.max(1, opts.maxResults ?? 5)),
+      rankPreference: 'DISTANCE',
+      languageCode: 'ja',
+      locationRestriction: {
+        circle: { center: { latitude: opts.lat, longitude: opts.lng }, radius: opts.radius },
+      },
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`searchNearbyByTypes: Places API がエラーを返しました (${res.status}): ${text}`);
+  }
+  const data = (await res.json()) as TextSearchResponse;
+  return (data.places ?? []).map((p) => ({
+    name: p.displayName?.text ?? '',
+    address: p.formattedAddress ?? null,
+    lat: p.location?.latitude ?? null,
+    lng: p.location?.longitude ?? null,
+    place_id: p.id ?? '',
+    category: p.primaryType ?? null,
   }));
 }
 

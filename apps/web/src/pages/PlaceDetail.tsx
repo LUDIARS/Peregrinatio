@@ -1,8 +1,11 @@
+// @implements SPEC-ACCESS-UI
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, assetUrl } from '../api.js';
 import type { PlaceFacility, PlaceImage, PlaceLink, PlaceStatus, TripPlace } from '../types.js';
 import { FacilityChecklist } from '../components/place/FacilityChecklist.js';
+import { AccessMarkChips } from '../components/place/AccessMarkChips.js';
+import { useTripAccessMarks } from '../components/place/useTripAccessMarks.js';
 import { normalizedPlaceCategory, placeTypeLabel, PLACE_CATEGORY_OPTIONS } from '../lib/maps.js';
 
 const STATUS_OPTIONS: { key: PlaceStatus; label: string }[] = [
@@ -329,6 +332,11 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
     catch (e) { setError(e instanceof Error ? e.message : '削除に失敗しました'); }
   };
 
+  // 印の根拠 (座標・要約・メモ) が変わったら取り直す。
+  const accessMarks = useTripAccessMarks(
+    tripId, `${placeId}:${place?.lat ?? ''}:${place?.lng ?? ''}:${place?.summary ?? ''}:${place?.notes ?? ''}`,
+  );
+
   const categoryOptions = categoryValue && !PLACE_CATEGORY_OPTIONS.includes(categoryValue)
     ? [categoryValue, ...PLACE_CATEGORY_OPTIONS]
     : PLACE_CATEGORY_OPTIONS;
@@ -351,6 +359,10 @@ export function PlaceDetailPane({ tripId, placeId, onClose, onChanged }: PanePro
               : <div className="place-hero-img placeholder">画像なし</div>}
             <h2 className="place-hero-name">{place.is_base === 1 ? '🏨 ' : ''}{place.name}</h2>
             {place.address && <div className="place-hero-addr">{place.address}</div>}
+            {place.is_base !== 1 && accessMarks.marks[placeId] && (
+              <div style={{ marginTop: 6 }}><AccessMarkChips marks={accessMarks.marks[placeId]} /></div>
+            )}
+            {accessMarks.error && <div className="muted">⚠ アクセス印: {accessMarks.error}</div>}
             <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
               {place.category && <span className="chip">{placeTypeLabel(place.category)}</span>}
               {place.lat != null && place.lng != null

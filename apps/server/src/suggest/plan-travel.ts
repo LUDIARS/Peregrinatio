@@ -5,6 +5,7 @@
 //   routes   … Routes API の実所要 (API キーあり + use_routes_api)
 //   estimate … 直線距離 + 手段別の実効速度からの概算 (キー不要・決定的)
 // 概算でも「概算である」ことを duration_source で必ず明示する (silent fallback しない)。
+// @implements SPEC-ACCESS-TAXI
 
 import { computeRoute } from '@peregrinatio/routing';
 import { haversineMeters, suggestSegmentMode } from '../lib/segment-mode.js';
@@ -33,6 +34,12 @@ const TRAVEL_MODEL: Record<RouteMode, { speedMps: number; detour: number; overhe
   // 公共交通 30km/h (待ち・乗換で実効が落ちる)。待ち時間を固定で見る。
   transit: { speedMps: 8.3, detour: 1.4, overheadSec: 720 },
 };
+
+/**
+ * 車の道のりの迂回係数 (直線距離 × この値 = 道のり)。タクシー初乗り圏の判定も同じ値を使う
+ * (アクセス印と日割りで道のりの見積りが食い違わないように、値はここだけに置く)。
+ */
+export const DRIVING_DETOUR = TRAVEL_MODEL.driving.detour;
 
 /** 直線距離と手段から所要を概算する (純関数)。 */
 export function estimateTravel(from: GeoPoint, to: GeoPoint, mode: RouteMode): TravelEstimate {

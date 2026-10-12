@@ -1,9 +1,11 @@
+// @implements SPEC-EXPRESS-UI
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
 import { GtfsPanel } from '../GtfsPanel.js';
 import { ReservationSuggests } from './ReservationSuggests.js';
 import { TimetableSection } from './TimetableSection.js';
 import { ServiceAlertsSection } from './ServiceAlertsSection.js';
+import { ExpressTimetableTab } from './ExpressTimetableTab.js';
 import type { TransitCfg } from './ProviderPicker.js';
 import type { ReservationSuggestion, SelectedGtfsRoute, ServiceAlert, Timetable, TimetableDeparture } from '../../types.js';
 
@@ -25,6 +27,8 @@ export function TransitPanel(
   const [cfg, setCfg] = useState<TransitCfg>({ providers: ['crawl-llm'], default: 'crawl-llm', ekispertEnabled: false });
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  // 「時刻表・運行情報」と「新幹線・特急の時刻表」(旅をまたいだライブラリ) のタブ。
+  const [tab, setTab] = useState<'board' | 'express'>('board');
 
   // 予約サジェスト (新幹線/飛行機)。出発地点+目的地の座標から特定する。
   const [suggests, setSuggests] = useState<ReservationSuggestion[]>([]);
@@ -69,22 +73,35 @@ export function TransitPanel(
         onSelectedRouteChange={onSelectedRouteChange}
       />
 
-      {/* 予約サジェスト (新幹線/飛行機) */}
-      <ReservationSuggests suggests={suggests} origin={suggestOrigin} />
+      <div className="transit-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === 'board'}
+          className={`chip-btn${tab === 'board' ? ' active' : ''}`} onClick={() => setTab('board')}>時刻表・運行情報</button>
+        <button type="button" role="tab" aria-selected={tab === 'express'}
+          className={`chip-btn${tab === 'express' ? ' active' : ''}`} onClick={() => setTab('express')}>新幹線・特急の時刻表</button>
+      </div>
 
-      {/* 時刻表 (手入力 + 自動取得) */}
-      <TimetableSection
-        tripId={tripId}
-        timetables={timetables}
-        depByTt={depByTt}
-        cfg={cfg}
-        onReload={load}
-        onInfo={setInfo}
-        onError={setError}
-      />
+      {tab === 'express' ? (
+        <ExpressTimetableTab tripId={tripId} onBoardChanged={load} />
+      ) : (
+        <>
+          {/* 予約サジェスト (新幹線/飛行機) */}
+          <ReservationSuggests suggests={suggests} origin={suggestOrigin} />
 
-      {/* 運行情報 */}
-      <ServiceAlertsSection tripId={tripId} alerts={alerts} cfg={cfg} onReload={load} onInfo={setInfo} onError={setError} />
+          {/* 時刻表 (手入力 + 自動取得) */}
+          <TimetableSection
+            tripId={tripId}
+            timetables={timetables}
+            depByTt={depByTt}
+            cfg={cfg}
+            onReload={load}
+            onInfo={setInfo}
+            onError={setError}
+          />
+
+          {/* 運行情報 */}
+          <ServiceAlertsSection tripId={tripId} alerts={alerts} cfg={cfg} onReload={load} onInfo={setInfo} onError={setError} />
+        </>
+      )}
     </div>
   );
 }

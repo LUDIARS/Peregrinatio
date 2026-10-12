@@ -2,6 +2,7 @@
 // 提案時点では DB を触らず、ユーザが採用した案だけをここで反映する。
 // 採用は上書き: 案に含まれる日の予定と経路を消してから入れ直す。
 // 案に含まれない日は触らない。
+// @implements SPEC-EXPRESS-PLAN
 
 import { sql } from '../db/index.js';
 import { newId } from '../lib/ids.js';
@@ -22,12 +23,18 @@ function validKind(kind: unknown): kind is ItineraryItemKind {
   return typeof kind === 'string' && (KINDS as readonly string[]).includes(kind);
 }
 
+const SOURCE_LABEL: Record<NonNullable<PlanItem['duration_source']>, string> = {
+  routes: '実所要', estimate: '概算', gtfs: '時刻表', express_timetable: '新幹線・特急の時刻表',
+};
+
 /** 予定 1 件に落とすときのメモ。移動は手段と所要を文字で残す (route_legs は採用後に再計算する)。 */
 export function noteOf(item: PlanItem): string | null {
   if (item.kind !== 'move') return item.note;
   const minutes = item.duration_sec != null ? Math.round(item.duration_sec / 60) : null;
-  const source = item.duration_source === 'routes' ? '実所要' : '概算';
+  const source = item.duration_source ? SOURCE_LABEL[item.duration_source] : '概算';
   const parts = [item.label];
+  // 時刻表の便は発着時刻そのものが要点なので、所要より先に残す。
+  if (item.duration_source === 'express_timetable' && item.note) parts.push(item.note);
   if (minutes != null) parts.push(`約${minutes}分 (${source})`);
   return parts.join(' / ');
 }

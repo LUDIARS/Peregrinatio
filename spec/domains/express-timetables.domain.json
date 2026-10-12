@@ -1,0 +1,22 @@
+{
+  "name": "express-timetables",
+  "description": "新幹線・特急の時刻表ライブラリ (旅をまたいで共有)。表の貼り付け / URL・PDF の LLM 抽出による取り込み (プレビュー → 保存)、出発地点 ↔ 拠点の往復便の提案、旅の区間ボードへの写し。",
+  "role": "semantic",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    { "pathPattern": "(^|/)apps/server/src/express/" },
+    { "pathPattern": "(^|/)apps/server/src/routes/express(\\.test)?\\.ts$" },
+    { "pathPattern": "(^|/)apps/server/migrations-sqlite/022_express_timetables\\.sql$" },
+    { "pathPattern": "(^|/)apps/server/src/suggest/plan-express\\.ts$" },
+    { "pathPattern": "(^|/)apps/web/src/components/transit/Express[^/]+\\.tsx$" },
+    { "pathPattern": "(^|/)apps/web/src/components/itinerary/ExpressMovePicker\\.tsx$" },
+    { "pathPattern": "(^|/)apps/web/src/components/plan/plan-(express-switch|format)(\\.test)?\\.ts$" },
+    { "namePattern": "^(suggestExpressForTrip|validateImportPayload|parseTimetableTable|buildPasteImport|copyTrainToBoard|buildExpressBookends)$" }
+  ],
+  "cardTemplate": "Summarise the express-timetables domain: the shared line/station/train/stop-time library, the two-step import (deterministic paste parser or LLM extraction, both validated for station order and monotonic times), round-trip suggestion from origin to base with terminal transport, and the single write path that copies an adopted train to the trip's timetable board.",
+  "specRefs": [
+    "spec/feature/express-timetables.md"
+  ],
+  "rationale": "時刻表ライブラリは旅をまたいで共有され、取り込み・提案・採用が同じ駅順 (下り seq) と時刻表現を前提にするため 1 つの境界にまとめる。プラン提案は便の行に変換する接点 (plan-express) だけを持つ。"
+}

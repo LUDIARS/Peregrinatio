@@ -1,6 +1,8 @@
+// @implements SPEC-ACCESS-UI
 import { useState } from 'react';
 import { api } from '../api.js';
 import { placeTypeLabel } from '../lib/maps.js';
+import { AccessMarkChips } from './place/AccessMarkChips.js';
 import type { PlaceSearchResult } from '../types.js';
 
 interface Props {
@@ -28,7 +30,8 @@ export function MapSearchOverlay({ tripId, center, onChanged }: Props) {
     if (!query) return;
     setBusy(true); setMsg('');
     try {
-      const r = await api.searchPlaces({ q: query, lat: center?.lat, lng: center?.lng });
+      // trip_id を渡して、この旅の拠点から見たアクセス印 (🚕/🚏) を結果に付けてもらう。
+      const r = await api.searchPlaces({ q: query, lat: center?.lat, lng: center?.lng, trip_id: tripId });
       setResults(r);
       setOpen(true);
       setMsg(r.length === 0 ? '該当する施設が見つかりませんでした。' : '');
@@ -75,6 +78,7 @@ export function MapSearchOverlay({ tripId, center, onChanged }: Props) {
                 <strong>{c.name}</strong>
                 {c.category && <span className="chip" style={{ marginLeft: 6 }}>{placeTypeLabel(c.category)}</span>}
                 {c.address && <div className="muted" style={{ fontSize: 12 }}>{c.address}</div>}
+                <AccessMarkChips marks={c.access_marks} />
               </div>
               <button type="button" className="sm" onClick={() => void add(c)}>＋追加</button>
             </div>

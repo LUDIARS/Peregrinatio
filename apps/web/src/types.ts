@@ -1,4 +1,6 @@
 // ドメイン型。apps/server/src/types.ts (= spec/data/schema.md) を正として一致させる。
+// @implements SPEC-EXPRESS-UI
+// @implements SPEC-ACCESS-UI
 
 /** 旅の出発地点の種別。'none'=拠点起点 / 'home'=自宅 / 'meeting'=拠点以外の集合地点。 */
 export type OriginKind = 'none' | 'home' | 'meeting';
@@ -69,6 +71,8 @@ export interface TripPlace extends Place {
   checkin_time: string | null;  // 拠点ホテルのチェックイン 'HH:MM'
   checkout_time: string | null; // 拠点ホテルのチェックアウト 'HH:MM'
   postponed: number;            // 0/1 「また今度」(旅ごと。場所リストから隔離)
+  /** アクセス印 (GET /api/trips/:id/places のみ。拠点・座標なしには付かない)。 */
+  access_marks?: AccessMarks;
 }
 
 export interface TripShareConfig {
@@ -185,6 +189,47 @@ export interface PlaceSearchResult {
   lng: number | null;
   place_id: string;
   category?: string | null;
+  /** trip_id を付けて検索したときのアクセス印。 */
+  access_marks?: AccessMarks;
+}
+
+// ── アクセス印 (🚕 初乗り圏 / 🚏 バス停近い / 🚌 シャトルあり) ──────────────
+// 付かない印はキーごと省かれる (否定の印は無い)。
+
+export interface TaxiFirstFareMark {
+  origin_kind: 'base' | 'station';
+  origin_name: string;
+  distance_m: number;
+  threshold_m: number;
+}
+
+export interface BusStopNearMark {
+  stop_name: string;
+  distance_m: number;
+  source: 'gtfs' | 'places';
+  radius_m: number;
+}
+
+export interface ShuttleBusMark {
+  evidence: string;
+  source: 'crawl' | 'summary' | 'notes' | 'facility';
+  source_url: string | null;
+}
+
+export interface AccessMarks {
+  taxi_first_fare?: TaxiFirstFareMark;
+  bus_stop_near?: BusStopNearMark;
+  shuttle_bus?: ShuttleBusMark;
+  /** Places の失敗などで調べきれなかった印と理由。 */
+  unchecked?: Partial<Record<'taxi_first_fare' | 'bus_stop_near', string>>;
+}
+
+export interface AccessMarkSettings {
+  taxi_first_fare_m: number;
+  is_default: boolean;
+  default_taxi_first_fare_m?: number;
+  min?: number;
+  max?: number;
 }
 
 export interface MapConfig {
@@ -346,28 +391,6 @@ export interface GtfsConnection {
   departure_time: string;
   arrival_time: string;
   travel_min: number | null;
-}
-
-export interface ShinkansenBusSuggestion {
-  direction: 'outbound' | 'inbound';
-  date: string;
-  shinkansen_train_name: string;
-  shinkansen_depart_time: string;
-  shinkansen_arrive_time: string | null;
-  transfer_min: number;
-  connection: GtfsConnection;
-}
-
-export interface ShinkansenBusSuggestionsResult {
-  target: { name: string; lat: number; lng: number };
-  station: string;
-  outbound_date: string;
-  inbound_date: string;
-  added: number;
-  timetables: Timetable[];
-  departures: TimetableDeparture[];
-  outbound: ShinkansenBusSuggestion[];
-  inbound: ShinkansenBusSuggestion[];
 }
 
 /** GTFS 路線 (選択用、便数つき)。 */
@@ -539,8 +562,10 @@ export interface PlanItem {
   mode: RouteMode | null;
   duration_sec: number | null;
   distance_m: number | null;
-  duration_source: 'routes' | 'estimate' | 'gtfs' | null;
+  duration_source: 'routes' | 'estimate' | 'gtfs' | 'express_timetable' | null;
   transit: PlanTransitLeg | null;
+  /** 往復の新幹線・特急の行なら、どの候補便から作った行か。 */
+  express_ref?: { direction: 'outbound' | 'inbound'; option_index: number };
 }
 
 export interface PlanDay {
@@ -561,6 +586,7 @@ export interface NewPlaceCandidate {
   google_place_id: string;
   category: string | null;
   found_by: string;
+  access_marks?: AccessMarks;
 }
 
 export interface PlanSuggestResult {
@@ -573,11 +599,135 @@ export interface PlanSuggestResult {
   /** 沿線で見つけた、旅にまだ無い候補。 */
   new_places: NewPlaceCandidate[];
   hints: SeasonalHint[];
+  /** 新幹線・特急の往復便。出発地点や時刻表が無いときは null。 */
+  express: PlanExpressSummary | null;
   warnings: string[];
+}
+
+export interface PlanExpressChoice {
+  option: ExpressOption;
+  items: PlanItem[];
+}
+
+export interface PlanExpressSummary {
+  outbound: PlanExpressChoice[];
+  inbound: PlanExpressChoice[];
+  selected_outbound: number | null;
+  selected_inbound: number | null;
 }
 
 export interface PlanAdoptResult {
   days: TripDay[];
   items: number;
   replaced: number;
+}
+
+// ── 新幹線・特急の時刻表ライブラリ (旅をまたいで共有) ──────────────────────────
+
+export type ExpressLineKind = 'shinkansen' | 'limited_express';
+export type ExpressDirection = 'down' | 'up';
+
+export interface ExpressLine {
+  id: string;
+  name: string;
+  kind: ExpressLineKind;
+  operator: string | null;
+  source_url: string | null;
+  valid_from: string | null;
+  notes: string | null;
+  imported_at: string;
+}
+
+export interface ExpressLineSummary extends ExpressLine {
+  station_count: number;
+  train_count: number;
+}
+
+export interface ExpressStation {
+  line_id?: string;
+  seq: number;
+  name: string;
+  lat: number | null;
+  lng: number | null;
+}
+
+export interface ExpressStopTime {
+  station_seq: number;
+  arrive_time: string | null;
+  depart_time: string | null;
+}
+
+export interface ExpressTrain {
+  id?: string;
+  direction: ExpressDirection;
+  train_name: string;
+  service_note: string;
+  stops: ExpressStopTime[];
+}
+
+export interface ExpressLineDetail extends ExpressLine {
+  stations: ExpressStation[];
+  trains: ExpressTrain[];
+}
+
+export interface ExpressImportLine {
+  name: string;
+  kind: ExpressLineKind;
+  operator: string | null;
+  source_url: string | null;
+  valid_from: string | null;
+  notes: string | null;
+}
+
+/** プレビューと保存で同じ形を往復させる。 */
+export interface ExpressImportPayload {
+  line: ExpressImportLine;
+  stations: ExpressStation[];
+  trains: ExpressTrain[];
+  warnings: string[];
+}
+
+export interface ExpressTerminalLeg {
+  source: 'gtfs' | 'estimate';
+  mode: 'bus' | 'taxi';
+  depart_time: string;
+  arrive_time: string;
+  duration_min: number;
+  service_label: string | null;
+  from_label: string;
+  to_label: string;
+}
+
+export interface ExpressOption {
+  source: 'express_timetable';
+  direction: 'outbound' | 'inbound';
+  date: string;
+  line_id: string;
+  line_name: string;
+  train_id: string;
+  train_name: string;
+  board_station: string;
+  board_seq: number;
+  depart_time: string;
+  alight_station: string;
+  alight_seq: number;
+  arrive_time: string;
+  terminal: ExpressTerminalLeg;
+  access: { source: 'estimate'; duration_min: number; distance_m: number; time: string };
+}
+
+export interface ExpressSuggestResult {
+  outbound: ExpressOption[];
+  inbound: ExpressOption[];
+  warnings: string[];
+}
+
+/** 乗車駅 → 降車駅で乗れる便 (しおりの「移動を追加」)。 */
+export interface ExpressSegment {
+  train_id: string;
+  train_name: string;
+  service_note: string;
+  verdict: 'runs' | 'not_running' | 'unknown';
+  depart_time: string;
+  arrive_time: string;
 }

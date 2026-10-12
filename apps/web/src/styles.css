@@ -1356,3 +1356,22 @@ button.sm { min-height: 38px; padding: 8px 12px; font-size: 13px; }
 .kanban-plan-suggest > .card {
   max-width: 720px;
 }
+
+/* ---- アクセス印 (🚕 初乗り圏 / 🚏 バス停 / 🚌 シャトル) ---- */
+.access-marks { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.access-mark { border: none; cursor: pointer; line-height: 1.4; }
+.access-mark.active { background: var(--c-accent); color: #fff; }
+.access-mark.unchecked { background: #f4f1e8; color: var(--c-muted); cursor: help; }
+.access-mark-reason { flex-basis: 100%; font-size: 12px; }
+
+/* ---- 新幹線・特急の時刻表 ---- */
+.transit-tabs { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+.express-table-wrap { overflow-x: auto; max-width: 100%; }
+.express-table { border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.express-table th, .express-table td { border: 1px solid var(--c-border); padding: 2px 6px; text-align: center; }
+.express-table th:first-child, .express-table td:first-child { text-align: left; position: sticky; left: 0; background: var(--c-surface); }
+.express-table input { width: 84px; font-size: 12px; }
+.express-paste { width: 100%; min-height: 120px; font-family: ui-monospace, monospace; font-size: 12px; }
+.plan-express-switch { list-style: none; margin: 4px 0; }
+.plan-express-switch select { max-width: 100%; }
+.place-row-marks { padding: 0 10px 8px; }

@@ -1,3 +1,4 @@
+// @implements SPEC-ACCESS-UI
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, assetUrl, pdfUrl } from '../api.js';
@@ -26,6 +27,8 @@ import { TripPrepPanel } from '../components/TripPrepPanel.js';
 import { GtfsTimetable } from '../components/GtfsTimetable.js';
 import { ShareTripButton } from '../components/ShareTripButton.js';
 import { PlaceTypeFilter } from '../components/place/PlaceTypeFilter.js';
+import { AccessMarkChips } from '../components/place/AccessMarkChips.js';
+import { useTripAccessMarks } from '../components/place/useTripAccessMarks.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -494,6 +497,7 @@ export function TripDetail() {
   };
 
   const places = data?.places ?? [];
+  const accessMarks = useTripAccessMarks(tripId, places.map((p) => `${p.id}:${p.lat ?? ''}:${p.lng ?? ''}`).join('|'));
   const bases = useMemo(
     () => places.filter((p) => p.is_base === 1 && p.lat != null && p.lng != null),
     [places],
@@ -649,9 +653,13 @@ export function TripDetail() {
                   </div>
                 </div>
               </button>
+              {accessMarks.marks[p.id] && (
+                <div className="place-row-marks"><AccessMarkChips marks={accessMarks.marks[p.id]} /></div>
+              )}
             </div>
           ))}
         </div>
+        {accessMarks.error && <p className="muted">⚠ アクセス印: {accessMarks.error}</p>}
 
         {/* 拠点を追加 (場所リストの最後)。旅は通常 1 拠点なので、場所から選んで拠点にする。 */}
         <button type="button" className="card card-link add-base-btn" onClick={() => setShowBasePicker(true)}>

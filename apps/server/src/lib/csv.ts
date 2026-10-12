@@ -1,8 +1,9 @@
 // 最小 CSV パーサ (GTFS 用)。RFC4180 風: ダブルクォート囲み・"" エスケープ・改行/カンマ内包に対応。
 // 先頭行をヘッダとし、各行をヘッダ名→値のオブジェクトにする。先頭 BOM は除去する。
+// @implements SPEC-EXPRESS-IMPORT
 
-/** CSV テキストを行(セル配列)の配列にする。 */
-function parseRows(text: string): string[][] {
+/** CSV テキストを行(セル配列)の配列にする。ヘッダを持たない表 (時刻表の貼り付け等) にも使う。 */
+export function parseCsvRows(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
@@ -34,7 +35,7 @@ function parseRows(text: string): string[][] {
 
 /** CSV テキストをヘッダ名→値のレコード配列にする。空行は無視。 */
 export function parseCsv(text: string): Record<string, string>[] {
-  const rows = parseRows(text);
+  const rows = parseCsvRows(text);
   if (rows.length === 0) return [];
   const header = rows[0]!.map((h) => h.trim());
   const out: Record<string, string>[] = [];

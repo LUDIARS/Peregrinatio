@@ -1,5 +1,7 @@
 // spec/interface/api.md に厳密一致する薄い HTTP クライアント。
 // API ベースは VITE_API_BASE (未設定なら 127.0.0.1:8090 を直叩き / dev は proxy も可)。
+// @implements SPEC-EXPRESS-UI
+// @implements SPEC-ACCESS-UI
 
 import type {
   HomeLocation,
@@ -21,7 +23,16 @@ import type {
   RouteMode,
   TransitKind,
   ServiceAlert,
-  ShinkansenBusSuggestionsResult,
+  AccessMarks,
+  AccessMarkSettings,
+  ExpressDirection,
+  ExpressImportLine,
+  ExpressImportPayload,
+  ExpressLineDetail,
+  ExpressLineSummary,
+  ExpressSegment,
+  ExpressStation,
+  ExpressSuggestResult,
   Timetable,
   TimetableDeparture,
   TimetableKind,
@@ -224,8 +235,10 @@ export const api = {
   deleteLink: (id: string) => req<{ ok: true }>(`/api/links/${id}`, { method: 'DELETE' }),
   crawlPlace: (id: string, input: { url?: string } = {}) =>
     req<Place>(`/api/places/${id}/crawl`, { method: 'POST', body: json(input) }),
-  searchPlaces: (params: { q?: string; lat?: number; lng?: number; radius?: number }) => {
+  /** trip_id を渡すと、その旅の拠点を起点にしたアクセス印 (access_marks) が付く。 */
+  searchPlaces: (params: { q?: string; lat?: number; lng?: number; radius?: number; trip_id?: string }) => {
     const qs = new URLSearchParams();
+    if (params.trip_id) qs.set('trip_id', params.trip_id);
     if (params.q) qs.set('q', params.q);
     if (params.lat != null) qs.set('lat', String(params.lat));
     if (params.lng != null) qs.set('lng', String(params.lng));
@@ -342,16 +355,45 @@ export const api = {
       `/api/timetables/${timetableId}/fetch`,
       { method: 'POST', body: json(opts) },
     ),
-  seedTohokuShinkansen: (tripId: string) =>
-    req<{ timetables: Timetable[]; added: number; departures: TimetableDeparture[]; source_url: string }>(
-      `/api/trips/${tripId}/timetables/tohoku-shinkansen-seed`,
-      { method: 'POST', body: json({}) },
-    ),
-  suggestBusesForTohokuShinkansen: (tripId: string) =>
-    req<ShinkansenBusSuggestionsResult>(
-      `/api/trips/${tripId}/timetables/tohoku-shinkansen-bus-suggestions`,
-      { method: 'POST', body: json({}) },
-    ),
+
+  // --- 新幹線・特急の時刻表ライブラリ (旅をまたいで共有) ---
+  listExpressLines: () => req<ExpressLineSummary[]>('/api/express/lines'),
+  getExpressLine: (id: string) => req<ExpressLineDetail>(`/api/express/lines/${id}`),
+  deleteExpressLine: (id: string) => req<{ ok: true }>(`/api/express/lines/${id}`, { method: 'DELETE' }),
+  updateExpressStation: (lineId: string, seq: number, coords: { lat: number | null; lng: number | null }) =>
+    req<ExpressStation>(`/api/express/lines/${lineId}/stations/${seq}`, { method: 'PATCH', body: json(coords) }),
+  /** 取り込みプレビュー (保存しない)。貼り付け (方向ごとの表) または URL (HTML / PDF)。 */
+  previewExpressImport: (
+    input:
+      | { mode: 'paste'; line: Partial<ExpressImportLine>; tables: Array<{ direction: ExpressDirection; text: string }> }
+      | { mode: 'url'; line: Partial<ExpressImportLine>; url: string; direction?: ExpressDirection | null },
+  ) => req<ExpressImportPayload>('/api/express/import/preview', { method: 'POST', body: json(input) }),
+  /** プレビューと同じ形を保存する。replaceLineId を渡すとその路線を置き換える。 */
+  saveExpressImport: (payload: ExpressImportPayload, replaceLineId?: string) =>
+    req<{ line: ExpressLineDetail; warnings: string[] }>('/api/express/import', {
+      method: 'POST', body: json({ ...payload, replace_line_id: replaceLineId }),
+    }),
+  expressSegments: (lineId: string, params: { from_seq: number; to_seq: number; date?: string; after?: string }) => {
+    const qs = new URLSearchParams({ from_seq: String(params.from_seq), to_seq: String(params.to_seq) });
+    if (params.date) qs.set('date', params.date);
+    if (params.after) qs.set('after', params.after);
+    return req<ExpressSegment[]>(`/api/express/lines/${lineId}/segments?${qs.toString()}`);
+  },
+  /** 往路・復路の便の提案 (DB は変えない)。 */
+  suggestExpress: (tripId: string, input: { inbound_leave_time?: string } = {}) =>
+    req<ExpressSuggestResult>(`/api/trips/${tripId}/express/suggest`, { method: 'POST', body: json(input) }),
+  /** 便を旅の区間ボードへ写す (しおりで採用したとき)。 */
+  adoptExpress: (tripId: string, input: { train_id: string; from_seq: number; to_seq: number }) =>
+    req<{ timetable: Timetable; departure: TimetableDeparture }>(`/api/trips/${tripId}/express/adopt`, {
+      method: 'POST', body: json(input),
+    }),
+
+  // --- アクセス印 (🚕 初乗り圏 / 🚏 バス停近い / 🚌 シャトルあり) ---
+  tripAccessMarks: (tripId: string) => req<Record<string, AccessMarks>>(`/api/trips/${tripId}/access-marks`),
+  getAccessMarkSettings: () => req<AccessMarkSettings>('/api/settings/access-marks'),
+  setAccessMarkSettings: (taxiFirstFareM: number) =>
+    req<AccessMarkSettings>('/api/settings/access-marks', { method: 'PUT', body: json({ taxi_first_fare_m: taxiFirstFareM }) }),
+  resetAccessMarkSettings: () => req<AccessMarkSettings>('/api/settings/access-marks', { method: 'DELETE' }),
 
   // --- 取り込みジョブ (画像解析/クロールの順次処理キュー) ---
   /** ジョブを積む。is_new_place=true は取り込みで新規作成したドラフト place (成立まで一覧に出さない)。 */

@@ -1,9 +1,12 @@
 // プラン提案の組み立て。旅の材料 → 端点と候補 → 日割り → 見出し。
 // DB は読むだけで書かない (採用 API だけが書く)。
+// @implements SPEC-EXPRESS-PLAN
 
 import { config } from '../config.js';
 import { climateWindowsOfTrip, seasonalHints } from './season.js';
-import { buildPlanDays, type PlanAnchor } from './plan-build.js';
+import { buildPlanDays, dayWindow, type PlanAnchor } from './plan-build.js';
+import { buildExpressBookends, type PlanExpressBookends } from './plan-express.js';
+import { suggestExpressForTrip } from '../express/suggest.js';
 import { createTravelEstimator } from './plan-travel.js';
 import { resolvePlanReach } from './plan-reach.js';
 import { rankAnchors, supplementAnchors, type NewPlaceCandidate } from './plan-anchors.js';
@@ -128,6 +131,16 @@ export async function suggestPlan(
 
   const dates = planDates(ctx);
 
+  // 往路・復路は取り込んだ新幹線・特急の時刻表から実際に乗れる便で置く。
+  // 復路は「最終日の行動が終わって拠点を出る時刻」(= 最終日の活動終了) を起点に探す。
+  let express: PlanExpressBookends | null = null;
+  if (origin && base) {
+    const lastWindow = dayWindow(Math.max(0, dates.length - 1), Math.max(1, dates.length), input, base);
+    const offer = await suggestExpressForTrip(ctx, { inboundLeaveMin: lastWindow.end });
+    warnings.push(...offer.warnings);
+    if (offer.outbound.length > 0 || offer.inbound.length > 0) express = buildExpressBookends(offer, origin);
+  }
+
   // 沿線で新しく探す (主軸が足りないときの補充)。旅には保存せず提案だけ返す。
   let newPlaces: NewPlaceCandidate[] = [];
   if (base && reach) {
@@ -160,6 +173,7 @@ export async function suggestPlan(
         origin,
         pool: [...poolFromAnchors(anchors), ...poolFromNewCandidates(newPlaces)],
         mustIds,
+        express,
       },
       (gtfsDate) => createTransitConnector({ date: gtfsDate }),
     );
@@ -175,7 +189,7 @@ export async function suggestPlan(
 
   if (!built) {
     const estimated = await buildPlanDays(
-      { input, dates, origin, base, candidates, mustIds },
+      { input, dates, origin, base, candidates, mustIds, express },
       estimator,
     );
     built = { days: estimated.days, leftovers: estimated.leftovers };
@@ -207,6 +221,7 @@ export async function suggestPlan(
     leftovers: [...outOfReach, ...(built?.leftovers ?? [])],
     new_places: newPlaces,
     hints,
+    express: express?.summary ?? null,
     warnings,
   };
 }

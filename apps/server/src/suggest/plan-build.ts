@@ -7,12 +7,16 @@
 //   中日     : 拠点から出て拠点へ戻る
 //   最終日   : 拠点 (チェックアウト後) から出て出発地点へ戻る
 // 拠点が無い旅では出発地点、それも無ければ最初の候補地を起点にする。
+// 新幹線・特急の往復便が引けていれば、初日は拠点に着いてから / 最終日は拠点を出るまでを組み、
+// 便の行 (出発地点 → 駅 → 列車 → 拠点) を前後に置く (概算で長距離を近似しない)。
+// @implements SPEC-EXPRESS-PLAN
 
 import { estimateTravel, type GeoPoint, type TravelEstimate, type TravelEstimator } from './plan-travel.js';
 import { MAX_STOPS_PER_DAY, visitMinutes } from './plan-visit.js';
 import { formatHhmm, parseHhmm } from './plan-time.js';
 import type { TripPlace } from '../types.js';
 import type { PlanDay, PlanItem, PlanSuggestInput } from './types.js';
+import type { PlanExpressBookends } from './plan-express.js';
 
 /** 日の端点。場所なら place_id を持ち、出発地点なら持たない。 */
 export interface PlanAnchor {
@@ -35,6 +39,8 @@ export interface PlanBuildInput {
   candidates: TripPlace[];
   /** 必ず入れる場所の id。候補選択で優先する。 */
   mustIds: Set<string>;
+  /** 新幹線・特急の往復便 (拠点がある旅だけ)。無い方向は出発地点を端点にした概算のまま。 */
+  express?: PlanExpressBookends | null;
 }
 
 export interface PlanBuildOutput {
@@ -131,7 +137,11 @@ export async function buildPlanDays(
   const days: PlanDay[] = [];
 
   for (let dayIndex = 0; dayIndex < dayCount; dayIndex += 1) {
-    const { start: startAnchor, end: endAnchor } = anchorsForDay(dayIndex, dayCount, origin, base, fallbackAnchor);
+    const anchors = anchorsForDay(dayIndex, dayCount, origin, base, fallbackAnchor);
+    const outbound = dayIndex === 0 && base ? build.express?.outbound ?? null : null;
+    const inbound = dayIndex === dayCount - 1 && base ? build.express?.inbound ?? null : null;
+    const startAnchor = outbound && base ? base : anchors.start;
+    const endAnchor = inbound && base ? base : anchors.end;
     const window = dayWindow(dayIndex, dayCount, input, base);
     const items: PlanItem[] = [];
     let travelSec = 0;
@@ -139,7 +149,12 @@ export async function buildPlanDays(
 
     let cursorPoint = startAnchor.point;
     let cursorTime = window.start;
-    items.push(anchorItem(startAnchor, cursorTime, dayIndex === 0 ? 'ここから出発' : 'ここから出発 (拠点)'));
+    if (outbound) {
+      items.push(...outbound.items);
+      travelSec += outbound.items.reduce((sum, item) => sum + (item.duration_sec ?? 0), 0);
+      cursorTime = Math.max(window.start, outbound.ready_min);
+    }
+    items.push(anchorItem(startAnchor, cursorTime, dayIndex === 0 && !outbound ? 'ここから出発' : 'ここから出発 (拠点)'));
 
     let stops = 0;
     // 選抜は概算 (同期・無料) で行い、採用した区間だけ estimator で確定させる。
@@ -210,7 +225,12 @@ export async function buildPlanDays(
       cursorTime += (back.duration_sec ?? 0) / 60;
       travelSec += back.duration_sec ?? 0;
     }
-    items.push(anchorItem(endAnchor, cursorTime, dayIndex === dayCount - 1 ? 'ここで解散' : 'ここに戻る (拠点)'));
+    items.push(anchorItem(endAnchor, cursorTime,
+      inbound ? 'ここから復路' : dayIndex === dayCount - 1 ? 'ここで解散' : 'ここに戻る (拠点)'));
+    if (inbound) {
+      items.push(...inbound.items);
+      travelSec += inbound.items.reduce((sum, item) => sum + (item.duration_sec ?? 0), 0);
+    }
 
     days.push({
       day_index: dayIndex,

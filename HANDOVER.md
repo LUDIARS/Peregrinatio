@@ -55,6 +55,10 @@ port: server=8090 / web(dev)=5179 / docker Postgres=15433。
 - **拠点ホテルの IN/OUT**: 拠点の詳細で公式サイトから自動取得 (`POST /api/trips/:id/places/:pid/hotel-times`、クロール→LLM) + 手動調整。`trip_places.checkin_time/checkout_time`。
 - **時刻表/運行情報**: 区間ボード+便+運行情報を手入力で管理 (`pages/Transit.tsx`、`routes/timetable.ts`)。しおりの「移動を追加」で時間帯が合う便を候補表示→移動カード化。**自動取得 (fetch/refresh) を provider 化** (`apps/server/src/transit/`): `crawl-llm`=時刻表/運行情報ページの URL をクロール→LLM(claude CLI)抽出 (契約・キー不要・既定) / `ekispert`=駅すぱあと契約 (`EKISPERT_API_KEY` 登録時のみ有効、区間 from/to で経路探索)。`GET /api/transit/config` が利用可能 provider を返し、UI は provider 選択+URL 入力を出す。未設定 provider/URL 欠落は silent fallback せず明示エラー (501/400)。
 
+- **新幹線・特急の時刻表ライブラリ** (`apps/server/src/express/`、`routes/express.ts`、migration 022): 路線・駅 (下り seq 順)・列車・停車時刻を旅をまたいで共有。取り込みはプレビュー→保存の 2 段 (TSV/CSV 貼り付け=決定的パーサ / URL・PDF=crawl→claude CLI 抽出、駅順・時刻の単調増加を検証して崩れた列車は warnings 付きで落とす)。往復便の提案 `POST /api/trips/:id/express/suggest` は乗車駅=出発地点に最も近い駅 (50km 以内)、降車駅=同路線で拠点に最も近い駅、端末交通は GTFS バス→無ければタクシー概算。プラン提案の初日・最終日の「別手配」メモ行はこの便の行 (`duration_source='express_timetable'`) に置き換わり、画面で他の候補便へ切り替えられる。旧「なすの」直書き (`TOHOKU_SHINKANSEN_*`、`tohoku-shinkansen-seed` / `-bus-suggestions`) は削除し、seed 路線 `seed-tohoku-shinkansen` (2022-03-19 改正・東京/那須塩原の 2 駅) として migration に移した。Web は「時刻表・運行情報」パネルの「新幹線・特急の時刻表」タブとしおりの「移動を追加」。
+- **周辺候補のアクセス印** (`apps/server/src/access-marks/`、`routes/access-marks.ts`、migration 023): 🚕 初乗り圏 (拠点 / 最寄り駅から道のり=直線×車の迂回係数 `DRIVING_DETOUR` が `app_settings.taxi_first_fare_m` 以内、既定 1200m) / 🚏 バス停近い (GTFS バス停 300m→無ければ Places Nearby、`place_access_cache` に 7 日) / 🚌 シャトルあり (施設サマリーのクロール→LLM の `shuttle_bus` を優先、無ければ要約・メモ・設備の語)。否定の印は出さず、Places 失敗は `unchecked` で示す。設定ページに「タクシー初乗り距離」。
+- **Cloudflare Access 検証** (`apps/server/src/security/`): runtime-config の `cloudflareAccess` があるとき、ループバック以外 (Tunnel 経由) の要求の `Cf-Access-Jwt-Assertion` を RS256 + JWKS (10 分キャッシュ) で検証。共有リンクも鍵の内側。Cloudflare 側 (Access アプリ・Tunnel route の `access.required`) は Excubitor の CF ブローカーで別途設定する。
+
 ## 既知の制約・残作業
 
 1. ~~**サーバ常駐化未了**~~ 🚫 見送り (ユーザ判断: 不要)。
@@ -69,4 +73,5 @@ port: server=8090 / web(dev)=5179 / docker Postgres=15433。
 10. 軽微: recommend の半径指定UI無し / og:image 相対URL絶対化未対応。
 11. 保留: リゾナーレ那須(49件)再シード要否は未回答。
 12. ~~**時刻表/運行情報のデータ源未配線**~~ ✅ 対応済 — `apps/server/src/transit/` に provider 抽象 (`crawl-llm`/`ekispert`) を実装。`crawl-llm` は URL クロール→LLM 抽出で**契約不要・即利用可**。`ekispert` (駅すぱあと) は `npm run config-set EKISPERT_API_KEY <値>` 登録で有効化 (※実応答 JSON 形は契約キーでの実走で要検証。写像 `mapEkispertDepartures` を純関数分離+単体テスト済)。運行情報 refresh は crawl-llm のみ対応 (ekispert は別契約 API のため未対応=501 明示)。
+14. **新幹線・特急 / アクセス印 / CF Access の反映** — migration 022 (時刻表ライブラリ + なすの seed) / 023 (place_access_cache) とサーバコードを含む。反映には `npm run migrate` + server 再起動が要る。Cloudflare Access を有効にするには Excubitor の runtime-config に `cloudflareAccess.{teamDomain,audience}` を登録し、Access アプリ / Tunnel route を CF ブローカーで設定する (アプリ側だけでは鍵は閉じない)。
 13. **server 再起動が必要** — 今回の改修は server コード + migration (006/007) を含む。稼働 server (8090) はフロント (build:web) は即反映だが、新ルート/日程自動生成/IN/OUT/時刻表を有効にするには `npm run migrate` 済 + server 再起動が必要。

@@ -1,0 +1,16 @@
+{
+  "name": "access-gate",
+  "description": "公開入口の鍵 (Cloudflare Access) のアプリ側の多重防御。ループバック以外から来た要求の Cf-Access-Jwt-Assertion を検証する。",
+  "role": "semantic",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    { "pathPattern": "(^|/)apps/server/src/security/" },
+    { "namePattern": "^(cfAccessMiddleware|cfAccessConfigFromEnv|isLoopbackRequest|decodeJwt|verifyRs256)$" }
+  ],
+  "cardTemplate": "Summarise the access-gate domain: runtime-config loading with fail-fast on partial settings, the loopback definition (socket, Host and absence of Cloudflare edge headers), RS256 verification against the cached team JWKS, the claim checks, and the reason codes returned with 403.",
+  "specRefs": [
+    "spec/feature/cf-access.md"
+  ],
+  "rationale": "設定の読み込み・要求の出所判定・トークン検証は、公開入口の鍵という 1 つの責任のためだけに存在し、他のドメインから独立して変わる。"
+}

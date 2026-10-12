@@ -1,0 +1,19 @@
+{
+  "name": "access-marks",
+  "description": "周辺候補のアクセス印 (🚕 タクシー初乗り圏 / 🚏 バス停近い / 🚌 シャトルあり) の判定と、場所一覧・詳細・プランの新しい候補・場所検索への付与。",
+  "role": "semantic",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    { "pathPattern": "(^|/)apps/server/src/access-marks/" },
+    { "pathPattern": "(^|/)apps/server/src/routes/access-marks(\\.test)?\\.ts$" },
+    { "pathPattern": "(^|/)apps/server/migrations-sqlite/023_place_access_cache\\.sql$" },
+    { "pathPattern": "(^|/)apps/web/src/components/place/(AccessMark[^/]+|useTripAccessMarks)\\.tsx?$" },
+    { "namePattern": "^(judgeAccessMarks|judgeTaxiFirstFare|judgeShuttleBus|attachAccessMarks|createAccessLookups)$" }
+  ],
+  "cardTemplate": "Summarise the access-marks domain: per-candidate judgement (taxi first-fare reach from base or nearest station using the shared driving detour, bus stop within walking distance with GTFS before Places, shuttle evidence with crawl-LLM precedence), the rule that absent marks are omitted rather than negated, the Places result cache, and the taxi first-fare setting.",
+  "specRefs": [
+    "spec/feature/nearby-access-marks.md"
+  ],
+  "rationale": "3 つの印は同じ候補・同じ起点 (拠点 / 最寄り駅) と同じ外部問い合わせ順序を共有し、付与先 (一覧・検索・プラン) も共通の入口 attachAccessMarks を通るため 1 つの境界にする。"
+}

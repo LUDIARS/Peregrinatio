@@ -1,5 +1,6 @@
 // プラン採用 API の実行時入力検証。
 // 破壊的な上書きへ進む前に、PlanDay 全体を検証して正規化する。
+// @implements SPEC-EXPRESS-PLAN
 
 import { parseHhmm } from './plan-time.js';
 import type { PlanDay, PlanItem } from './types.js';
@@ -13,7 +14,7 @@ const MAX_ID_LENGTH = 200;
 
 const KINDS: readonly PlanItem['kind'][] = ['visit', 'move', 'note'];
 const MODES = ['driving', 'walking', 'transit', 'bicycling'] as const;
-const DURATION_SOURCES = ['routes', 'estimate', 'gtfs'] as const;
+const DURATION_SOURCES = ['routes', 'estimate', 'gtfs', 'express_timetable'] as const;
 const MAX_TRANSIT_SUMMARY_LENGTH = 200;
 
 type PlanAdoptInputResult =
