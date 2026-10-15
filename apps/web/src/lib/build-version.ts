@@ -1,3 +1,5 @@
+import { BUILD_PARAM, stripBuildParam } from './build-param.js';
+
 declare const __PE_BUILD_VERSION__: string;
 declare const __PE_BUILD_BUILT_AT__: string;
 
@@ -14,12 +16,27 @@ export const currentBuildVersion = CURRENT_BUILD_VERSION;
 
 export function installBuildCacheBuster(): void {
   if (typeof window === 'undefined') return;
+  clearBuildParamFromUrl();
   // module script は通常 load 前に走るが、遅延 import 等で load 後に来ても取りこぼさない。
   if (document.readyState === 'complete') {
     startBuildCheck();
     return;
   }
   window.addEventListener('load', startBuildCheck, { once: true });
+}
+
+/**
+ * ビルド更新のリロードで付けた `?_pe_build=` を、表示中の URL から消す。
+ * 残すと以後の共有リンクやブックマークに版数が付いたままになる。履歴は増やさない。
+ */
+function clearBuildParamFromUrl(): void {
+  const cleaned = stripBuildParam(window.location.href);
+  if (cleaned === null) return;
+  try {
+    window.history.replaceState(window.history.state, '', cleaned);
+  } catch {
+    // replaceState が使えない環境では URL が残るだけで、アプリの動作には影響しない。
+  }
 }
 
 /** 更新確認は付加機能なので、失敗しても unhandledRejection にせずアプリを続行させる。 */
@@ -103,7 +120,7 @@ async function purgeAppCaches(): Promise<void> {
 
 function reloadWithBuildVersion(version: string): void {
   const url = new URL(window.location.href);
-  url.searchParams.set('_pe_build', version);
+  url.searchParams.set(BUILD_PARAM, version);
   window.location.replace(url.toString());
 }
 

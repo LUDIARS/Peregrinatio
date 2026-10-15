@@ -29,6 +29,9 @@ iOS ホーム画面に追加した PWA が、Service Worker やブラウザキ�
      Service Worker が旧 JS を返し続けると無限リロードになるため)。
   3. `pe-` / `workbox-precache` で始まる Cache Storage を削除し、Service Worker を update する。
   4. `?_pe_build=<version>` を付けて `location.replace` する。
+- 起動時、URL に `_pe_build` が付いていれば `history.replaceState` で取り除く
+  (他のクエリ・パス・ハッシュは残し、履歴は増やさない)。リロード後の URL を共有・ブックマークしても
+  版数が付いたままにならないようにする。`replaceState` が使えない環境では URL が残るだけで動作は続ける。
 - キャッシュ削除と Service Worker update は best-effort とし、失敗してもリロードは実行する。
 - 更新確認の失敗はアプリの動作に影響させない (例外を握り、通常描画を継続する)。
 
