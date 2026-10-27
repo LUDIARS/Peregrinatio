@@ -1,0 +1,60 @@
+{
+  "summary": "Lead with \"Regression test reproducing: GTFS ZIP の展開量と逐次ダウンロード量に上限を設ける。指定された unzip.test.ts と gtfs-import.test.ts のみで境界値と既存動作を確認する。\" (high), then investigate before changing code. 1 test suggestion, 2 fix steps.",
+  "testPlan": {
+    "suggestions": [
+      {
+        "id": "test-001",
+        "title": "Regression test reproducing: GTFS ZIP の展開量と逐次ダウンロード量に上限を設ける。指定された unzip.test.ts と gtfs-import.test.ts のみで境界値と既存動作を確認する。",
+        "kind": "regression",
+        "priority": "high",
+        "confidence": 0.55,
+        "rationale": "No failure signal was supplied; a regression test should be written from the described behavior.",
+        "draft": {
+          "description": "Given the conditions described in the objective, when the buggy path runs, then the expected behavior must hold."
+        },
+        "evidenceIds": [
+          "ev-001"
+        ]
+      }
+    ]
+  },
+  "fixPolicy": {
+    "strategy": "investigate_first",
+    "steps": [
+      {
+        "id": "fix-001",
+        "title": "Reproduce the bug first",
+        "description": "Capture a failing command, log, or trace so the fix has evidence to aim at.",
+        "evidenceIds": [
+          "ev-001"
+        ]
+      },
+      {
+        "id": "fix-002",
+        "title": "Convert the reproduction into a regression test, then fix narrowly",
+        "description": "Once reproduced, lock it in as a test and apply the smallest change that passes.",
+        "dependsOn": [
+          "fix-001"
+        ],
+        "evidenceIds": [
+          "ev-001"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "id": "risk-001",
+        "severity": "medium",
+        "description": "A narrow fix may mask a broader defect class; check neighboring code paths for the same pattern."
+      }
+    ],
+    "rollback": "Revert the fix commit; keep the regression test as documentation of the expected behavior."
+  },
+  "evidence": [
+    {
+      "id": "ev-001",
+      "type": "objective",
+      "detail": "Caller requested bug fix: GTFS ZIP の展開量と逐次ダウンロード量に上限を設ける。指定された unzip.test.ts と gtfs-import.test.ts のみで境界値と既存動作を確認する。"
+    }
+  ]
+}

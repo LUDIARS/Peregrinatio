@@ -42,6 +42,53 @@ function makeZip(files: { name: string; data: Buffer; deflate?: boolean }[]): Bu
 }
 
 describe('unzip', () => {
+  const limits = { entryBytes: 64, totalBytes: 128 };
+
+  for (const deflate of [false, true]) {
+    it(`${deflate ? 'deflate' : 'stored'}: エントリ上限ちょうどを受理し1バイト超過を拒否する`, () => {
+      const data = Buffer.alloc(64, 'x');
+      expect(unzip(makeZip([{ name: 'a', data, deflate }]), limits).get('a')).toEqual(data);
+      expect(() => unzip(makeZip([{ name: 'a', data: Buffer.alloc(65, 'x'), deflate }]), limits)).toThrow();
+    });
+
+    it(`${deflate ? 'deflate' : 'stored'}: 合計上限と残り予算を適用し重複名も加算する`, () => {
+      const files = [
+        { name: 'a', data: Buffer.alloc(64, 'x'), deflate },
+        { name: 'b', data: Buffer.alloc(64, 'y'), deflate },
+      ];
+      expect(unzip(makeZip(files), limits).size).toBe(2);
+      expect(() => unzip(makeZip([...files, { name: 'a', data: Buffer.from('z'), deflate }]), limits)).toThrow();
+      expect(() => unzip(makeZip(files), { entryBytes: 64, totalBytes: 127 })).toThrow();
+      expect(unzip(makeZip([...files, { name: 'empty', data: Buffer.alloc(0), deflate }]), limits).get('empty')).toEqual(Buffer.alloc(0));
+    });
+  }
+
+  it('申告した展開サイズが小さくても実際のdeflate出力を制限する', () => {
+    const zip = makeZip([{ name: 'bomb', data: Buffer.alloc(65536, 'x'), deflate: true }]);
+    zip.writeUInt32LE(1, 22);
+    const cdOffset = zip.readUInt32LE(zip.length - 6);
+    zip.writeUInt32LE(1, cdOffset + 24);
+    expect(() => unzip(zip, limits)).toThrow();
+  });
+
+  it('ZIP64・暗号化・未対応方式を引き続き拒否する', () => {
+    const zip = makeZip([{ name: 'a', data: Buffer.from('a') }]);
+    const zip64 = Buffer.from(zip);
+    zip64.writeUInt32LE(0xffffffff, zip64.length - 6);
+    expect(() => unzip(zip64)).toThrow('ZIP64');
+    const cdOffset = zip.readUInt32LE(zip.length - 6);
+    const encrypted = Buffer.from(zip);
+    encrypted.writeUInt16LE(1, cdOffset + 8);
+    expect(() => unzip(encrypted)).toThrow('暗号化');
+    const unsupported = Buffer.from(zip);
+    unsupported.writeUInt16LE(9, cdOffset + 10);
+    expect(() => unzip(unsupported)).toThrow('未対応の圧縮方式');
+  });
+
+  it('本番上限を引き上げる内部引数を拒否する', () => {
+    expect(() => unzip(makeZip([]), { entryBytes: 512 * 1024 * 1024 + 1, totalBytes: 1024 * 1024 * 1024 })).toThrow();
+  });
+
   it('stored と deflate を展開できる', () => {
     const zip = makeZip([
       { name: 'stops.txt', data: Buffer.from('stop_id,stop_name\nA,駅前\n', 'utf8') },

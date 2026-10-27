@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "contractsDir": "apps/server/src/lib/contracts",
+  "importFrom": "./contracts/runtime.js",
+  "runtimeFile": "apps/server/src/lib/contracts/runtime.ts",
+  "contracts": [
+    {
+      "id": "C-1",
+      "criterion": "C-1 unzip(buf, limits): 展開結果は各エントリ512 MiB以内・合計1 GiB以内で、境界値を受理し超過を拒否する",
+      "symbol": "unzip",
+      "file": "apps/server/src/lib/unzip.ts",
+      "module": "apps/server/src/lib/contracts/unzip.contract.ts",
+      "mode": "observe",
+      "sample": 1
+    },
+    {
+      "id": "C-2",
+      "criterion": "C-2 readZipResponse(res): Content-Lengthと逐次受信量の双方で80 MiB超過を打ち切り、正常なZIPと既存エラー経路を維持する",
+      "symbol": "readZipResponse",
+      "file": "apps/server/src/lib/gtfs-import.ts",
+      "module": "apps/server/src/lib/contracts/download.contract.ts",
+      "mode": "observe",
+      "sample": 1
+    }
+  ]
+}

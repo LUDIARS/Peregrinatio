@@ -6,8 +6,54 @@ import { sql } from '../db/index.js';
 import { newId, nowIso } from '../lib/ids.js';
 import { unzip } from './unzip.js';
 import { parseCsv } from './csv.js';
+import { contract } from './contracts/runtime.js'; /* augur-inject:import:55838aab */
+import augurContract_34c95456 from './contracts/download.contract.js'; /* augur-inject:contract-predicate:c24929cf */
 
 const MAX_ZIP_BYTES = 80 * 1024 * 1024; // 80MB 上限 (典型的なバス事業者フィードは十分収まる)
+
+function zipTooLarge(bytes: number): Error {
+  return new Error(`GTFS zip が大きすぎます (${Math.round(bytes / 1024 / 1024)}MB > 80MB 上限)`);
+}
+
+/** 申告サイズと実受信量の双方を制限し、本文全体を無制限に確保しない。 */
+export async function readZipResponse(res: Response): Promise<Buffer> {
+  const contentLength = Number(res.headers.get('content-length'));
+  if (contentLength > MAX_ZIP_BYTES) {
+    try { await res.body?.cancel(); }
+    catch { /* キャンセル失敗で既存のサイズ超過エラーを置き換えない (best-effort)。 */ }
+    throw zipTooLarge(contentLength);
+  }
+  if (!res.body) return Buffer.alloc(0);
+  const reader = res.body.getReader();
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  let complete = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        complete = true;
+        break;
+      }
+      bytes += value.byteLength;
+      if (bytes > MAX_ZIP_BYTES) throw zipTooLarge(bytes);
+      // 所有権を確保し、受信側によるバッファ再利用でも内容が変わらないようにする。
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks, bytes);
+  } finally {
+    try {
+      if (!complete) {
+        try { await reader.cancel(); }
+        catch { /* 切断済みストリームの後始末は best-effort。元の読取/超過エラーを保つ。 */ }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+}
+// @ts-expect-error augur-inject
+readZipResponse = contract(readZipResponse, { ...augurContract_34c95456, contractId: 'C-2', mode: 'observe', sample: 1, where: 'apps/server/src/lib/gtfs-import.ts:17', rule: 'contract-wrap', id: '34c95456' }); /* augur-inject:contract-wrap:34c95456 */
 
 export interface GtfsImportResult {
   id: string;
@@ -61,11 +107,7 @@ async function batchInsert(table: string, columns: string[], rows: unknown[][]):
 export async function importGtfsFromUrl(url: string, name?: string): Promise<GtfsImportResult> {
   const res = await fetch(url, { redirect: 'follow' });
   if (!res.ok) throw new Error(`GTFS の取得に失敗しました (HTTP ${res.status})`);
-  const ab = await res.arrayBuffer();
-  if (ab.byteLength > MAX_ZIP_BYTES) {
-    throw new Error(`GTFS zip が大きすぎます (${Math.round(ab.byteLength / 1024 / 1024)}MB > 80MB 上限)`);
-  }
-  const buf = Buffer.from(ab);
+  const buf = await readZipResponse(res);
 
   let files: Map<string, Buffer>;
   try {

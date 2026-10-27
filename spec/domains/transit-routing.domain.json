@@ -5,6 +5,9 @@
   "templateRules": [],
   "membership": [
     {
+      "pathPattern": "(^|/)apps/server/src/lib/(?:unzip(?:\\.test)?\\.ts|gtfs-import(?:\\.test)?\\.ts|contracts/[^/]+\\.ts)$"
+    },
+    {
       "pathPattern": "(^|/)apps/server/src/transit/(?:.*/)?[^/]+$"
     },
     {
